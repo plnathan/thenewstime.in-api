@@ -6,7 +6,7 @@ import * as newsService from "../news.service.js"; //"../../services/news.servic
 
 import { mockNews } from "./mocks/news.repository.mock.js";
 
-import { ApiError } from "../../../../shared/utils/apiError.js"; //"../../shared/utils/ApiError";
+import { ApiError } from "../../../../shared/utils/apiErrorInfo.js"; //"../../shared/utils/ApiError";
 
 import { pool } from "../../../../shared/config/db.js";
 

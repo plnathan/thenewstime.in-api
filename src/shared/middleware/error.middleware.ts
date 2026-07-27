@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { ApiError } from "../utils/apiError.js"; //"../utils/ApiError.js";
+import { ApiError } from "../utils/apiErrorInfo.js"; //"../utils/ApiError.js";
 
 export const errorHandler = (
   err: Error,
@@ -13,7 +13,7 @@ export const errorHandler = (
     const isValidationError =
       Array.isArray(err.details) &&
       err.details.every(
-        (item) =>
+        (item:any) =>
           typeof item === "object" &&
           item !== null &&
           "code" in item &&

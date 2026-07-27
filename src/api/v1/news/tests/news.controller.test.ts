@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as newsController from "../news.controller.js"; //"../../controllers/news.controller";
 import * as newsService from "../news.service.js"; //"../../services/news.service";
 
-import { ApiError } from "../../../../shared/utils/apiError.js"; //"../../shared/utils/ApiError";
+import { ApiError } from "../../../../shared/utils/apiErrorInfo.js"; //"../../shared/utils/ApiError";
 import {
   sendPaginated,
   sendSuccess
