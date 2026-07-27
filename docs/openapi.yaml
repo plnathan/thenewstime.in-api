@@ -18,8 +18,8 @@ info:
     This API follows a standard response contract.
 
 servers:
-  - url: /api/v1
-    description: Local Development
+  - url: https://thenewstime-in-api-swart.vercel.app//api/v1
+    description: Production
 
 tags:
   - name: News
