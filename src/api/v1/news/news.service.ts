@@ -1,5 +1,7 @@
 import { pool } from "../../../shared/config/db.js";
 
+//import { ApiError } from "../../../shared/utils/apiError.js";
+
 import { ApiError } from "../../../shared/utils/apiError.js";
 
 import * as newsRepository from "./news.repository.js";
