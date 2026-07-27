@@ -4,6 +4,7 @@ import cors from "cors";
 import { notFoundHandler } from "./shared/middleware/notFound.middleware.js";
 import { errorHandler } from "./shared/middleware/error.middleware.js";
 import newsRoutes from "./api/v1/news/news.routes.js";
+import { configureSwagger } from "./shared/swagger/swagger.js";
 
 const app = express();
 
@@ -29,6 +30,8 @@ app.get("/", (_req: any, res: any) => {
 
 //app.use("/api", routes);
 app.use("/api/v1/news", newsRoutes);
+
+configureSwagger(app);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

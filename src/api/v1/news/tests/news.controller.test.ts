@@ -1,15 +1,15 @@
+import type { NextFunction, Request, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Request, Response, NextFunction } from "express";
 
 import * as newsController from "../news.controller.js"; //"../../controllers/news.controller";
 import * as newsService from "../news.service.js"; //"../../services/news.service";
 
-import { mockNews } from "./mocks/news.repository.mock.js";
-import { ApiError } from "../../../../shared/utils/ApiError.js"; //"../../shared/utils/ApiError";
+import { ApiError } from "../../../../shared/utils/apiError.js"; //"../../shared/utils/ApiError";
 import {
-  sendSuccess,
-  sendPaginatedSuccess
+  sendPaginatedSuccess,
+  sendSuccess
 } from "../../../../shared/utils/response.js"; //"../../shared/utils/apiResponse";
+import { mockNews } from "./mocks/news.repository.mock.js";
 
 // Mock Service
 vi.mock("../news.service.js");

@@ -1,0 +1,308 @@
+components:
+  schemas:
+    ###########################################################################
+    # COMMON SCHEMAS
+    ###########################################################################
+
+    ValidationError:
+      type: object
+      description: Validation error information.
+      properties:
+        field:
+          type: string
+          example: title
+
+        message:
+          type: string
+          example: Title is required.
+
+    PaginationMeta:
+      type: object
+      description: Pagination metadata.
+      properties:
+        page:
+          type: integer
+          example: 1
+
+        pageSize:
+          type: integer
+          example: 20
+
+        totalRecords:
+          type: integer
+          example: 250
+
+        totalPages:
+          type: integer
+          example: 13
+
+        hasPrevious:
+          type: boolean
+          example: false
+
+        hasNext:
+          type: boolean
+          example: true
+
+    SuccessResponse:
+      type: object
+      description: Standard success response.
+
+      properties:
+        success:
+          type: boolean
+          example: true
+
+        message:
+          type: string
+          example: Request completed successfully.
+
+        data:
+          nullable: true
+
+        errors:
+          nullable: true
+          example: null
+
+        meta:
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      description: Standard error response.
+
+      properties:
+        success:
+          type: boolean
+          example: false
+
+        message:
+          type: string
+          example: Validation failed.
+
+        data:
+          nullable: true
+          example: null
+
+        errors:
+          type: array
+
+          items:
+            $ref: "#/components/schemas/ValidationError"
+
+        meta:
+          nullable: true
+          example: null
+
+    ###########################################################################
+    # NEWS RESPONSE DTO
+    ###########################################################################
+
+    NewsResponse:
+      type: object
+
+      properties:
+        id:
+          type: integer
+          example: 29
+
+        newsNumber:
+          type: integer
+          example: 4264200
+
+        title:
+          type: string
+          example: Vercel Deployment Success
+
+        slug:
+          type: string
+          example: vercel-deployment-success
+
+        summary:
+          type: string
+          nullable: true
+          example: Testing production deployment.
+
+        content:
+          type: string
+          example: This is the first news inserted through the deployed API.
+
+        newsScope:
+          type: string
+          enum:
+            - LOCAL
+            - DISTRICT
+            - STATE
+            - NATIONAL
+            - INTERNATIONAL
+
+        countryId:
+          type: integer
+          nullable: true
+
+        stateId:
+          type: integer
+          nullable: true
+
+        districtId:
+          type: integer
+          nullable: true
+
+        categoryId:
+          type: integer
+          example: 1
+
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - APPROVED
+            - PUBLISHED
+            - ARCHIVED
+
+        draftedBy:
+          type: integer
+
+        approvedBy:
+          type: integer
+          nullable: true
+
+        publishedBy:
+          type: integer
+          nullable: true
+
+        archivedBy:
+          type: integer
+          nullable: true
+
+        draftedAt:
+          type: string
+          format: date-time
+
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+        createdBy:
+          type: integer
+
+        updatedBy:
+          type: integer
+          nullable: true
+
+        createdAt:
+          type: string
+          format: date-time
+
+        updatedAt:
+          type: string
+          format: date-time
+
+    ###########################################################################
+    # CREATE NEWS REQUEST
+    ###########################################################################
+
+    CreateNewsRequest:
+      type: object
+
+      required:
+        - title
+        - slug
+        - content
+        - newsScope
+        - categoryId
+        - draftedBy
+
+      properties:
+        title:
+          type: string
+          maxLength: 1000
+
+        slug:
+          type: string
+          maxLength: 300
+
+        summary:
+          type: string
+
+        content:
+          type: string
+
+        newsScope:
+          type: string
+          enum:
+            - LOCAL
+            - DISTRICT
+            - STATE
+            - NATIONAL
+            - INTERNATIONAL
+
+        countryId:
+          type: integer
+          nullable: true
+
+        stateId:
+          type: integer
+          nullable: true
+
+        districtId:
+          type: integer
+          nullable: true
+
+        categoryId:
+          type: integer
+
+        draftedBy:
+          type: integer
+
+    ###########################################################################
+    # UPDATE NEWS REQUEST
+    ###########################################################################
+
+    UpdateNewsRequest:
+      type: object
+
+      properties:
+        title:
+          type: string
+          maxLength: 1000
+
+        slug:
+          type: string
+          maxLength: 300
+
+        summary:
+          type: string
+
+        content:
+          type: string
+
+        newsScope:
+          type: string
+          enum:
+            - LOCAL
+            - DISTRICT
+            - STATE
+            - NATIONAL
+            - INTERNATIONAL
+
+        countryId:
+          type: integer
+          nullable: true
+
+        stateId:
+          type: integer
+          nullable: true
+
+        districtId:
+          type: integer
+          nullable: true
+
+        categoryId:
+          type: integer

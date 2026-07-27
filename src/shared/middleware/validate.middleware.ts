@@ -1,6 +1,6 @@
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
-import { ApiError } from "../utils/ApiError.js"; //"../shared/utils/ApiError.js";
+import { ApiError } from "../utils/apiError.js"; //"../shared/utils/ApiError.js";
 
 type ValidateTarget = "body" | "query" | "params";
 

@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as newsService from "../news.service.js"; //"../../services/news.service";
 import * as newsRepository from "../news.repository.js";
+import * as newsService from "../news.service.js"; //"../../services/news.service";
 //import { NewsRepository, NewsService } from "../index.js";
 
 import { mockNews } from "./mocks/news.repository.mock.js";
 
-import { ApiError } from "../../../../shared/utils/ApiError.js"; //"../../shared/utils/ApiError";
+import { ApiError } from "../../../../shared/utils/apiError.js"; //"../../shared/utils/ApiError";
 
 import { pool } from "../../../../shared/config/db.js";
 

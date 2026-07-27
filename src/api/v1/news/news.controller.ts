@@ -1,15 +1,21 @@
+// 1. External packages
 import type { NextFunction, Request, Response } from "express";
+// 3. Feature services
 import * as newsService from "./news.service.js";
 //import { NewsService } from "../news/index.js";
+// 2. Shared modules
+import { sendPaginated, sendSuccess } from "../../../shared/utils/response.js";
+// 4. Feature mappers
 import {
-  sendSuccess,
-  sendPaginatedSuccess
-} from "../../../shared/utils/response.js";
+  toNewsResponseDto,
+  toNewsResponseDtoList
+} from "../mappers/news.dto.mapper.js";
+// 5. Feature types
 import type {
   CreateNewsInput,
   NewsSearchFilter,
-  UpdateNewsInput,
-  NewsStatus
+  NewsStatus,
+  UpdateNewsInput
 } from "./news.types.js";
 
 export const createNews = async (
@@ -21,8 +27,9 @@ export const createNews = async (
     const payload = req.body as CreateNewsInput;
     console.log(req.body);
     const news = await newsService.createNews(payload);
+    const dto = toNewsResponseDto(news);
 
-    sendSuccess(res, "News created successfully.", news, 201);
+    sendSuccess(res, "News created successfully.", dto, 201);
   } catch (error) {
     next(error);
   }
@@ -39,8 +46,8 @@ export const updateNews = async (
     const payload = req.body as UpdateNewsInput;
 
     const news = await newsService.updateNews(id, payload);
-
-    sendSuccess(res, "News updated successfully.", news);
+    const dto = toNewsResponseDto(news);
+    sendSuccess(res, "News updated successfully.", dto);
   } catch (error) {
     next(error);
   }
@@ -57,7 +64,9 @@ export const getNewsById = async (
 
     const news = await newsService.getNewsById(id);
 
-    sendSuccess(res, "News retrieved successfully.", news);
+    const dto = toNewsResponseDto(news);
+
+    sendSuccess(res, "News retrieved successfully.", dto);
   } catch (error) {
     next(error);
   }
@@ -113,23 +122,18 @@ export const getNewsList = async (
 
     const result = await newsService.getNewsList(filter);
 
-    sendPaginatedSuccess(
-      res,
+    const dtoList = toNewsResponseDtoList(result.items);
 
-      "News retrieved successfully.",
+    const totalPages = Math.ceil(result.totalRecords / result.pageSize);
 
-      result.items,
-
-      {
-        total: result.total,
-
-        page: result.page,
-
-        limit: result.pageSize,
-
-        totalPages: Math.ceil(result.total / result.pageSize)
-      }
-    );
+    sendPaginated(res, "News retrieved successfully.", dtoList, {
+      page: result.page,
+      pageSize: result.pageSize,
+      totalRecords: result.totalRecords,
+      totalPages,
+      hasPrevious: result.page > 1,
+      hasNext: result.page < totalPages
+    });
   } catch (error) {
     next(error);
   }

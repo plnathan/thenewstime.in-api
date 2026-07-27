@@ -1,0 +1,687 @@
+openapi: 3.1.0
+
+info:
+  title: TheNewsTime API
+  version: 1.0.0
+  description: |
+    REST API for TheNewsTime News Management System.
+
+    ## Features
+
+    - News Management
+    - Categories
+    - Media
+    - Authentication
+    - Users & Roles
+    - Audit Logs
+
+    This API follows a standard response contract.
+
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local Development
+
+tags:
+  - name: News
+    description: News Management APIs
+
+paths:
+
+  ############################################################
+  # GET NEWS LIST
+  ############################################################
+
+  /news:
+
+    get:
+
+      tags:
+        - News
+
+      summary: Get News List
+
+      description: Returns a paginated list of news.
+
+      parameters:
+
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 20
+
+        - in: query
+          name: search
+          schema:
+            type: string
+
+        - in: query
+          name: status
+          schema:
+            type: string
+
+        - in: query
+          name: categoryId
+          schema:
+            type: integer
+
+        - in: query
+          name: scope
+          schema:
+            type: string
+
+        - in: query
+          name: stateId
+          schema:
+            type: integer
+
+        - in: query
+          name: districtId
+          schema:
+            type: integer
+
+        - in: query
+          name: sortBy
+          schema:
+            type: string
+
+        - in: query
+          name: sortOrder
+          schema:
+            type: string
+            enum:
+              - ASC
+              - DESC
+
+      responses:
+
+        "200":
+          description: News list retrieved successfully.
+
+        "400":
+          description: Validation failed.
+
+        "500":
+          description: Internal server error.
+
+  ############################################################
+  # CREATE NEWS
+  ############################################################
+
+    post:
+
+      tags:
+        - News
+
+      summary: Create News
+
+      requestBody:
+
+        required: true
+
+        content:
+
+          application/json:
+
+            schema:
+              $ref: "#/components/schemas/CreateNewsRequest"
+
+      responses:
+
+        "201":
+          description: News created successfully.
+
+        "400":
+          description: Validation failed.
+
+        "500":
+          description: Internal server error.
+
+  ############################################################
+  # GET NEWS BY ID
+  ############################################################
+
+  /news/{id}:
+
+    get:
+
+      tags:
+        - News
+
+      summary: Get News By Id
+
+      parameters:
+
+        - in: path
+
+          name: id
+
+          required: true
+
+          schema:
+            type: integer
+
+      responses:
+
+        "200":
+          description: News retrieved successfully.
+
+        "404":
+          description: News not found.
+
+        "500":
+          description: Internal server error.
+
+  ############################################################
+  # UPDATE NEWS
+  ############################################################
+
+    put:
+
+      tags:
+        - News
+
+      summary: Update News
+
+      parameters:
+
+        - in: path
+
+          name: id
+
+          required: true
+
+          schema:
+            type: integer
+
+      requestBody:
+
+        required: true
+
+        content:
+
+          application/json:
+
+            schema:
+              $ref: "#/components/schemas/UpdateNewsRequest"
+
+      responses:
+
+        "200":
+          description: News updated successfully.
+
+        "400":
+          description: Validation failed.
+
+        "404":
+          description: News not found.
+
+        "500":
+          description: Internal server error.
+
+  ############################################################
+  # DELETE NEWS
+  ############################################################
+
+    delete:
+
+      tags:
+        - News
+
+      summary: Delete News
+
+      parameters:
+
+        - in: path
+
+          name: id
+
+          required: true
+
+          schema:
+            type: integer
+
+      responses:
+
+        "200":
+          description: News deleted successfully.
+
+        "404":
+          description: News not found.
+
+        "500":
+          description: Internal server error.
+
+  ############################################################
+  # CHANGE STATUS
+  ############################################################
+
+  /news/{id}/status:
+
+    patch:
+
+      tags:
+        - News
+
+      summary: Change News Status
+
+      parameters:
+
+        - in: path
+
+          name: id
+
+          required: true
+
+          schema:
+            type: integer
+
+      responses:
+
+        "200":
+          description: Status updated successfully.
+
+  ############################################################
+  # APPROVE NEWS
+  ############################################################
+
+  /news/{id}/approve:
+
+    patch:
+
+      tags:
+        - News
+
+      summary: Approve News
+
+      parameters:
+
+        - in: path
+
+          name: id
+
+          required: true
+
+          schema:
+            type: integer
+
+      responses:
+
+        "200":
+          description: News approved successfully.
+
+  ############################################################
+  # PUBLISH NEWS
+  ############################################################
+
+  /news/{id}/publish:
+
+    patch:
+
+      tags:
+        - News
+
+      summary: Publish News
+
+      parameters:
+
+        - in: path
+
+          name: id
+
+          required: true
+
+          schema:
+            type: integer
+
+      responses:
+
+        "200":
+          description: News published successfully.
+
+  ############################################################
+  # ARCHIVE NEWS
+  ############################################################
+
+  /news/{id}/archive:
+
+    patch:
+
+      tags:
+        - News
+
+      summary: Archive News
+
+      parameters:
+
+        - in: path
+
+          name: id
+
+          required: true
+
+          schema:
+            type: integer
+
+      responses:
+
+        "200":
+          description: News archived successfully.
+
+components:
+  schemas:
+    ###########################################################################
+    # COMMON SCHEMAS
+    ###########################################################################
+
+    ValidationError:
+      type: object
+      description: Validation error information.
+      properties:
+        field:
+          type: string
+          example: title
+
+        message:
+          type: string
+          example: Title is required.
+
+    PaginationMeta:
+      type: object
+      description: Pagination metadata.
+      properties:
+        page:
+          type: integer
+          example: 1
+
+        pageSize:
+          type: integer
+          example: 20
+
+        totalRecords:
+          type: integer
+          example: 250
+
+        totalPages:
+          type: integer
+          example: 13
+
+        hasPrevious:
+          type: boolean
+          example: false
+
+        hasNext:
+          type: boolean
+          example: true
+
+    SuccessResponse:
+      type: object
+      description: Standard success response.
+
+      properties:
+        success:
+          type: boolean
+          example: true
+
+        message:
+          type: string
+          example: Request completed successfully.
+
+        data:
+          nullable: true
+
+        errors:
+          nullable: true
+          example: null
+
+        meta:
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      description: Standard error response.
+
+      properties:
+        success:
+          type: boolean
+          example: false
+
+        message:
+          type: string
+          example: Validation failed.
+
+        data:
+          nullable: true
+          example: null
+
+        errors:
+          type: array
+
+          items:
+            $ref: "#/components/schemas/ValidationError"
+
+        meta:
+          nullable: true
+          example: null
+
+    ###########################################################################
+    # NEWS RESPONSE DTO
+    ###########################################################################
+
+    NewsResponse:
+      type: object
+
+      properties:
+        id:
+          type: integer
+          example: 29
+
+        newsNumber:
+          type: integer
+          example: 4264200
+
+        title:
+          type: string
+          example: Vercel Deployment Success
+
+        slug:
+          type: string
+          example: vercel-deployment-success
+
+        summary:
+          type: string
+          nullable: true
+          example: Testing production deployment.
+
+        content:
+          type: string
+          example: This is the first news inserted through the deployed API.
+
+        newsScope:
+          type: string
+          enum:
+            - LOCAL
+            - DISTRICT
+            - STATE
+            - NATIONAL
+            - INTERNATIONAL
+
+        countryId:
+          type: integer
+          nullable: true
+
+        stateId:
+          type: integer
+          nullable: true
+
+        districtId:
+          type: integer
+          nullable: true
+
+        categoryId:
+          type: integer
+          example: 1
+
+        status:
+          type: string
+          enum:
+            - DRAFT
+            - APPROVED
+            - PUBLISHED
+            - ARCHIVED
+
+        draftedBy:
+          type: integer
+
+        approvedBy:
+          type: integer
+          nullable: true
+
+        publishedBy:
+          type: integer
+          nullable: true
+
+        archivedBy:
+          type: integer
+          nullable: true
+
+        draftedAt:
+          type: string
+          format: date-time
+
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+        createdBy:
+          type: integer
+
+        updatedBy:
+          type: integer
+          nullable: true
+
+        createdAt:
+          type: string
+          format: date-time
+
+        updatedAt:
+          type: string
+          format: date-time
+
+    ###########################################################################
+    # CREATE NEWS REQUEST
+    ###########################################################################
+
+    CreateNewsRequest:
+      type: object
+
+      required:
+        - title
+        - slug
+        - content
+        - newsScope
+        - categoryId
+        - draftedBy
+
+      properties:
+        title:
+          type: string
+          maxLength: 1000
+
+        slug:
+          type: string
+          maxLength: 300
+
+        summary:
+          type: string
+
+        content:
+          type: string
+
+        newsScope:
+          type: string
+          enum:
+            - LOCAL
+            - DISTRICT
+            - STATE
+            - NATIONAL
+            - INTERNATIONAL
+
+        countryId:
+          type: integer
+          nullable: true
+
+        stateId:
+          type: integer
+          nullable: true
+
+        districtId:
+          type: integer
+          nullable: true
+
+        categoryId:
+          type: integer
+
+        draftedBy:
+          type: integer
+
+    ###########################################################################
+    # UPDATE NEWS REQUEST
+    ###########################################################################
+
+    UpdateNewsRequest:
+      type: object
+
+      properties:
+        title:
+          type: string
+          maxLength: 1000
+
+        slug:
+          type: string
+          maxLength: 300
+
+        summary:
+          type: string
+
+        content:
+          type: string
+
+        newsScope:
+          type: string
+          enum:
+            - LOCAL
+            - DISTRICT
+            - STATE
+            - NATIONAL
+            - INTERNATIONAL
+
+        countryId:
+          type: integer
+          nullable: true
+
+        stateId:
+          type: integer
+          nullable: true
+
+        districtId:
+          type: integer
+          nullable: true
+
+        categoryId:
+          type: integer
+
+
+security: []

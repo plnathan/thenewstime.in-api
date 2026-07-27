@@ -72,3 +72,19 @@ To run individual test:
 npx vitest run src/tests/integration/news.api.test.ts
 or
 npm run test -- src/tests/integration/news.api.test.ts
+
+Swagger Documentation:
+----------------------
+npm install swagger-ui-express
+
+npm install -D @types/swagger-ui-express
+
+Install YAML Parser
+-------------------
+npm install yamljs
+
+npm install -D @types/yamljs
+
+Zod Open API validation
+-----------------------
+npm install @asteasolutions/zod-to-openapi

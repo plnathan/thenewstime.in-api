@@ -42,5 +42,5 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["src","api"]
+  "include": ["src","api", "docs"]
 }

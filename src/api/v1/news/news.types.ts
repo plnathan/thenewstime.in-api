@@ -122,7 +122,7 @@ export interface NewsSearchFilter {
 export interface PaginatedNews {
   items: News[];
 
-  total: number;
+  totalRecords: number;
 
   page: number;
 

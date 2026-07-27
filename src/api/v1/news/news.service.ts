@@ -1,15 +1,15 @@
 import { pool } from "../../../shared/config/db.js";
 
-import { ApiError } from "../../../shared/utils/ApiError.js";
+import { ApiError } from "../../../shared/utils/apiError.js";
 
 import * as newsRepository from "./news.repository.js";
 
 import type {
   CreateNewsInput,
-  UpdateNewsInput,
   News,
   NewsSearchFilter,
-  NewsStatus
+  NewsStatus,
+  UpdateNewsInput
 } from "./news.types.js";
 
 export const createNews = async (data: CreateNewsInput): Promise<News> => {

@@ -11,7 +11,7 @@ import type {
   NewsStatus
 } from "./news.types.js";
 
-import { mapNews } from "./news.mapper.js";
+import { mapNews } from "./news.db.mapper.js";
 
 /**
  * Create News
