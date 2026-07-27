@@ -1,7 +1,7 @@
 {
   "files.associations": {
-        "*.sql": "sql"
-    },
+    "*.sql": "sql"
+  },
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
 
@@ -11,10 +11,10 @@
   },
 
   "[sql]": {
-        "editor.formatOnSave": false
-    },
+    "editor.formatOnSave": false
+  },
 
-    "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
 
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"

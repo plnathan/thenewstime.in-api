@@ -1,9 +1,9 @@
-import express from "express";
 import cors from "cors";
+import express from "express";
 //import routes from "./routes/index.js";
-import { notFoundHandler } from "./shared/middleware/notFound.middleware.js";
-import { errorHandler } from "./shared/middleware/error.middleware.js";
 import newsRoutes from "./api/v1/news/news.routes.js";
+import { errorHandler } from "./shared/middleware/error.middleware.js";
+import { notFoundHandler } from "./shared/middleware/notFound.middleware.js";
 import { configureSwagger } from "./shared/swagger/swagger.js";
 
 const app = express();
@@ -36,12 +36,12 @@ configureSwagger(app);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Route not found"
-  });
-});
+// app.use((req, res) => {
+//   res.status(404).json({
+//     success: false,
+//     message: "Route not found"
+//   });
+// });
 
 // app.get("/api/news", (_req, res) => {
 //   res.json([
