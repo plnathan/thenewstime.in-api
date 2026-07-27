@@ -4,11 +4,11 @@ import { pool } from "../../../shared/config/db.js"; //"../database/db";
 
 import type {
   CreateNewsInput,
-  UpdateNewsInput,
   News,
   NewsSearchFilter,
+  NewsStatus,
   PaginatedNews,
-  NewsStatus
+  UpdateNewsInput
 } from "./news.types.js";
 
 import { mapNews } from "./news.db.mapper.js";
@@ -409,7 +409,7 @@ export const findAll = async (
 
   return {
     items: result.rows.map(mapNews),
-    total: countResult.rows[0].total,
+    totalRecords: countResult.rows[0].total,
     page,
     pageSize
   };

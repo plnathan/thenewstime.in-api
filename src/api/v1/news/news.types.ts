@@ -35,7 +35,7 @@ export interface News {
   publishedBy: number | null;
 
   archivedBy: number | null;
-  
+
   draftedAt: Date;
 
   approvedAt: Date | null;
@@ -52,6 +52,10 @@ export interface News {
 }
 
 export interface CreateNewsInput {
+  //id: number;
+
+  //newsNumber: number;
+
   title: string;
 
   slug: string;
@@ -73,6 +77,8 @@ export interface CreateNewsInput {
   draftedBy: number;
 
   createdBy: number;
+
+  //status: NewsStatus;
 }
 
 export interface UpdateNewsInput {

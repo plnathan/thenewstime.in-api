@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 //import { NewsRepository } from "../index.js";
 
@@ -6,7 +6,7 @@ import * as repository from "../news.repository.js";
 
 import { pool } from "../../../../shared/config/db.js"; //"../../shared/config/db.js";
 
-import { mockNews } from "./mocks/news.repository.mock.js";
+import { mockNews, mockNewsResponse } from "./mocks/news.repository.mock.js";
 
 vi.mock("../../../../shared/config/db.js", () => ({
   pool: {
@@ -73,7 +73,7 @@ describe("News Repository", () => {
     } as any);
 
     const result = await repository.create({
-      categoryId: mockNews.categoryId,
+      categoryId: mockNewsResponse.categoryId,
 
       content: mockNews.content,
 
@@ -326,7 +326,7 @@ describe("findAll()", () => {
       pageSize: 20
     });
 
-    expect(result.total).toBe(1);
+    expect(result.totalRecords).toBe(1);
 
     expect(result.page).toBe(1);
 
@@ -413,7 +413,7 @@ describe("findAll() - Empty Result", () => {
       pageSize: 20
     });
 
-    expect(result.total).toBe(0);
+    expect(result.totalRecords).toBe(0);
 
     expect(result.items).toEqual([]);
   });

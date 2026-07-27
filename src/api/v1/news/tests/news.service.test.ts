@@ -223,7 +223,7 @@ describe("getNewsList()", () => {
     repository.findAll.mockResolvedValue({
       items: [mockNews],
 
-      total: 1,
+      totalRecords: 1,
 
       page: 1,
 
@@ -236,7 +236,7 @@ describe("getNewsList()", () => {
       pageSize: 20
     });
 
-    expect(result.total).toBe(1);
+    expect(result.totalRecords).toBe(1);
 
     expect(result.items).toHaveLength(1);
 

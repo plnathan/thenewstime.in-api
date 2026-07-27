@@ -6,10 +6,10 @@ import * as newsService from "../news.service.js"; //"../../services/news.servic
 
 import { ApiError } from "../../../../shared/utils/apiError.js"; //"../../shared/utils/ApiError";
 import {
-  sendPaginatedSuccess,
+  sendPaginated,
   sendSuccess
 } from "../../../../shared/utils/response.js"; //"../../shared/utils/apiResponse";
-import { mockNews } from "./mocks/news.repository.mock.js";
+import { mockNews, mockNewsResponse } from "./mocks/news.repository.mock.js";
 
 // Mock Service
 vi.mock("../news.service.js");
@@ -17,8 +17,9 @@ vi.mock("../news.service.js");
 // Mock Response Helpers
 vi.mock("../../../../shared/utils/response.js", () => ({
   sendSuccess: vi.fn(),
-
-  sendPaginatedSuccess: vi.fn()
+  sendCreated: vi.fn(),
+  sendPaginated: vi.fn(),
+  sendError: vi.fn()
 }));
 
 // Mock Request
@@ -60,7 +61,7 @@ describe("createNews()", () => {
 
       "News created successfully.",
 
-      mockNews,
+      mockNewsResponse,
 
       201
     );
@@ -152,7 +153,7 @@ describe("getNewsList()", () => {
     vi.mocked(newsService.getNewsList).mockResolvedValue({
       items: [mockNews],
 
-      total: 1,
+      totalRecords: 1,
 
       page: 1,
 
@@ -167,7 +168,7 @@ describe("getNewsList()", () => {
       next
     );
 
-    expect(sendPaginatedSuccess).toHaveBeenCalledOnce();
+    expect(sendPaginated).toHaveBeenCalledOnce();
   });
 });
 
@@ -326,7 +327,7 @@ describe("Response Helper Verification", () => {
     expect(sendSuccess).toHaveBeenCalledTimes(1);
   });
 
-  it("should use sendPaginatedSuccess()", async () => {
+  it("should use sendPaginated()", async () => {
     req.query = {
       page: "1",
       pageSize: "20"
@@ -335,7 +336,7 @@ describe("Response Helper Verification", () => {
     vi.mocked(newsService.getNewsList).mockResolvedValue({
       items: [mockNews],
 
-      total: 1,
+      totalRecords: 1,
 
       page: 1,
 
@@ -344,7 +345,7 @@ describe("Response Helper Verification", () => {
 
     await newsController.getNewsList(req, res, next);
 
-    expect(sendPaginatedSuccess).toHaveBeenCalledTimes(1);
+    expect(sendPaginated).toHaveBeenCalledTimes(1);
   });
 });
 
