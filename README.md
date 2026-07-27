@@ -47,7 +47,7 @@ npm install -D @vitest/coverage-v8
 npm run test
 
 npm run test:coverage
-or 
+or
 npm test -- --coverage
 
 for integration testing one specific file
@@ -75,16 +75,24 @@ npm run test -- src/tests/integration/news.api.test.ts
 
 Swagger Documentation:
 ----------------------
+
 npm install swagger-ui-express
 
 npm install -D @types/swagger-ui-express
 
 Install YAML Parser
 -------------------
+
 npm install yamljs
 
 npm install -D @types/yamljs
 
 Zod Open API validation
 -----------------------
+
 npm install @asteasolutions/zod-to-openapi
+
+Scalar API Reference:
+--------------------
+
+npm install @scalar/api-reference

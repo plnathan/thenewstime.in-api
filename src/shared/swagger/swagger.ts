@@ -1,19 +1,15 @@
-import type { Express } from "express";
-import path from "node:path";
-import swaggerUi from "swagger-ui-express";
-import YAML from "yamljs";
+import { ApiReference } from "@scalar/api-reference";
+import type { Express, RequestHandler } from "express";
 import fs from "node:fs";
+import path from "node:path";
 
 export const configureSwagger = (app: Express): void => {
-  const swaggerPath = path.join(process.cwd(), "docs", "openapi.yaml");
+  const openApiPath = path.join(process.cwd(), "docs", "openapi.yaml");
 
-  console.log("cwd =", process.cwd());
-  console.log("swaggerPath =", swaggerPath);
-  console.log("exists =", fs.existsSync(swaggerPath));
+  const specification = fs.readFileSync(openApiPath, "utf8");
 
-  const swaggerDocument = YAML.load(swaggerPath);
-
-  //console.log(`Swagger Path: ${swaggerPath}`);
-
-  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+  app.use(
+    "/api-docs",
+    ApiReference as unknown as RequestHandler
+  );
 };
