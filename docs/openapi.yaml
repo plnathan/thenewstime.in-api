@@ -18,7 +18,7 @@ info:
     This API follows a standard response contract.
 
 servers:
-  - url: http://localhost:5000/api/v1
+  - url: /api/v1
     description: Local Development
 
 tags:
@@ -26,15 +26,12 @@ tags:
     description: News Management APIs
 
 paths:
-
   ############################################################
   # GET NEWS LIST
   ############################################################
 
   /news:
-
     get:
-
       tags:
         - News
 
@@ -43,7 +40,6 @@ paths:
       description: Returns a paginated list of news.
 
       parameters:
-
         - in: query
           name: page
           schema:
@@ -100,7 +96,6 @@ paths:
               - DESC
 
       responses:
-
         "200":
           description: News list retrieved successfully.
 
@@ -110,30 +105,25 @@ paths:
         "500":
           description: Internal server error.
 
-  ############################################################
-  # CREATE NEWS
-  ############################################################
+    ############################################################
+    # CREATE NEWS
+    ############################################################
 
     post:
-
       tags:
         - News
 
       summary: Create News
 
       requestBody:
-
         required: true
 
         content:
-
           application/json:
-
             schema:
               $ref: "#/components/schemas/CreateNewsRequest"
 
       responses:
-
         "201":
           description: News created successfully.
 
@@ -148,16 +138,13 @@ paths:
   ############################################################
 
   /news/{id}:
-
     get:
-
       tags:
         - News
 
       summary: Get News By Id
 
       parameters:
-
         - in: path
 
           name: id
@@ -168,7 +155,6 @@ paths:
             type: integer
 
       responses:
-
         "200":
           description: News retrieved successfully.
 
@@ -178,19 +164,17 @@ paths:
         "500":
           description: Internal server error.
 
-  ############################################################
-  # UPDATE NEWS
-  ############################################################
+    ############################################################
+    # UPDATE NEWS
+    ############################################################
 
     put:
-
       tags:
         - News
 
       summary: Update News
 
       parameters:
-
         - in: path
 
           name: id
@@ -201,18 +185,14 @@ paths:
             type: integer
 
       requestBody:
-
         required: true
 
         content:
-
           application/json:
-
             schema:
               $ref: "#/components/schemas/UpdateNewsRequest"
 
       responses:
-
         "200":
           description: News updated successfully.
 
@@ -225,19 +205,17 @@ paths:
         "500":
           description: Internal server error.
 
-  ############################################################
-  # DELETE NEWS
-  ############################################################
+    ############################################################
+    # DELETE NEWS
+    ############################################################
 
     delete:
-
       tags:
         - News
 
       summary: Delete News
 
       parameters:
-
         - in: path
 
           name: id
@@ -248,7 +226,6 @@ paths:
             type: integer
 
       responses:
-
         "200":
           description: News deleted successfully.
 
@@ -263,16 +240,13 @@ paths:
   ############################################################
 
   /news/{id}/status:
-
     patch:
-
       tags:
         - News
 
       summary: Change News Status
 
       parameters:
-
         - in: path
 
           name: id
@@ -283,7 +257,6 @@ paths:
             type: integer
 
       responses:
-
         "200":
           description: Status updated successfully.
 
@@ -292,16 +265,13 @@ paths:
   ############################################################
 
   /news/{id}/approve:
-
     patch:
-
       tags:
         - News
 
       summary: Approve News
 
       parameters:
-
         - in: path
 
           name: id
@@ -312,7 +282,6 @@ paths:
             type: integer
 
       responses:
-
         "200":
           description: News approved successfully.
 
@@ -321,16 +290,13 @@ paths:
   ############################################################
 
   /news/{id}/publish:
-
     patch:
-
       tags:
         - News
 
       summary: Publish News
 
       parameters:
-
         - in: path
 
           name: id
@@ -341,7 +307,6 @@ paths:
             type: integer
 
       responses:
-
         "200":
           description: News published successfully.
 
@@ -350,16 +315,13 @@ paths:
   ############################################################
 
   /news/{id}/archive:
-
     patch:
-
       tags:
         - News
 
       summary: Archive News
 
       parameters:
-
         - in: path
 
           name: id
@@ -370,7 +332,6 @@ paths:
             type: integer
 
       responses:
-
         "200":
           description: News archived successfully.
 
@@ -682,6 +643,5 @@ components:
 
         categoryId:
           type: integer
-
 
 security: []
