@@ -83,10 +83,25 @@ export const findById = async (
   const db = client ?? pool;
 
   const sql = `
-        SELECT *
-        FROM news
-        WHERE id = $1
-        LIMIT 1;
+        SELECT
+                    n.id,
+                    n.news_number,
+                    n.title,
+                    n.slug,
+                    n.summary,
+                    n.content,
+                    n.news_scope,
+                    n.category_id,
+                    c.display_name AS category_name,
+                    n.country_id,
+                    n.state_id,
+                    n.district_id,
+                    n.status,
+                    n.published_at
+        FROM        news n
+        INNER JOIN  categories c ON c.id = n.category_id
+        WHERE       n.id = $1
+        LIMIT       1;
     `;
 
   const result = await db.query(sql, [id]);
@@ -108,10 +123,25 @@ export const findBySlug = async (
   const db = client ?? pool;
 
   const sql = `
-        SELECT *
-        FROM news
-        WHERE slug = $1
-        LIMIT 1;
+        SELECT
+                    n.id,
+                    n.news_number,
+                    n.title,
+                    n.slug,
+                    n.summary,
+                    n.content,
+                    n.news_scope,
+                    n.category_id,
+                    c.display_name AS category_name,
+                    n.country_id,
+                    n.state_id,
+                    n.district_id,
+                    n.status,
+                    n.published_at
+        FROM        news n
+        INNER JOIN  categories c ON c.id = n.category_id
+        WHERE       n.slug = $1
+        LIMIT       1;
     `;
 
   const result = await db.query(sql, [slug]);
@@ -133,10 +163,25 @@ export const findByNewsNumber = async (
   const db = client ?? pool;
 
   const sql = `
-        SELECT *
-        FROM news
-        WHERE news_number = $1
-        LIMIT 1;
+        SELECT
+                    n.id,
+                    n.news_number,
+                    n.title,
+                    n.slug,
+                    n.summary,
+                    n.content,
+                    n.news_scope,
+                    n.category_id,
+                    c.display_name AS category_name,
+                    n.country_id,
+                    n.state_id,
+                    n.district_id,
+                    n.status,
+                    n.published_at
+        FROM        news n
+        INNER JOIN  categories c ON c.id = n.category_id
+        WHERE       n.news_number = $1
+        LIMIT       1;
     `;
 
   const result = await db.query(sql, [newsNumber]);
@@ -160,9 +205,25 @@ export const existsBySlug = async (
   const sql = `
         SELECT EXISTS
         (
-            SELECT 1
-            FROM news
-            WHERE slug = $1
+            SELECT
+                    n.id,
+                    n.news_number,
+                    n.title,
+                    n.slug,
+                    n.summary,
+                    n.content,
+                    n.news_scope,
+                    n.category_id,
+                    c.display_name AS category_name,
+                    n.country_id,
+                    n.state_id,
+                    n.district_id,
+                    n.status,
+                    n.published_at
+            FROM        news n
+            INNER JOIN  categories c ON c.id = n.category_id
+            WHERE       n.slug = $1
+            LIMIT       1;
         ) AS exists;
     `;
 
@@ -318,9 +379,9 @@ export const findAll = async (
 
     conditions.push(`
             (
-                title ILIKE $${values.length}
-                OR summary ILIKE $${values.length}
-                OR content ILIKE $${values.length}
+                n.title ILIKE $${values.length}
+                OR n.summary ILIKE $${values.length}
+                OR n.content ILIKE $${values.length}
             )
         `);
   }
@@ -328,31 +389,31 @@ export const findAll = async (
   if (filter.status) {
     values.push(filter.status);
 
-    conditions.push(`status = $${values.length}`);
+    conditions.push(`n.status = $${values.length}`);
   }
 
   if (filter.categoryId) {
     values.push(filter.categoryId);
 
-    conditions.push(`category_id = $${values.length}`);
+    conditions.push(`n.category_id = $${values.length}`);
   }
 
   if (filter.scope) {
     values.push(filter.scope);
 
-    conditions.push(`news_scope = $${values.length}`);
+    conditions.push(`n.news_scope = $${values.length}`);
   }
 
   if (filter.stateId) {
     values.push(filter.stateId);
 
-    conditions.push(`state_id = $${values.length}`);
+    conditions.push(`n.state_id = $${values.length}`);
   }
 
   if (filter.districtId) {
     values.push(filter.districtId);
 
-    conditions.push(`district_id = $${values.length}`);
+    conditions.push(`n.district_id = $${values.length}`);
   }
 
   const whereClause =
@@ -370,7 +431,7 @@ export const findAll = async (
 
   const sortBy = allowedSortColumns.includes(filter.sortBy ?? "")
     ? filter.sortBy!
-    : "created_at";
+    : "n.created_at";
 
   const sortOrder = filter.sortOrder === "ASC" ? "ASC" : "DESC";
 
@@ -397,14 +458,32 @@ export const findAll = async (
   const offsetIndex = values.length;
 
   const sql = `
-        SELECT *
-        FROM news
+            SELECT
+                    n.id,
+                    n.news_number,
+                    n.title,
+                    n.slug,
+                    n.summary,
+                    n.content,
+                    n.news_scope,
+                    n.category_id,
+                    c.display_name AS category_name,
+                    n.country_id,
+                    n.state_id,
+                    n.district_id,
+                    n.status,
+                    n.published_at
+            FROM        news n
+            INNER JOIN  categories c ON c.id = n.category_id
         ${whereClause}
         ORDER BY ${sortBy} ${sortOrder}
         LIMIT $${limitIndex}
         OFFSET $${offsetIndex};
     `;
-
+  // console.log("SQL QUERY:");
+  // console.log(sql);
+  // console.log("SQL VALUES:");
+  // console.log(values);
   const result = await db.query(sql, values);
 
   return {

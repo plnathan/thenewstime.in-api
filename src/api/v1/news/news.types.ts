@@ -26,6 +26,8 @@ export interface News {
 
   categoryId: number;
 
+  categoryName: string;
+
   status: NewsStatus;
 
   draftedBy: number;

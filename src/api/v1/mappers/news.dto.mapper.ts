@@ -19,6 +19,8 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
 
     categoryId: news.categoryId,
 
+    categoryName: news.categoryName,
+
     countryId: news.countryId,
 
     stateId: news.stateId,

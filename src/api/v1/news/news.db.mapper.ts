@@ -25,6 +25,8 @@ export const mapNews = (row: any): News => ({
 
   categoryId: Number(row.category_id),
 
+  categoryName: row.category_name,
+
   status: row.status,
 
   draftedBy: Number(row.drafted_by),

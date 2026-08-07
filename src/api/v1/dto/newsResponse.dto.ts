@@ -15,6 +15,8 @@ export interface NewsResponseDto {
 
   categoryId: number;
 
+  categoryName: string;
+  
   countryId: number | null;
 
   stateId: number | null;
