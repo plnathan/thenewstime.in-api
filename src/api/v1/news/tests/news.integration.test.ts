@@ -24,7 +24,7 @@ afterAll(async () => {
 describe("POST /api/v1/news", () => {
   it("should create a news article", async () => {
     const response = await request(app).post("/api/v1/news").send(newsPayload);
-
+    console.log("CREATE RESPONSE:", response.status, response.body);
     expect(response.status).toBe(201);
     expect(response.body.success).toBe(true);
 

@@ -203,29 +203,15 @@ export const existsBySlug = async (
   const db = client ?? pool;
 
   const sql = `
-        SELECT EXISTS
-        (
-            SELECT
-                    n.id,
-                    n.news_number,
-                    n.title,
-                    n.slug,
-                    n.summary,
-                    n.content,
-                    n.news_scope,
-                    n.category_id,
-                    c.display_name AS category_name,
-                    n.country_id,
-                    n.state_id,
-                    n.district_id,
-                    n.status,
-                    n.published_at
-            FROM        news n
-            INNER JOIN  categories c ON c.id = n.category_id
-            WHERE       n.slug = $1
-            LIMIT       1;
-        ) AS exists;
+       SELECT EXISTS (
+          SELECT 1
+          FROM news n
+          INNER JOIN categories c
+              ON c.id = n.category_id
+          WHERE n.slug = $1
+      ) AS exists;
     `;
+  console.log("CHECK SLUG EXISTS SQL:", sql);
 
   const result = await db.query(sql, [slug]);
 

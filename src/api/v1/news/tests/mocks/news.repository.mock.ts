@@ -17,6 +17,8 @@ export const mockNews: News = {
 
   countryId: 1,
 
+  categoryName: "Politics",
+
   stateId: 33,
 
   districtId: 601,
@@ -57,6 +59,7 @@ export const mockNewsResponse = {
   content: "Budget Content",
   newsScope: "STATE",
   countryId: 1,
+  categoryName: "Politics",
   stateId: 33,
   districtId: 601,
   categoryId: 5,
