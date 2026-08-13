@@ -285,22 +285,171 @@ Technology Stack
 | Documentation    | Swagger/OpenAPI     |
 | Package Manager  | npm                 |
 
-
 ///////////////////// Overall Deployment Architecture ////////////////
-                    GitHub
-                       │
-          ┌────────────┴─────────────┐
-          │                          │
-          ▼                          ▼
-     Vercel (React)             Vercel (Node API)
-     thenewstime.in             api.thenewstime.in
-          │                          │
-          └──────────────┬───────────┘
-                         │
-                  Neon PostgreSQL
+GitHub
+│
+┌────────────┴─────────────┐
+│ │
+▼ ▼
+Vercel (React) Vercel (Node API)
+thenewstime.in api.thenewstime.in
+│ │
+└──────────────┬───────────┘
+│
+Neon PostgreSQL
 
 Frontend
 https://thenewstime.in
 
 Backend
-https://api.thenewstime.in                  
+https://api.thenewstime.in
+
+                         NEWS
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+        NEWS SCOPE                  CATEGORY
+             │                           │
+     ┌───────┼────────┐          Politics
+     │       │        │          Government
+
+STATE NATIONAL INTERNATIONAL Crime
+│ │ │ Education
+│ │ │ Sports
+│ │ │ Health
+│ │ │ ...
+│ │ │
+│ │ └── Country
+│ │
+│ └── Country
+│
+└── Country
+│
+└── State
+│
+└── District
+
+Database master data
+↓
+Repository
+↓
+News domain type
+↓
+Mapper
+↓
+Service
+↓
+Controller
+↓
+API response
+
+///////////////////////
+
+repository
+↓
+service
+↓
+DTO
+↓
+controller
+↓
+API response
+
+//////////////////////
+Flow:
+Request
+│
+▼
+Controller
+getNewsBySlug()
+│
+▼
+Service
+getNewsBySlug()
+│
+▼
+Repository
+findBySlug()
+│
+▼
+SQL
+news
+├── categories
+├── countries
+├── states
+└── districts
+│
+▼
+mapNews()
+│
+▼
+NewsResponseDto
+
+// router.get("/", getAllNews);
+// router.get("/:id", getNewsById);
+// router.post("/", createNews);
+// router.put("/:id", updateNews);
+// router.patch("/:id", patchNews);
+// router.delete("/:id", deleteNews);
+
+GET /
+GET /slug/:slug
+PATCH /:id/status
+PATCH /:id/approve
+PATCH /:id/publish
+PATCH /:id/archive
+GET /:id
+POST /
+PUT /:id
+DELETE /:id
+
+World news
+{
+  "newsScope": "WORLD",
+  "countryId": null,
+  "stateId": null,
+  "districtId": null
+}
+
+India / National news
+{
+  "newsScope": "INDIA",
+  "countryId": 1,
+  "stateId": null,
+  "districtId": null
+}
+
+State news
+{
+  "newsScope": "STATE",
+  "countryId": 1,
+  "stateId": 1,
+  "districtId": null
+}
+
+District news
+{
+  "newsScope": "DISTRICT",
+  "countryId": 1,
+  "stateId": 1,
+  "districtId": 1
+}
+
+Database
+   ↓
+WORLD
+INDIA
+STATE
+DISTRICT
+   ↓
+API validation
+   ↓
+TypeScript NewsScope
+   ↓
+API filtering
+   ↓
+News DTO
+   ↓
+React UI
+   ↓
+URL / slug navigation

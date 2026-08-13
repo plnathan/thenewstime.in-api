@@ -1,7 +1,5 @@
 import { pool } from "../../../shared/config/db.js";
 
-//import { ApiError } from "../../../shared/utils/apiError.js";
-
 import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
 
 import * as newsRepository from "./news.repository.js";
@@ -14,12 +12,22 @@ import type {
   UpdateNewsInput
 } from "./news.types.js";
 
+/**
+ * Create News
+ */
 export const createNews = async (data: CreateNewsInput): Promise<News> => {
   const client = await pool.connect();
-  console.log("createNews data:", data);
+
   try {
     await client.query("BEGIN");
 
+    /**
+     * Slug must be unique.
+     *
+     * The database UNIQUE constraint is the final
+     * protection; this check gives the API a friendly
+     * 409 response before attempting the INSERT.
+     */
     const slugExists = await newsRepository.existsBySlug(data.slug, client);
 
     if (slugExists) {
@@ -40,6 +48,9 @@ export const createNews = async (data: CreateNewsInput): Promise<News> => {
   }
 };
 
+/**
+ * Update News
+ */
 export const updateNews = async (
   id: number,
   data: UpdateNewsInput
@@ -55,7 +66,11 @@ export const updateNews = async (
       throw new ApiError(404, "News not found.");
     }
 
-    if (data.slug && data.slug !== existingNews.slug) {
+    /**
+     * Only check slug uniqueness when the slug
+     * is actually changing.
+     */
+    if (data.slug !== undefined && data.slug !== existingNews.slug) {
       const slugExists = await newsRepository.existsBySlug(data.slug, client);
 
       if (slugExists) {
@@ -81,6 +96,11 @@ export const updateNews = async (
   }
 };
 
+/**
+ * Get News by ID
+ *
+ * Used mainly by admin/internal operations.
+ */
 export const getNewsById = async (id: number): Promise<News> => {
   const news = await newsRepository.findById(id);
 
@@ -91,6 +111,25 @@ export const getNewsById = async (id: number): Promise<News> => {
   return news;
 };
 
+/**
+ * Get News by Slug
+ *
+ * This is the public-friendly lookup used by
+ * the frontend news detail page.
+ */
+export const getNewsBySlug = async (slug: string): Promise<News> => {
+  const news = await newsRepository.findBySlug(slug);
+
+  if (!news) {
+    throw new ApiError(404, "News not found.");
+  }
+
+  return news;
+};
+
+/**
+ * Delete News
+ */
 export const deleteNews = async (id: number): Promise<void> => {
   const client = await pool.connect();
 
@@ -119,10 +158,16 @@ export const deleteNews = async (id: number): Promise<void> => {
   }
 };
 
+/**
+ * Get News List
+ */
 export const getNewsList = async (filter: NewsSearchFilter) => {
   return newsRepository.findAll(filter);
 };
 
+/**
+ * Change News Status
+ */
 export const changeStatus = async (
   id: number,
   status: NewsStatus,
@@ -153,6 +198,9 @@ export const changeStatus = async (
   }
 };
 
+/**
+ * Approve News
+ */
 export const approveNews = async (
   id: number,
   approvedBy: number
@@ -160,6 +208,9 @@ export const approveNews = async (
   await changeStatus(id, "APPROVED", approvedBy);
 };
 
+/**
+ * Publish News
+ */
 export const publishNews = async (
   id: number,
   publishedBy: number
@@ -167,6 +218,9 @@ export const publishNews = async (
   await changeStatus(id, "PUBLISHED", publishedBy);
 };
 
+/**
+ * Archive News
+ */
 export const archiveNews = async (
   id: number,
   archivedBy: number
@@ -174,6 +228,9 @@ export const archiveNews = async (
   await changeStatus(id, "ARCHIVED", archivedBy);
 };
 
+/**
+ * News workflow
+ */
 const workflow: Record<NewsStatus, NewsStatus[]> = {
   DRAFT: ["IN_REVIEW", "APPROVED", "ARCHIVED"],
 
@@ -188,6 +245,9 @@ const workflow: Record<NewsStatus, NewsStatus[]> = {
   REJECTED: ["DRAFT"]
 };
 
+/**
+ * Validate News status transition.
+ */
 const validateStatusTransition = (
   currentStatus: NewsStatus,
   nextStatus: NewsStatus

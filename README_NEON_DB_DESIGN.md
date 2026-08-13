@@ -528,3 +528,19 @@ ON site_visits(session_id);
 
 CREATE INDEX idx_site_visits_date
 ON site_visits(visited_at DESC);
+
+ALTER TABLE news
+ADD CONSTRAINT uq_news_slug UNIQUE (slug);
+
+
+?page=1
+&pageSize=20
+&search=metro
+&status=PUBLISHED
+&categoryId=3
+&countryId=1
+&scope=STATE
+&stateId=1
+&districtId=5
+&sortBy=published_at
+&sortOrder=DESC

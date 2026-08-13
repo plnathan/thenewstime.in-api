@@ -1,15 +1,18 @@
 // 1. External packages
 import type { NextFunction, Request, Response } from "express";
-// 3. Feature services
-import * as newsService from "./news.service.js";
-//import { NewsService } from "../news/index.js";
+
 // 2. Shared modules
 import { sendPaginated, sendSuccess } from "../../../shared/utils/response.js";
+
+// 3. Feature services
+import * as newsService from "./news.service.js";
+
 // 4. Feature mappers
 import {
   toNewsResponseDto,
   toNewsResponseDtoList
 } from "../mappers/news.dto.mapper.js";
+
 // 5. Feature types
 import type {
   CreateNewsInput,
@@ -17,7 +20,11 @@ import type {
   NewsStatus,
   UpdateNewsInput
 } from "./news.types.js";
+import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
 
+/**
+ * Create News
+ */
 export const createNews = async (
   req: Request,
   res: Response,
@@ -25,8 +32,9 @@ export const createNews = async (
 ): Promise<void> => {
   try {
     const payload = req.body as CreateNewsInput;
-    console.log(req.body);
+
     const news = await newsService.createNews(payload);
+
     const dto = toNewsResponseDto(news);
 
     sendSuccess(res, "News created successfully.", dto, 201);
@@ -35,6 +43,9 @@ export const createNews = async (
   }
 };
 
+/**
+ * Update News
+ */
 export const updateNews = async (
   req: Request,
   res: Response,
@@ -46,13 +57,18 @@ export const updateNews = async (
     const payload = req.body as UpdateNewsInput;
 
     const news = await newsService.updateNews(id, payload);
+
     const dto = toNewsResponseDto(news);
+
     sendSuccess(res, "News updated successfully.", dto);
   } catch (error) {
     next(error);
   }
 };
 
+/**
+ * Get News by ID
+ */
 export const getNewsById = async (
   req: Request,
   res: Response,
@@ -60,7 +76,6 @@ export const getNewsById = async (
 ): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    //const { id } = req.params as { id: number };
 
     const news = await newsService.getNewsById(id);
 
@@ -72,6 +87,40 @@ export const getNewsById = async (
   }
 };
 
+/**
+ * Get News by Slug
+ *
+ * Public/news-detail endpoint.
+ */
+export const getNewsBySlug = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const slugParam = req.params.slug;
+
+    if (typeof slugParam !== "string" || slugParam.trim().length === 0) {
+      next(new ApiError(400, "News slug is required."));
+
+      return;
+    }
+
+    const slug = slugParam.trim();
+
+    const news = await newsService.getNewsBySlug(slug);
+
+    const dto = toNewsResponseDto(news);
+
+    sendSuccess(res, "News retrieved successfully.", dto);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete News
+ */
 export const deleteNews = async (
   req: Request,
   res: Response,
@@ -88,6 +137,9 @@ export const deleteNews = async (
   }
 };
 
+/**
+ * Get News List
+ */
 export const getNewsList = async (
   req: Request,
   res: Response,
@@ -101,13 +153,18 @@ export const getNewsList = async (
 
       search: req.query.search?.toString(),
 
-      status: req.query.status as any,
+      status: req.query.status as NewsStatus | undefined,
 
       categoryId: req.query.categoryId
         ? Number(req.query.categoryId)
         : undefined,
 
-      scope: req.query.scope as any,
+      /**
+       * Country filter
+       */
+      countryId: req.query.countryId ? Number(req.query.countryId) : undefined,
+
+      scope: req.query.scope as NewsSearchFilter["scope"] | undefined,
 
       stateId: req.query.stateId ? Number(req.query.stateId) : undefined,
 
@@ -128,10 +185,15 @@ export const getNewsList = async (
 
     sendPaginated(res, "News retrieved successfully.", dtoList, {
       page: result.page,
+
       pageSize: result.pageSize,
+
       totalRecords: result.totalRecords,
+
       totalPages,
+
       hasPrevious: result.page > 1,
+
       hasNext: result.page < totalPages
     });
   } catch (error) {
@@ -139,6 +201,9 @@ export const getNewsList = async (
   }
 };
 
+/**
+ * Change News Status
+ */
 export const changeStatus = async (
   req: Request,
   res: Response,
@@ -160,6 +225,9 @@ export const changeStatus = async (
   }
 };
 
+/**
+ * Approve News
+ */
 export const approveNews = async (
   req: Request,
   res: Response,
@@ -180,6 +248,9 @@ export const approveNews = async (
   }
 };
 
+/**
+ * Publish News
+ */
 export const publishNews = async (
   req: Request,
   res: Response,
@@ -200,6 +271,9 @@ export const publishNews = async (
   }
 };
 
+/**
+ * Archive News
+ */
 export const archiveNews = async (
   req: Request,
   res: Response,

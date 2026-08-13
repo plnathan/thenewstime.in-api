@@ -57,7 +57,9 @@ npm install pg
 npm install -D @types/pg
 
 ---
+npm run test -- src/api/v1/news/tests/news.integration.test.ts
 
+/////////////////////////////////////
 news.repository.ts (Complete)
 ↓
 news.mapper.ts

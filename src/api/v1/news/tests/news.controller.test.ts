@@ -9,10 +9,16 @@ import {
   sendPaginated,
   sendSuccess
 } from "../../../../shared/utils/response.js"; //"../../shared/utils/apiResponse";
+import * as newsDtoMapper from "../../mappers/news.dto.mapper.js"; //"../../mappers/news.dto.mapper";
 import { mockNews, mockNewsResponse } from "./mocks/news.repository.mock.js";
 
 // Mock Service
 vi.mock("../news.service.js");
+
+vi.mock("../../mappers/news.dto.mapper.js", () => ({
+  toNewsResponseDto: vi.fn(),
+  toNewsResponseDtoList: vi.fn()
+}));
 
 // Mock Response Helpers
 vi.mock("../../../../shared/utils/response.js", () => ({
@@ -34,6 +40,12 @@ const next: NextFunction = vi.fn();
 // Reset
 beforeEach(() => {
   vi.clearAllMocks();
+
+  vi.mocked(newsDtoMapper.toNewsResponseDto).mockReturnValue(mockNewsResponse);
+
+  vi.mocked(newsDtoMapper.toNewsResponseDtoList).mockReturnValue([
+    mockNewsResponse
+  ]);
 });
 
 describe("createNews()", () => {
@@ -316,11 +328,11 @@ describe("Unexpected Exception", () => {
 // Response Verification
 describe("Response Helper Verification", () => {
   it("should use sendSuccess()", async () => {
-    vi.mocked(newsService.getNewsById).mockResolvedValue(mockNews);
-
     req.params = {
       id: "1"
     };
+
+    vi.mocked(newsService.getNewsById).mockResolvedValue(mockNews);
 
     await newsController.getNewsById(req, res, next);
 
@@ -335,11 +347,8 @@ describe("Response Helper Verification", () => {
 
     vi.mocked(newsService.getNewsList).mockResolvedValue({
       items: [mockNews],
-
       totalRecords: 1,
-
       page: 1,
-
       pageSize: 20
     });
 

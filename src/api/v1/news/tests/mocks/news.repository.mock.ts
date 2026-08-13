@@ -16,14 +16,39 @@ export const mockNews: News = {
   newsScope: "STATE",
 
   countryId: 1,
-
-  categoryName: "Politics",
+  country: {
+    id: 1,
+    code: "IN",
+    displayName: "India",
+    urlName: "india",
+    isoCode: "IN"
+  },
 
   stateId: 33,
+  state: {
+    id: 33,
+    countryId: 1,
+    code: "TN",
+    displayName: "Tamil Nadu",
+    urlName: "tamil-nadu"
+  },
 
   districtId: 601,
+  district: {
+    id: 601,
+    stateId: 33,
+    code: "CHN",
+    displayName: "Chennai",
+    urlName: "chennai"
+  },
 
   categoryId: 5,
+  category: {
+    id: 5,
+    code: "POLITICS",
+    displayName: "Politics",
+    urlName: "politics"
+  },
 
   status: "DRAFT",
 
@@ -59,10 +84,36 @@ export const mockNewsResponse = {
   content: "Budget Content",
   newsScope: "STATE",
   countryId: 1,
-  categoryName: "Politics",
+  country: {
+    id: 1,
+    code: "IN",
+    displayName: "India",
+    urlName: "india",
+    isoCode: "IN"
+  },
   stateId: 33,
+  state: {
+    id: 33,
+    countryId: 1,
+    code: "TN",
+    displayName: "Tamil Nadu",
+    urlName: "tamil-nadu"
+  },
+  district: {
+    id: 601,
+    stateId: 33,
+    code: "CHN",
+    displayName: "Chennai",
+    urlName: "chennai"
+  },
   districtId: 601,
   categoryId: 5,
+  category: {
+    id: 5,
+    code: "POLITICS",
+    displayName: "Politics",
+    urlName: "politics"
+  },
   status: "DRAFT",
   publishedAt: null
 };

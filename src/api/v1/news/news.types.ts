@@ -1,7 +1,65 @@
 export type NewsStatus =
   "DRAFT" | "IN_REVIEW" | "APPROVED" | "PUBLISHED" | "ARCHIVED" | "REJECTED";
 
-export type NewsScope = "GLOBAL" | "COUNTRY" | "STATE" | "DISTRICT";
+export type NewsScope = "WORLD" | "INDIA" | "STATE" | "DISTRICT";
+
+/**
+ * Category master-data representation.
+ */
+export interface NewsCategory {
+  id: number;
+
+  code: string;
+
+  displayName: string;
+
+  urlName: string;
+}
+
+/**
+ * Country master-data representation.
+ */
+export interface NewsCountry {
+  id: number;
+
+  code: string;
+
+  displayName: string;
+
+  urlName: string;
+
+  isoCode: string | null;
+}
+
+/**
+ * State master-data representation.
+ */
+export interface NewsState {
+  id: number;
+
+  countryId: number;
+
+  code: string;
+
+  displayName: string;
+
+  urlName: string;
+}
+
+/**
+ * District master-data representation.
+ */
+export interface NewsDistrict {
+  id: number;
+
+  stateId: number;
+
+  code: string;
+
+  displayName: string;
+
+  urlName: string;
+}
 
 export interface News {
   id: number;
@@ -26,7 +84,13 @@ export interface News {
 
   categoryId: number;
 
-  categoryName: string;
+  category: NewsCategory;
+
+  country: NewsCountry | null;
+
+  state: NewsState | null;
+
+  district: NewsDistrict | null;
 
   status: NewsStatus;
 
@@ -54,10 +118,6 @@ export interface News {
 }
 
 export interface CreateNewsInput {
-  //id: number;
-
-  //newsNumber: number;
-
   title: string;
 
   slug: string;
@@ -79,8 +139,6 @@ export interface CreateNewsInput {
   draftedBy: number;
 
   createdBy: number;
-
-  //status: NewsStatus;
 }
 
 export interface UpdateNewsInput {
@@ -115,6 +173,8 @@ export interface NewsSearchFilter {
   status?: NewsStatus | undefined;
 
   categoryId?: number | undefined;
+
+  countryId?: number | undefined;
 
   scope?: NewsScope | undefined;
 

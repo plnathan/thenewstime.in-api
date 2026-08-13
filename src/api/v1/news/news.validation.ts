@@ -9,17 +9,42 @@ export const newsStatusSchema = z.enum([
   "REJECTED"
 ]);
 
-export const newsScopeSchema = z.enum([
-  "GLOBAL",
-  "COUNTRY",
-  "STATE",
-  "DISTRICT"
-]);
+/**
+ * News geographical scope.
+ *
+ * WORLD    -> International / உலகம்
+ * INDIA    -> National / இந்தியா
+ * STATE    -> State / மாநிலம்
+ * DISTRICT -> District / மாவட்டம்
+ */
+export const newsScopeSchema = z.enum(["WORLD", "INDIA", "STATE", "DISTRICT"]);
+
+/**
+ * Slug format:
+ *
+ * - lowercase English letters
+ * - numbers
+ * - words separated by single hyphens
+ *
+ * Examples:
+ *   chennai-metro-project
+ *   india-budget-2026
+ *   sports-news
+ */
+export const newsSlugSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(300)
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    "Slug must contain only lowercase letters, numbers, and single hyphens"
+  );
 
 export const createNewsSchema = z.object({
   title: z.string().trim().min(3).max(1000),
 
-  slug: z.string().trim().min(3).max(300),
+  slug: newsSlugSchema,
 
   summary: z.string().trim().max(5000).optional(),
 
@@ -43,7 +68,7 @@ export const createNewsSchema = z.object({
 export const updateNewsSchema = z.object({
   title: z.string().trim().min(3).max(1000).optional(),
 
-  slug: z.string().trim().min(3).max(300).optional(),
+  slug: newsSlugSchema.optional(),
 
   summary: z.string().trim().max(5000).optional(),
 
@@ -79,6 +104,8 @@ export const newsSearchSchema = z.object({
 
   categoryId: z.coerce.number().int().positive().optional(),
 
+  countryId: z.coerce.number().int().positive().optional(),
+
   scope: newsScopeSchema.optional(),
 
   stateId: z.coerce.number().int().positive().optional(),
@@ -102,6 +129,16 @@ export const newsSearchSchema = z.object({
 
 export const idParamSchema = z.object({
   id: z.coerce.number().int().positive()
+});
+
+export const newsSlugParamsSchema = z.object({
+  slug: newsSlugSchema
+  // z
+  //   .string()
+  //   .regex(
+  //     /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+  //     "Slug must contain only lowercase letters, numbers, and single hyphens"
+  //   )
 });
 
 export type CreateNewsRequest = z.infer<typeof createNewsSchema>;

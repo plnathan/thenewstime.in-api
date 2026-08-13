@@ -100,3 +100,7 @@ npm install @scalar/api-reference
 To run the specific file test
 ------------------------------
 npx vitest run src/api/v1/news/tests/news.integration.test.ts
+
+npx vitest run src/api/v1/news/tests/news.controller.test.ts
+
+npx vitest run src/api/v1/news/tests/news.repository.test.ts
