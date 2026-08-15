@@ -94,6 +94,16 @@ export interface News {
 
   status: NewsStatus;
 
+  /**
+   * Display ordering / promotion.
+   *
+   * A value greater than 0 is meaningful only while
+   * displayPriorityUntil is in the future.
+   */
+  displayPriority: number;
+
+  displayPriorityUntil: Date | null;
+
   draftedBy: number;
 
   approvedBy: number | null;
@@ -161,6 +171,17 @@ export interface UpdateNewsInput {
   categoryId?: number;
 
   updatedBy: number;
+}
+
+export interface PromoteNewsInput {
+  promotedBy: number;
+
+  /**
+   * Promotion duration in days.
+   *
+   * The API currently supports exactly 3 days.
+   */
+  durationDays: 3;
 }
 
 export interface NewsSearchFilter {

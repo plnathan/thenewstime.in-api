@@ -14,13 +14,13 @@ import {
 } from "../mappers/news.dto.mapper.js";
 
 // 5. Feature types
+import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
 import type {
   CreateNewsInput,
   NewsSearchFilter,
   NewsStatus,
   UpdateNewsInput
 } from "./news.types.js";
-import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
 
 /**
  * Create News
@@ -289,6 +289,61 @@ export const archiveNews = async (
     await newsService.archiveNews(id, archivedBy);
 
     sendSuccess(res, "News archived successfully.");
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Promote News
+ *
+ * POST /api/v1/news/:id/promote
+ */
+export const promoteNews = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+
+    const { promotedBy, durationDays } = req.body as {
+      promotedBy: number;
+      durationDays: 3;
+    };
+
+    const news = await newsService.promoteNews(id, promotedBy, durationDays);
+
+    const dto = toNewsResponseDto(news);
+
+    sendSuccess(res, "News promoted successfully.", dto);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Remove News Promotion
+ *
+ * DELETE /api/v1/news/:id/promotion
+ */
+export const removePromotion = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+
+    const { updatedBy } = req.body as {
+      updatedBy: number;
+    };
+
+    const news = await newsService.removePromotion(id, updatedBy);
+
+    const dto = toNewsResponseDto(news);
+
+    sendSuccess(res, "News promotion removed successfully.", dto);
   } catch (error) {
     next(error);
   }

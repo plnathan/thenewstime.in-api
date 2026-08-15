@@ -77,5 +77,9 @@ export interface NewsResponseDto {
 
   status: string;
 
+  displayPriority: number | null;
+
+  displayPriorityUntil: Date | null;
+
   publishedAt: Date | null;
 }

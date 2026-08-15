@@ -10,6 +10,8 @@ import {
   idParamSchema,
   newsSearchSchema,
   newsSlugParamsSchema,
+  promoteNewsSchema,
+  removePromotionSchema,
   updateNewsSchema
 } from "./news.validation.js";
 
@@ -65,6 +67,30 @@ router.patch("/:id/publish", newsController.publishNews);
  * PATCH /api/v1/news/:id/archive
  */
 router.patch("/:id/archive", newsController.archiveNews);
+
+/**
+ * POST /api/v1/news/:id/promote
+ *
+ * Promote published news for 3 days.
+ */
+router.post(
+  "/:id/promote",
+  validate(idParamSchema, "params"),
+  validate(promoteNewsSchema, "body"),
+  newsController.promoteNews
+);
+
+/**
+ * DELETE /api/v1/news/:id/promotion
+ *
+ * Remove active promotion.
+ */
+router.delete(
+  "/:id/promotion",
+  validate(idParamSchema, "params"),
+  validate(removePromotionSchema, "body"),
+  newsController.removePromotion
+);
 
 /**
  * GET /api/v1/news/:id

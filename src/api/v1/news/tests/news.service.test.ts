@@ -19,7 +19,9 @@ vi.mock("../news.repository.js", () => ({
   update: vi.fn(),
   deleteNews: vi.fn(),
   findAll: vi.fn(),
-  changeStatus: vi.fn()
+  changeStatus: vi.fn(),
+  promote: vi.fn(),
+  removePromotion: vi.fn()
 }));
 
 // Mock Database
@@ -418,4 +420,103 @@ describe("Rollback", () => {
     expect(mockClient.query).toHaveBeenCalledWith("ROLLBACK");
   });
 });
-// --------------------
+
+describe("promoteNews()", () => {
+  it("should promote published news for 3 days", async () => {
+    repository.findById.mockResolvedValue({
+      ...mockNews,
+      status: "PUBLISHED"
+    });
+
+    repository.promote.mockResolvedValue({
+      ...mockNews,
+      status: "PUBLISHED",
+      displayPriority: 1,
+      displayPriorityUntil: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+    });
+
+    const result = await newsService.promoteNews(1, 10, 3);
+
+    expect(result.displayPriority).toBe(1);
+
+    expect(repository.promote).toHaveBeenCalledWith(1, 10, 3, mockClient);
+
+    expect(mockClient.query).toHaveBeenCalledWith("COMMIT");
+  });
+
+  it("should reject promotion of unpublished news", async () => {
+    repository.findById.mockResolvedValue({
+      ...mockNews,
+      status: "DRAFT"
+    });
+
+    await expect(newsService.promoteNews(1, 10, 3)).rejects.toBeInstanceOf(
+      ApiError
+    );
+
+    expect(repository.promote).not.toHaveBeenCalled();
+
+    expect(mockClient.query).toHaveBeenCalledWith("ROLLBACK");
+  });
+
+  it("should reject promotion duration other than 3 days", async () => {
+    repository.findById.mockResolvedValue({
+      ...mockNews,
+      status: "PUBLISHED"
+    });
+
+    await expect(newsService.promoteNews(1, 10, 7)).rejects.toBeInstanceOf(
+      ApiError
+    );
+
+    expect(repository.promote).not.toHaveBeenCalled();
+
+    expect(mockClient.query).toHaveBeenCalledWith("ROLLBACK");
+  });
+
+  it("should return 404 for unknown news", async () => {
+    repository.findById.mockResolvedValue(null);
+
+    await expect(newsService.promoteNews(999, 10, 3)).rejects.toBeInstanceOf(
+      ApiError
+    );
+
+    expect(repository.promote).not.toHaveBeenCalled();
+  });
+});
+
+describe("removePromotion()", () => {
+  it("should remove promotion", async () => {
+    repository.findById.mockResolvedValue({
+      ...mockNews,
+      status: "PUBLISHED",
+      displayPriority: 1,
+      displayPriorityUntil: new Date()
+    });
+
+    repository.removePromotion.mockResolvedValue({
+      ...mockNews,
+      status: "PUBLISHED",
+      displayPriority: 0,
+      displayPriorityUntil: null
+    });
+
+    const result = await newsService.removePromotion(1, 10);
+
+    expect(result.displayPriority).toBe(0);
+
+    expect(result.displayPriorityUntil).toBeNull();
+
+    expect(repository.removePromotion).toHaveBeenCalledWith(1, 10, mockClient);
+
+    expect(mockClient.query).toHaveBeenCalledWith("COMMIT");
+  });
+
+  it("should return 404 for unknown news", async () => {
+    repository.findById.mockResolvedValue(null);
+
+    await expect(newsService.removePromotion(999, 10)).rejects.toBeInstanceOf(
+      ApiError
+    );
+  });
+});

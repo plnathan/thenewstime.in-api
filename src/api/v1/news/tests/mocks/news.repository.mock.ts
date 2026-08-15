@@ -52,6 +52,10 @@ export const mockNews: News = {
 
   status: "DRAFT",
 
+  displayPriority: 0,
+
+  displayPriorityUntil: null,
+
   draftedBy: 1,
 
   approvedBy: null,
@@ -115,5 +119,7 @@ export const mockNewsResponse = {
     urlName: "politics"
   },
   status: "DRAFT",
+  displayPriority: 0,
+  displayPriorityUntil: null,
   publishedAt: null
 };

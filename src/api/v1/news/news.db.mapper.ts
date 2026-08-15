@@ -83,6 +83,17 @@ export const mapNews = (row: any): News => {
 
     status: row.status,
 
+    displayPriority:
+      row.display_priority !== null && row.display_priority !== undefined
+        ? Number(row.display_priority)
+        : 0,
+
+    displayPriorityUntil:
+      row.display_priority_until !== null &&
+      row.display_priority_until !== undefined
+        ? new Date(row.display_priority_until)
+        : null,
+
     draftedBy: Number(row.drafted_by),
 
     approvedBy: row.approved_by !== null ? Number(row.approved_by) : null,

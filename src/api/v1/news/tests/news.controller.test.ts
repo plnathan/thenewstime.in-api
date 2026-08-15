@@ -13,7 +13,21 @@ import * as newsDtoMapper from "../../mappers/news.dto.mapper.js"; //"../../mapp
 import { mockNews, mockNewsResponse } from "./mocks/news.repository.mock.js";
 
 // Mock Service
-vi.mock("../news.service.js");
+//vi.mock("../news.service.js");
+vi.mock("../news.service.js", () => ({
+  createNews: vi.fn(),
+  updateNews: vi.fn(),
+  getNewsById: vi.fn(),
+  getNewsBySlug: vi.fn(),
+  deleteNews: vi.fn(),
+  getNewsList: vi.fn(),
+  changeStatus: vi.fn(),
+  approveNews: vi.fn(),
+  publishNews: vi.fn(),
+  archiveNews: vi.fn(),
+  promoteNews: vi.fn(),
+  removePromotion: vi.fn()
+}));
 
 vi.mock("../../mappers/news.dto.mapper.js", () => ({
   toNewsResponseDto: vi.fn(),
@@ -372,5 +386,56 @@ describe("Invalid Route Parameter", () => {
     await newsController.getNewsById(req, res, next);
 
     expect(next).toHaveBeenCalled();
+  });
+});
+
+describe("promoteNews()", () => {
+  it("should promote news successfully", async () => {
+    req.params = {
+      id: "1"
+    };
+
+    req.body = {
+      promotedBy: 10,
+      durationDays: 3
+    };
+
+    vi.mocked(newsService.promoteNews).mockResolvedValue({
+      ...mockNews,
+      status: "PUBLISHED",
+      displayPriority: 1,
+      displayPriorityUntil: new Date()
+    });
+
+    await newsController.promoteNews(req, res, next);
+
+    expect(newsService.promoteNews).toHaveBeenCalledWith(1, 10, 3);
+
+    expect(sendSuccess).toHaveBeenCalled();
+  });
+});
+
+describe("removePromotion()", () => {
+  it("should remove promotion successfully", async () => {
+    req.params = {
+      id: "1"
+    };
+
+    req.body = {
+      updatedBy: 10
+    };
+
+    vi.mocked(newsService.removePromotion).mockResolvedValue({
+      ...mockNews,
+      status: "PUBLISHED",
+      displayPriority: 0,
+      displayPriorityUntil: null
+    });
+
+    await newsController.removePromotion(req, res, next);
+
+    expect(newsService.removePromotion).toHaveBeenCalledWith(1, 10);
+
+    expect(sendSuccess).toHaveBeenCalled();
   });
 });

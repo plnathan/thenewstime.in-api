@@ -604,6 +604,84 @@ describe("Workflow", () => {
   });
 });
 
+describe("POST /api/v1/news/:id/promote", () => {
+  it("should promote a published news article for 3 days", async () => {
+    expect(createdId).toBeGreaterThan(0);
+
+    const publishResponse = await request(app)
+      .patch(`/api/v1/news/${createdId}/publish`)
+      .send({
+        publishedBy: 1
+      });
+
+    expect(publishResponse.status).toBe(200);
+
+    const response = await request(app)
+      .post(`/api/v1/news/${createdId}/promote`)
+      .send({
+        promotedBy: 1,
+        durationDays: 3
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(response.body.success).toBe(true);
+
+    expect(response.body.data).toBeDefined();
+
+    expect(response.body.data.displayPriority).toBeGreaterThan(0);
+
+    expect(response.body.data.displayPriorityUntil).toBeDefined();
+  });
+
+  it("should reject promotion duration other than 3 days", async () => {
+    const response = await request(app)
+      .post(`/api/v1/news/${createdId}/promote`)
+      .send({
+        promotedBy: 1,
+        durationDays: 7
+      });
+
+    expect(response.status).toBe(400);
+
+    expect(response.body.success).toBe(false);
+  });
+});
+
+describe("PATCH /api/v1/news/:id/archive", () => {
+  it("should archive a published news article", async () => {
+    const response = await request(app)
+      .patch(`/api/v1/news/${createdId}/archive`)
+      .send({
+        archivedBy: 1
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(response.body.success).toBe(true);
+  });
+});
+
+describe("DELETE /api/v1/news/:id/promotion", () => {
+  it("should remove news promotion", async () => {
+    const response = await request(app)
+      .delete(`/api/v1/news/${createdId}/promotion`)
+      .send({
+        updatedBy: 1
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(response.body.success).toBe(true);
+
+    expect(response.body.data).toBeDefined();
+
+    expect(response.body.data.displayPriority).toBe(0);
+
+    expect(response.body.data.displayPriorityUntil).toBeNull();
+  });
+});
+
 /**
  * ============================================================
  * DELETE
@@ -629,6 +707,10 @@ describe("DELETE /api/v1/news/:id", () => {
     expect(response.body.success).toBe(false);
   });
 });
+
+
+
+
 
 // Additional POST Tests:
 // ✅ Valid request

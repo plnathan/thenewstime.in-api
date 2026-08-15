@@ -63,6 +63,8 @@ const NEWS_SELECT = `
     d.url_name AS district_url_name,
 
     n.status,
+    n.display_priority,
+    n.display_priority_until,
     n.drafted_by,
     n.approved_by,
     n.published_by,
@@ -339,6 +341,94 @@ export const update = async (
 };
 
 /**
+ * Promote News
+ *
+ * Promotes a published article for the requested duration.
+ *
+ * The current business rule supports a 3-day promotion.
+ *
+ * A higher display priority is assigned than any currently
+ * active promotion, which means the most recently promoted
+ * article appears first.
+ */
+export const promote = async (
+  id: number,
+  promotedBy: number,
+  durationDays: number,
+  client?: PoolClient
+): Promise<News | null> => {
+  const db = client ?? pool;
+
+  const sql = `
+    UPDATE news
+    SET
+      display_priority = (
+        SELECT COALESCE(MAX(active_news.display_priority), 0) + 1
+        FROM news AS active_news
+        WHERE active_news.display_priority_until IS NOT NULL
+          AND active_news.display_priority_until > NOW()
+          AND active_news.status = 'PUBLISHED'
+      ),
+
+      display_priority_until =
+        NOW() + ($2 * INTERVAL '1 day'),
+
+      updated_by = $3,
+
+      updated_at = NOW()
+
+    WHERE id = $1
+      AND status = 'PUBLISHED'
+
+    RETURNING id;
+  `;
+
+  const result: QueryResult = await db.query(sql, [
+    id,
+    durationDays,
+    promotedBy
+  ]);
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return findById(id, client);
+};
+
+/**
+ * Remove News Promotion
+ *
+ * Resets the article to normal published ordering.
+ */
+export const removePromotion = async (
+  id: number,
+  updatedBy: number,
+  client?: PoolClient
+): Promise<News | null> => {
+  const db = client ?? pool;
+
+  const sql = `
+    UPDATE news
+    SET
+      display_priority = 0,
+      display_priority_until = NULL,
+      updated_by = $2,
+      updated_at = NOW()
+    WHERE id = $1
+    RETURNING id;
+  `;
+
+  const result: QueryResult = await db.query(sql, [id, updatedBy]);
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return findById(id, client);
+};
+
+/**
  * Delete News
  */
 export const deleteNews = async (
@@ -407,13 +497,26 @@ export const changeStatus = async (
 
     default:
       sql = `
-        UPDATE news
-        SET
-          status = $1,
-          updated_by = $2,
-          updated_at = NOW()
-        WHERE id = $3;
-      `;
+    UPDATE news
+    SET status = $1::news_status,
+
+      display_priority =
+        CASE
+          WHEN $1 = 'ARCHIVED' THEN 0
+          ELSE display_priority
+        END,
+
+      display_priority_until =
+        CASE
+          WHEN $1 = 'ARCHIVED' THEN NULL
+          ELSE display_priority_until
+        END,
+
+      updated_by = $2,
+      updated_at = NOW()
+
+    WHERE id = $3;
+  `;
 
       values = [status, userId, id];
 
@@ -517,19 +620,22 @@ export const findAll = async (
     "title",
     "status",
     "news_number",
+    "display_priority",
+    "drafted_at",
     "drafted_at",
     "published_at",
     "created_at",
     "updated_at"
   ];
 
-  const requestedSortBy = filter.sortBy ?? "created_at";
-
-  const sortBy = allowedSortColumns.includes(requestedSortBy)
-    ? `n.${requestedSortBy}`
-    : "n.created_at";
+  const requestedSortBy = filter.sortBy;
 
   const sortOrder = filter.sortOrder === "ASC" ? "ASC" : "DESC";
+
+  const sortBy =
+    requestedSortBy && allowedSortColumns.includes(requestedSortBy)
+      ? `n.${requestedSortBy}`
+      : null;
 
   /**
    * Pagination
@@ -574,7 +680,18 @@ export const findAll = async (
   const sql = `
     ${NEWS_SELECT}
     ${whereClause}
-    ORDER BY ${sortBy} ${sortOrder}
+    ORDER BY
+  CASE
+    WHEN n.display_priority_until IS NOT NULL
+      AND n.display_priority_until > NOW()
+      AND n.status = 'PUBLISHED'
+    THEN n.display_priority
+    ELSE 0
+  END DESC,
+
+  ${sortBy ? `${sortBy} ${sortOrder}` : "n.published_at DESC NULLS LAST"},
+
+  n.id DESC
     LIMIT $${limitIndex}
     OFFSET $${offsetIndex};
   `;

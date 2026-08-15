@@ -229,6 +229,105 @@ export const archiveNews = async (
 };
 
 /**
+ * Promote News
+ *
+ * Business rules:
+ *
+ * - Article must exist.
+ * - Article must be PUBLISHED.
+ * - Promotion duration must be 3 days.
+ */
+export const promoteNews = async (
+  id: number,
+  promotedBy: number,
+  durationDays: number
+): Promise<News> => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const news = await newsRepository.findById(id, client);
+
+    if (!news) {
+      throw new ApiError(404, "News not found.");
+    }
+
+    if (news.status !== "PUBLISHED") {
+      throw new ApiError(400, "Only published news can be promoted.");
+    }
+
+    if (durationDays !== 3) {
+      throw new ApiError(
+        400,
+        "News promotion duration must be exactly 3 days."
+      );
+    }
+
+    const promotedNews = await newsRepository.promote(
+      id,
+      promotedBy,
+      durationDays,
+      client
+    );
+
+    if (!promotedNews) {
+      throw new ApiError(400, "Unable to promote news.");
+    }
+
+    await client.query("COMMIT");
+
+    return promotedNews;
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Remove News Promotion
+ */
+export const removePromotion = async (
+  id: number,
+  updatedBy: number
+): Promise<News> => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const news = await newsRepository.findById(id, client);
+
+    if (!news) {
+      throw new ApiError(404, "News not found.");
+    }
+
+    const updatedNews = await newsRepository.removePromotion(
+      id,
+      updatedBy,
+      client
+    );
+
+    if (!updatedNews) {
+      throw new ApiError(500, "Unable to remove news promotion.");
+    }
+
+    await client.query("COMMIT");
+
+    return updatedNews;
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
  * News workflow
  */
 const workflow: Record<NewsStatus, NewsStatus[]> = {

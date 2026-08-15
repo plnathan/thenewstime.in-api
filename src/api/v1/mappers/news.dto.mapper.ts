@@ -1,11 +1,11 @@
-import type { News } from "../news/news.types.js";
 import type {
-  NewsResponseDto,
   NewsCategoryResponseDto,
   NewsCountryResponseDto,
-  NewsStateResponseDto,
-  NewsDistrictResponseDto
+  NewsDistrictResponseDto,
+  NewsResponseDto,
+  NewsStateResponseDto
 } from "../dto/newsResponse.dto.js";
+import type { News } from "../news/news.types.js";
 
 export function toNewsResponseDto(news: News): NewsResponseDto {
   const category: NewsCategoryResponseDto = {
@@ -92,6 +92,10 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
     district,
 
     status: news.status,
+
+    displayPriority: news.displayPriority,
+
+    displayPriorityUntil: news.displayPriorityUntil,
 
     publishedAt: news.publishedAt
   };

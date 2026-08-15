@@ -93,6 +93,20 @@ export const changeStatusSchema = z.object({
   userId: z.number().int().positive()
 });
 
+export const promoteNewsSchema = z.object({
+  promotedBy: z.number().int().positive(),
+
+  /**
+   * Promotion is intentionally restricted to 3 days
+   * for the first version of the feature.
+   */
+  durationDays: z.literal(3).default(3)
+});
+
+export const removePromotionSchema = z.object({
+  updatedBy: z.number().int().positive()
+});
+
 export const newsSearchSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
 

@@ -498,4 +498,159 @@ describe("update()", () => {
     expect(result).toBeNull();
   });
 });
-// -------------
+
+describe("promote()", () => {
+  it("should promote a published news item", async () => {
+    vi.mocked(pool.query)
+      .mockResolvedValueOnce({
+        rows: [{ id: 1 }],
+        rowCount: 1
+      } as never)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 1,
+            news_number: 1001,
+            title: "Promoted News",
+            slug: "promoted-news",
+            summary: "Summary",
+            content: "Content",
+            news_scope: "STATE",
+
+            category_id: 5,
+            category_code: "POLITICS",
+            category_display_name: "Politics",
+            category_url_name: "politics",
+
+            country_id: 1,
+            country_code: "IN",
+            country_display_name: "India",
+            country_url_name: "india",
+            country_iso_code: "IN",
+
+            state_id: 33,
+            state_country_id: 1,
+            state_code: "TN",
+            state_display_name: "Tamil Nadu",
+            state_url_name: "tamil-nadu",
+
+            district_id: 601,
+            district_state_id: 33,
+            district_code: "CHN",
+            district_display_name: "Chennai",
+            district_url_name: "chennai",
+
+            status: "PUBLISHED",
+
+            display_priority: 1,
+
+            display_priority_until: new Date(
+              Date.now() + 3 * 24 * 60 * 60 * 1000
+            ),
+
+            drafted_by: 1,
+            approved_by: 1,
+            published_by: 1,
+            archived_by: null,
+
+            drafted_at: new Date(),
+            approved_at: new Date(),
+            published_at: new Date(),
+
+            created_by: 1,
+            updated_by: 1,
+
+            created_at: new Date(),
+            updated_at: new Date()
+          }
+        ],
+        rowCount: 1
+      } as never);
+
+    const result = await repository.promote(1, 10, 3);
+
+    expect(result).not.toBeNull();
+
+    expect(result?.displayPriority).toBe(1);
+
+    expect(result?.displayPriorityUntil).toBeInstanceOf(Date);
+
+    expect(pool.query).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("removePromotion()", () => {
+  it("should remove an active promotion", async () => {
+    vi.mocked(pool.query)
+      .mockResolvedValueOnce({
+        rows: [{ id: 1 }],
+        rowCount: 1
+      } as never)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 1,
+            news_number: 1001,
+            title: "News",
+            slug: "news",
+            summary: "Summary",
+            content: "Content",
+            news_scope: "STATE",
+
+            category_id: 5,
+            category_code: "POLITICS",
+            category_display_name: "Politics",
+            category_url_name: "politics",
+
+            country_id: 1,
+            country_code: "IN",
+            country_display_name: "India",
+            country_url_name: "india",
+            country_iso_code: "IN",
+
+            state_id: 33,
+            state_country_id: 1,
+            state_code: "TN",
+            state_display_name: "Tamil Nadu",
+            state_url_name: "tamil-nadu",
+
+            district_id: 601,
+            district_state_id: 33,
+            district_code: "CHN",
+            district_display_name: "Chennai",
+            district_url_name: "chennai",
+
+            status: "PUBLISHED",
+
+            display_priority: 0,
+
+            display_priority_until: null,
+
+            drafted_by: 1,
+            approved_by: 1,
+            published_by: 1,
+            archived_by: null,
+
+            drafted_at: new Date(),
+            approved_at: new Date(),
+            published_at: new Date(),
+
+            created_by: 1,
+            updated_by: 10,
+
+            created_at: new Date(),
+            updated_at: new Date()
+          }
+        ],
+        rowCount: 1
+      } as never);
+
+    const result = await repository.removePromotion(1, 10);
+
+    expect(result?.displayPriority).toBe(0);
+
+    expect(result?.displayPriorityUntil).toBeNull();
+
+    expect(pool.query).toHaveBeenCalledTimes(2);
+  });
+});

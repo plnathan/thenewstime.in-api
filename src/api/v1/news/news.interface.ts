@@ -2,9 +2,9 @@ import type {
   CreateNewsInput,
   News,
   NewsSearchFilter,
+  NewsStatus,
   PaginatedNews,
-  UpdateNewsInput,
-  NewsStatus
+  UpdateNewsInput
 } from "./news.types.js";
 
 export interface INewsRepository {
@@ -25,4 +25,12 @@ export interface INewsRepository {
   findAll(filter: NewsSearchFilter): Promise<PaginatedNews>;
 
   changeStatus(id: number, status: NewsStatus, userId: number): Promise<void>;
+
+  promote(
+    id: number,
+    promotedBy: number,
+    durationDays: number
+  ): Promise<News | null>;
+
+  removePromotion(id: number, updatedBy: number): Promise<News | null>;
 }
