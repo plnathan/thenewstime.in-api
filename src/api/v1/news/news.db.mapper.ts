@@ -81,6 +81,8 @@ export const mapNews = (row: any): News => {
 
     district,
 
+    media: Array.isArray(row.media) ? row.media : [],
+    
     status: row.status,
 
     displayPriority:

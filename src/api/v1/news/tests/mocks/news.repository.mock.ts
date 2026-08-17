@@ -118,6 +118,7 @@ export const mockNewsResponse = {
     displayName: "Politics",
     urlName: "politics"
   },
+  media: [],
   status: "DRAFT",
   displayPriority: 0,
   displayPriorityUntil: null,

@@ -1,3 +1,5 @@
+import type { NewsMediaItem } from "../media/media.types.js";
+
 export type NewsStatus =
   "DRAFT" | "IN_REVIEW" | "APPROVED" | "PUBLISHED" | "ARCHIVED" | "REJECTED";
 
@@ -73,6 +75,13 @@ export interface News {
   summary: string | null;
 
   content: string;
+
+  /**
+   * Ordered media associated with this article.
+   *
+   * displayOrder = 1 is the primary image.
+   */
+  media?: NewsMediaItem[];
 
   newsScope: NewsScope;
 

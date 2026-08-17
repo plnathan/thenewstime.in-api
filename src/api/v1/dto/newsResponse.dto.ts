@@ -44,6 +44,42 @@ export interface NewsDistrictResponseDto {
   urlName: string;
 }
 
+export interface NewsMediaResponseDto {
+  id: number;
+
+  mediaAssetId: number;
+
+  provider: string;
+
+  assetType: string;
+
+  mediaRole: string;
+
+  displayOrder: number;
+
+  publicId: string;
+
+  originalFileName: string | null;
+
+  mimeType: string | null;
+
+  fileExtension: string | null;
+
+  fileSizeBytes: number | null;
+
+  width: number | null;
+
+  height: number | null;
+
+  altText: string | null;
+
+  caption: string | null;
+
+  fileUrl: string;
+
+  thumbnailUrl: string | null;
+}
+
 export interface NewsResponseDto {
   id: number;
 
@@ -74,6 +110,8 @@ export interface NewsResponseDto {
   districtId: number | null;
 
   district: NewsDistrictResponseDto | null;
+
+  media: NewsMediaResponseDto[];
 
   status: string;
 

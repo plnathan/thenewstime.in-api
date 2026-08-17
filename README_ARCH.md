@@ -405,51 +405,87 @@ DELETE /:id
 
 World news
 {
-  "newsScope": "WORLD",
-  "countryId": null,
-  "stateId": null,
-  "districtId": null
+"newsScope": "WORLD",
+"countryId": null,
+"stateId": null,
+"districtId": null
 }
 
 India / National news
 {
-  "newsScope": "INDIA",
-  "countryId": 1,
-  "stateId": null,
-  "districtId": null
+"newsScope": "INDIA",
+"countryId": 1,
+"stateId": null,
+"districtId": null
 }
 
 State news
 {
-  "newsScope": "STATE",
-  "countryId": 1,
-  "stateId": 1,
-  "districtId": null
+"newsScope": "STATE",
+"countryId": 1,
+"stateId": 1,
+"districtId": null
 }
 
 District news
 {
-  "newsScope": "DISTRICT",
-  "countryId": 1,
-  "stateId": 1,
-  "districtId": 1
+"newsScope": "DISTRICT",
+"countryId": 1,
+"stateId": 1,
+"districtId": 1
 }
 
 Database
-   ↓
+↓
 WORLD
 INDIA
 STATE
 DISTRICT
-   ↓
+↓
 API validation
-   ↓
+↓
 TypeScript NewsScope
-   ↓
+↓
 API filtering
-   ↓
+↓
 News DTO
-   ↓
+↓
 React UI
-   ↓
+↓
 URL / slug navigation
+
+                         thenewstime.in
+                               │
+              ┌────────────────┴────────────────┐
+              │                                 │
+          PUBLIC API                        ADMIN API
+              │                                 │
+      ┌───────┼────────┐              ┌─────────┼─────────┐
+      │       │        │              │         │         │
+     News   Search   Media          News      Media    Master
+      │                         Management             Data
+      │
+      ▼
+
+PostgreSQL
+│
+┌────┼──────────────────────────────────┐
+│ │ │ │ │
+news media_assets news_media categories locations
+│
+└───────────────┐
+▼
+Cloudinary
+
+The future architecture is:
+---------------------------
+
+React Admin
+│
+│ multipart upload
+▼
+Node API
+│
+├── PostgreSQL
+│
+└── Cloudinary

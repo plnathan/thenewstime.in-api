@@ -62,6 +62,45 @@ const NEWS_SELECT = `
     d.display_name AS district_display_name,
     d.url_name AS district_url_name,
 
+    COALESCE(
+    (
+    SELECT json_agg(
+      json_build_object(
+        'id', nm.id,
+        'mediaAssetId', ma.id,
+        'provider', ma.provider,
+        'assetType', ma.asset_type,
+        'mediaRole', nm.media_role,
+        'displayOrder', nm.display_order,
+        'publicId', ma.public_id,
+        'originalFileName', ma.original_file_name,
+        'mimeType', ma.mime_type,
+        'fileExtension', ma.file_extension,
+        'fileSizeBytes', ma.file_size_bytes,
+        'width', ma.width,
+        'height', ma.height,
+        'altText', ma.alt_text,
+        'caption', ma.caption,
+        'fileUrl', ma.file_url,
+        'thumbnailUrl', ma.thumbnail_url
+      )
+      ORDER BY
+        nm.display_order ASC,
+        nm.id ASC
+    )
+
+    FROM news_media nm
+
+    INNER JOIN media_assets ma
+      ON ma.id = nm.media_asset_id
+
+    WHERE nm.news_id = n.id
+
+      AND ma.status = 'ACTIVE'
+      ),
+      '[]'::json
+    ) AS media,
+
     n.status,
     n.display_priority,
     n.display_priority_until,

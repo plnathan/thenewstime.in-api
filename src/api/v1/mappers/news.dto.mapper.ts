@@ -2,6 +2,7 @@ import type {
   NewsCategoryResponseDto,
   NewsCountryResponseDto,
   NewsDistrictResponseDto,
+  NewsMediaResponseDto,
   NewsResponseDto,
   NewsStateResponseDto
 } from "../dto/newsResponse.dto.js";
@@ -60,6 +61,43 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
       }
     : null;
 
+  const media: NewsMediaResponseDto[] = (news.media ?? []).map((item) => ({
+    id: Number(item.id),
+
+    mediaAssetId: Number(item.mediaAssetId),
+
+    provider: item.provider,
+
+    assetType: item.assetType,
+
+    mediaRole: item.mediaRole,
+
+    displayOrder: Number(item.displayOrder),
+
+    publicId: item.publicId,
+
+    originalFileName: item.originalFileName,
+
+    mimeType: item.mimeType,
+
+    fileExtension: item.fileExtension,
+
+    fileSizeBytes:
+      item.fileSizeBytes === null ? null : Number(item.fileSizeBytes),
+
+    width: item.width === null ? null : Number(item.width),
+
+    height: item.height === null ? null : Number(item.height),
+
+    altText: item.altText,
+
+    caption: item.caption,
+
+    fileUrl: item.fileUrl,
+
+    thumbnailUrl: item.thumbnailUrl
+  }));
+
   return {
     id: news.id,
 
@@ -90,6 +128,8 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
     districtId: news.districtId,
 
     district,
+
+    media,
 
     status: news.status,
 
