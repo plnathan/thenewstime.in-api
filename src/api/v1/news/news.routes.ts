@@ -18,9 +18,52 @@ import {
 const router = Router();
 
 /**
+ * ============================================================
+ * PUBLIC API
+ * ============================================================
+ *
+ * These routes are ONLY for the public website.
+ *
+ * They always return PUBLISHED news.
+ */
+
+/**
+ * GET /api/v1/news/public
+ *
+ * Get published news list.
+ */
+router.get(
+  "/public",
+  validate(newsSearchSchema, "query"),
+  newsController.getPublishedNewsList
+);
+
+/**
+ * GET /api/v1/news/public/slug/:slug
+ *
+ * Get published news by slug.
+ *
+ * IMPORTANT:
+ * This route must appear before any conflicting dynamic route.
+ */
+router.get(
+  "/public/slug/:slug",
+  validate(newsSlugParamsSchema, "params"),
+  newsController.getPublishedNewsBySlug
+);
+
+/**
+ * ============================================================
+ * ADMIN / INTERNAL API
+ * ============================================================
+ */
+
+/**
  * GET /api/v1/news
  *
  * Get News List
+ *
+ * Can return all statuses.
  */
 router.get(
   "/",
@@ -31,10 +74,14 @@ router.get(
 /**
  * GET /api/v1/news/slug/:slug
  *
- * Get News By Slug
+ * Admin/internal lookup by slug.
  *
  * IMPORTANT:
- * This route must appear before /:id.
+ * This returns any status.
+ *
+ * Public clients must use:
+ *
+ * /api/v1/news/public/slug/:slug
  */
 router.get(
   "/slug/:slug",
@@ -95,19 +142,15 @@ router.delete(
 /**
  * GET /api/v1/news/:id
  *
- * Get News By Id
+ * Get News By ID
+ *
+ * Admin/internal only.
  */
 router.get(
   "/:id",
   validate(idParamSchema, "params"),
   newsController.getNewsById
 );
-
-// router.get(
-//   "/slug/:slug",
-//   validate(slugParamSchema, "params"),
-//   newsController.getNewsBySlug
-// );
 
 /**
  * POST /api/v1/news
@@ -135,50 +178,3 @@ router.put(
 router.delete("/:id", newsController.deleteNews);
 
 export default router;
-
-/*
-const router = Router();
-
-router.get(
-  "/",
-  validate(newsListQuerySchema, "query"),
-  asyncHandler(getAllNews)
-);
-router.get("/:id", asyncHandler(getNewsById));
-router.post("/", validate(createNewsSchema), asyncHandler(createNews));
-router.put("/:id", validate(updateNewsSchema), asyncHandler(updateNews));
-router.patch("/:id", validate(updateNewsSchema), asyncHandler(patchNews));
-router.delete("/:id", asyncHandler(deleteNews));
-
-// router.get("/", getAllNews);
-// router.get("/:id", getNewsById);
-// router.post("/", createNews);
-// router.put("/:id", updateNews);
-// router.patch("/:id", patchNews);
-// router.delete("/:id", deleteNews);
-
-export default router;
-
-GET /
-GET /slug/:slug
-PATCH /:id/status
-PATCH /:id/approve
-PATCH /:id/publish
-PATCH /:id/archive
-GET /:id
-POST /
-PUT /:id
-DELETE /:id
-
-expect(response.body.success).toBe(true);
-
-expect(response.body.data).toBeDefined();
-expect(Array.isArray(response.body.data)).toBe(true);
-
-expect(response.body.meta).toBeDefined();
-
-expect(response.body.meta.page).toBe(1);
-expect(response.body.meta.pageSize).toBe(20);
-expect(response.body.meta.totalRecords).toBeDefined();
-expect(response.body.meta.totalPages).toBeDefined();
-*/

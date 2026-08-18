@@ -248,6 +248,36 @@ export const findBySlug = async (
 };
 
 /**
+ * Find Published News by Slug
+ *
+ * PUBLIC ONLY
+ *
+ * This query guarantees that only PUBLISHED articles
+ * can be returned through the public news detail API.
+ */
+export const findPublishedBySlug = async (
+  slug: string,
+  client?: PoolClient
+): Promise<News | null> => {
+  const db = client ?? pool;
+
+  const sql = `
+    ${NEWS_SELECT}
+    WHERE n.slug = $1
+      AND n.status = 'PUBLISHED'
+    LIMIT 1;
+  `;
+
+  const result = await db.query(sql, [slug]);
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return mapNews(result.rows[0]);
+};
+
+/**
  * Find News by Business Number
  */
 export const findByNewsNumber = async (
@@ -537,17 +567,18 @@ export const changeStatus = async (
     default:
       sql = `
     UPDATE news
-    SET status = $1::news_status,
+    SET
+      status = $1::news_status,
 
       display_priority =
         CASE
-          WHEN $1 = 'ARCHIVED' THEN 0
+          WHEN $1::news_status = 'ARCHIVED' THEN 0
           ELSE display_priority
         END,
 
       display_priority_until =
         CASE
-          WHEN $1 = 'ARCHIVED' THEN NULL
+          WHEN $1::news_status = 'ARCHIVED' THEN NULL
           ELSE display_priority_until
         END,
 
@@ -746,4 +777,25 @@ export const findAll = async (
 
     pageSize
   };
+};
+
+/**
+ * Find Published News
+ *
+ * Public/homepage endpoint.
+ *
+ * The status is always forced to PUBLISHED.
+ * The caller cannot override it.
+ */
+export const findPublishedAll = async (
+  filter: Omit<NewsSearchFilter, "status">,
+  client?: PoolClient
+): Promise<PaginatedNews> => {
+  return findAll(
+    {
+      ...filter,
+      status: "PUBLISHED"
+    },
+    client
+  );
 };

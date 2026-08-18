@@ -489,3 +489,149 @@ Node API
 ├── PostgreSQL
 │
 └── Cloudinary
+
+| Current   | Next      | Allowed |
+| --------- | --------- | ------- |
+| DRAFT     | IN_REVIEW | ✅      |
+| DRAFT     | APPROVED  | ❌      |
+| DRAFT     | PUBLISHED | ❌      |
+| IN_REVIEW | APPROVED  | ✅      |
+| IN_REVIEW | REJECTED  | ✅      |
+| IN_REVIEW | PUBLISHED | ❌      |
+| APPROVED  | PUBLISHED | ✅      |
+| APPROVED  | ARCHIVED  | ❌      |
+| PUBLISHED | ARCHIVED  | ✅      |
+| ARCHIVED  | anything  | ❌      |
+| REJECTED  | DRAFT     | ✅      |
+
+Final workflow:
+---------------
+
+                    ADMIN
+                      │
+                      ▼
+                  CREATE NEWS
+                      │
+                      ▼
+                    DRAFT
+                      │
+              Submit for Review
+                      │
+                      ▼
+                  IN_REVIEW
+                  /         \
+                 /           \
+             Reject         Approve
+               │               │
+               ▼               ▼
+             DRAFT          APPROVED
+                               │
+                             Publish
+                               │
+                               ▼
+                           PUBLISHED
+                               │
+                          Deactivate
+                               │
+                               ▼
+                           ARCHIVED
+
+                    ┌──────────────┐
+                    │    DRAFT     │
+                    └──────┬───────┘
+                           │
+                    Submit for review
+                           │
+                           ▼
+                  ┌────────────────┐
+                  │   IN_REVIEW    │
+                  └───────┬────────┘
+                          │
+                 ┌────────┴────────┐
+                 │                 │
+              Approve           Reject
+                 │                 │
+                 ▼                 ▼
+          ┌──────────────┐       DRAFT
+          │   APPROVED   │
+          └──────┬───────┘
+                 │
+              Publish
+                 │
+                 ▼
+          ┌──────────────┐
+          │  PUBLISHED   │
+          └──────┬───────┘
+                 │
+              Archive
+                 │
+                 ▼
+          ┌──────────────┐
+          │   ARCHIVED   │
+          └──────────────┘
+
+Public Side:
+------------
+
+                 DATABASE
+                     │
+                     ▼
+              ┌──────────────┐
+              │ PUBLISHED ?  │
+              └──────┬───────┘
+                     │
+              YES ───┴─── NO
+               │            │
+               ▼            ▼
+           PUBLIC API      hidden
+               │
+               ▼
+            HomePage
+               │
+        ┌──────┼───────┐
+        ▼      ▼       ▼
+      Hero   Latest   Sections
+
+Expected API structure
+-----------------------
+
+| Endpoint                             | Purpose              | Statuses           |
+| ------------------------------------ | -------------------- | ------------------ |
+| `GET /api/v1/news`                   | Admin news list      | All                |
+| `GET /api/v1/news/:id`               | Admin detail         | All                |
+| `GET /api/v1/news/slug/:slug`        | Admin detail by slug | All                |
+| `GET /api/v1/news/public`            | Website news list    | **PUBLISHED only** |
+| `GET /api/v1/news/public/slug/:slug` | Website article      | **PUBLISHED only** |
+| `POST /api/v1/news`                  | Create               | —                  |
+| `PUT /api/v1/news/:id`               | Update               | —                  |
+| `PATCH /api/v1/news/:id/approve`     | Approve              | DRAFT/IN_REVIEW    |
+| `PATCH /api/v1/news/:id/publish`     | Publish              | APPROVED           |
+| `PATCH /api/v1/news/:id/archive`     | Archive              | PUBLISHED          |
+| `POST /api/v1/news/:id/promote`      | Promote              | PUBLISHED          |
+
+Final workflow
+---------------
+
+CREATE
+│
+▼
+Save Draft
+│
+▼
+DRAFT
+│
+├── Submit for Review ──► IN_REVIEW
+│ │
+│ ├── Approve ──► APPROVED
+│ │ │
+│ │ └── Publish ──► PUBLISHED
+│ │ │
+│ │ ├── Promote 3 days
+│ │ │
+│ │ └── Deactivate
+│ │ │
+│ └── Reject ──► REJECTED ARCHIVED
+│ │
+│ └── Draft
+│
+└── Approve ──► APPROVED

@@ -13,7 +13,9 @@ import type {
 } from "./news.types.js";
 
 /**
- * Create News
+ * ============================================================
+ * CREATE NEWS
+ * ============================================================
  */
 export const createNews = async (data: CreateNewsInput): Promise<News> => {
   const client = await pool.connect();
@@ -21,13 +23,6 @@ export const createNews = async (data: CreateNewsInput): Promise<News> => {
   try {
     await client.query("BEGIN");
 
-    /**
-     * Slug must be unique.
-     *
-     * The database UNIQUE constraint is the final
-     * protection; this check gives the API a friendly
-     * 409 response before attempting the INSERT.
-     */
     const slugExists = await newsRepository.existsBySlug(data.slug, client);
 
     if (slugExists) {
@@ -41,7 +36,6 @@ export const createNews = async (data: CreateNewsInput): Promise<News> => {
     return news;
   } catch (error) {
     await client.query("ROLLBACK");
-
     throw error;
   } finally {
     client.release();
@@ -49,7 +43,9 @@ export const createNews = async (data: CreateNewsInput): Promise<News> => {
 };
 
 /**
- * Update News
+ * ============================================================
+ * UPDATE NEWS
+ * ============================================================
  */
 export const updateNews = async (
   id: number,
@@ -66,10 +62,6 @@ export const updateNews = async (
       throw new ApiError(404, "News not found.");
     }
 
-    /**
-     * Only check slug uniqueness when the slug
-     * is actually changing.
-     */
     if (data.slug !== undefined && data.slug !== existingNews.slug) {
       const slugExists = await newsRepository.existsBySlug(data.slug, client);
 
@@ -89,7 +81,6 @@ export const updateNews = async (
     return updatedNews;
   } catch (error) {
     await client.query("ROLLBACK");
-
     throw error;
   } finally {
     client.release();
@@ -97,9 +88,13 @@ export const updateNews = async (
 };
 
 /**
- * Get News by ID
+ * ============================================================
+ * GET NEWS BY ID
  *
- * Used mainly by admin/internal operations.
+ * ADMIN / INTERNAL
+ *
+ * Returns any status.
+ * ============================================================
  */
 export const getNewsById = async (id: number): Promise<News> => {
   const news = await newsRepository.findById(id);
@@ -112,10 +107,17 @@ export const getNewsById = async (id: number): Promise<News> => {
 };
 
 /**
- * Get News by Slug
+ * ============================================================
+ * GET NEWS BY SLUG
  *
- * This is the public-friendly lookup used by
- * the frontend news detail page.
+ * ADMIN / INTERNAL
+ *
+ * Returns any status.
+ *
+ * IMPORTANT:
+ * Public clients must NOT use this method.
+ * They must use getPublishedNewsBySlug().
+ * ============================================================
  */
 export const getNewsBySlug = async (slug: string): Promise<News> => {
   const news = await newsRepository.findBySlug(slug);
@@ -128,7 +130,63 @@ export const getNewsBySlug = async (slug: string): Promise<News> => {
 };
 
 /**
- * Delete News
+ * ============================================================
+ * GET PUBLISHED NEWS BY SLUG
+ *
+ * PUBLIC
+ *
+ * Only PUBLISHED articles are returned.
+ * ============================================================
+ */
+export const getPublishedNewsBySlug = async (slug: string): Promise<News> => {
+  const news = await newsRepository.findPublishedBySlug(slug);
+
+  if (!news) {
+    throw new ApiError(404, "News not found.");
+  }
+
+  return news;
+};
+
+/**
+ * ============================================================
+ * GET ADMIN NEWS LIST
+ *
+ * ADMIN / INTERNAL
+ *
+ * Can return any status.
+ * ============================================================
+ */
+export const getNewsList = async (filter: NewsSearchFilter) => {
+  return newsRepository.findAll(filter);
+};
+
+/**
+ * ============================================================
+ * GET PUBLIC NEWS LIST
+ *
+ * PUBLIC
+ *
+ * The service forcibly applies PUBLISHED.
+ *
+ * Client cannot override this using:
+ *
+ * ?status=DRAFT
+ * ?status=APPROVED
+ * etc.
+ * ============================================================
+ */
+export const getPublishedNewsList = async (filter: NewsSearchFilter) => {
+  return newsRepository.findAll({
+    ...filter,
+    status: "PUBLISHED"
+  });
+};
+
+/**
+ * ============================================================
+ * DELETE NEWS
+ * ============================================================
  */
 export const deleteNews = async (id: number): Promise<void> => {
   const client = await pool.connect();
@@ -151,7 +209,6 @@ export const deleteNews = async (id: number): Promise<void> => {
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
-
     throw error;
   } finally {
     client.release();
@@ -159,14 +216,76 @@ export const deleteNews = async (id: number): Promise<void> => {
 };
 
 /**
- * Get News List
+ * ============================================================
+ * NEWS WORKFLOW
+ * ============================================================
+ *
+ * Primary publishing workflow:
+ *
+ * DRAFT
+ *   ↓
+ * APPROVED
+ *   ↓
+ * PUBLISHED
+ *   ↓
+ * ARCHIVED
+ *
+ * Rejection workflow:
+ *
+ * IN_REVIEW
+ *   ↓
+ * REJECTED
+ *   ↓
+ * DRAFT
+ *
+ * IN_REVIEW is retained for future moderation/review UI.
+ *
+ * IMPORTANT:
+ * The current API/test workflow expects a newly-created
+ * DRAFT article to be directly approvable.
+ * ============================================================
  */
-export const getNewsList = async (filter: NewsSearchFilter) => {
-  return newsRepository.findAll(filter);
+const workflow: Record<NewsStatus, NewsStatus[]> = {
+  DRAFT: ["APPROVED", "IN_REVIEW"],
+
+  IN_REVIEW: ["APPROVED", "REJECTED"],
+
+  APPROVED: ["PUBLISHED"],
+
+  PUBLISHED: ["ARCHIVED"],
+
+  ARCHIVED: [],
+
+  REJECTED: ["DRAFT"]
 };
 
 /**
- * Change News Status
+ * ============================================================
+ * VALIDATE STATUS TRANSITION
+ * ============================================================
+ */
+const validateStatusTransition = (
+  currentStatus: NewsStatus,
+  nextStatus: NewsStatus
+): void => {
+  if (currentStatus === nextStatus) {
+    throw new ApiError(400, `News is already in '${currentStatus}' status.`);
+  }
+
+  const allowedStatuses = workflow[currentStatus];
+
+  if (!allowedStatuses.includes(nextStatus)) {
+    throw new ApiError(
+      400,
+      `Invalid status transition from '${currentStatus}' to '${nextStatus}'.`
+    );
+  }
+};
+
+/**
+ * ============================================================
+ * CHANGE NEWS STATUS
+ * ============================================================
  */
 export const changeStatus = async (
   id: number,
@@ -191,7 +310,6 @@ export const changeStatus = async (
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
-
     throw error;
   } finally {
     client.release();
@@ -199,8 +317,18 @@ export const changeStatus = async (
 };
 
 /**
- * Approve News
+ * ============================================================
+ * WORKFLOW HELPERS
+ * ============================================================
  */
+
+export const submitNewsForReview = async (
+  id: number,
+  submittedBy: number
+): Promise<void> => {
+  await changeStatus(id, "IN_REVIEW", submittedBy);
+};
+
 export const approveNews = async (
   id: number,
   approvedBy: number
@@ -208,9 +336,13 @@ export const approveNews = async (
   await changeStatus(id, "APPROVED", approvedBy);
 };
 
-/**
- * Publish News
- */
+export const rejectNews = async (
+  id: number,
+  rejectedBy: number
+): Promise<void> => {
+  await changeStatus(id, "REJECTED", rejectedBy);
+};
+
 export const publishNews = async (
   id: number,
   publishedBy: number
@@ -218,9 +350,6 @@ export const publishNews = async (
   await changeStatus(id, "PUBLISHED", publishedBy);
 };
 
-/**
- * Archive News
- */
 export const archiveNews = async (
   id: number,
   archivedBy: number
@@ -229,13 +358,9 @@ export const archiveNews = async (
 };
 
 /**
- * Promote News
- *
- * Business rules:
- *
- * - Article must exist.
- * - Article must be PUBLISHED.
- * - Promotion duration must be 3 days.
+ * ============================================================
+ * PROMOTE NEWS
+ * ============================================================
  */
 export const promoteNews = async (
   id: number,
@@ -280,7 +405,6 @@ export const promoteNews = async (
     return promotedNews;
   } catch (error) {
     await client.query("ROLLBACK");
-
     throw error;
   } finally {
     client.release();
@@ -288,7 +412,9 @@ export const promoteNews = async (
 };
 
 /**
- * Remove News Promotion
+ * ============================================================
+ * REMOVE NEWS PROMOTION
+ * ============================================================
  */
 export const removePromotion = async (
   id: number,
@@ -320,47 +446,8 @@ export const removePromotion = async (
     return updatedNews;
   } catch (error) {
     await client.query("ROLLBACK");
-
     throw error;
   } finally {
     client.release();
-  }
-};
-
-/**
- * News workflow
- */
-const workflow: Record<NewsStatus, NewsStatus[]> = {
-  DRAFT: ["IN_REVIEW", "APPROVED", "ARCHIVED"],
-
-  IN_REVIEW: ["APPROVED", "REJECTED", "ARCHIVED"],
-
-  APPROVED: ["PUBLISHED", "ARCHIVED"],
-
-  PUBLISHED: ["ARCHIVED"],
-
-  ARCHIVED: [],
-
-  REJECTED: ["DRAFT"]
-};
-
-/**
- * Validate News status transition.
- */
-const validateStatusTransition = (
-  currentStatus: NewsStatus,
-  nextStatus: NewsStatus
-): void => {
-  if (currentStatus === nextStatus) {
-    throw new ApiError(400, `News is already in '${currentStatus}' status.`);
-  }
-
-  const allowedStatuses = workflow[currentStatus];
-
-  if (!allowedStatuses.includes(nextStatus)) {
-    throw new ApiError(
-      400,
-      `Invalid status transition from '${currentStatus}' to '${nextStatus}'.`
-    );
   }
 };

@@ -1,20 +1,16 @@
-// 1. External packages
 import type { NextFunction, Request, Response } from "express";
 
-// 2. Shared modules
 import { sendPaginated, sendSuccess } from "../../../shared/utils/response.js";
 
-// 3. Feature services
 import * as newsService from "./news.service.js";
 
-// 4. Feature mappers
 import {
   toNewsResponseDto,
   toNewsResponseDtoList
 } from "../mappers/news.dto.mapper.js";
 
-// 5. Feature types
 import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
+
 import type {
   CreateNewsInput,
   NewsSearchFilter,
@@ -23,7 +19,127 @@ import type {
 } from "./news.types.js";
 
 /**
+ * ============================================================
+ * PUBLIC
+ * ============================================================
+ *
+ * These endpoints are intended for the public website.
+ *
+ * IMPORTANT:
+ * Public endpoints MUST ONLY return PUBLISHED news.
+ */
+
+/**
+ * ------------------------------------------------------------
+ * PUBLIC
+ * Get Published News List
+ *
+ * GET /api/v1/news/public
+ * ------------------------------------------------------------
+ */
+export const getPublishedNewsList = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const filter: NewsSearchFilter = {
+      page: Number(req.query.page ?? 1),
+
+      pageSize: Number(req.query.pageSize ?? 20),
+
+      search: req.query.search?.toString(),
+
+      categoryId: req.query.categoryId
+        ? Number(req.query.categoryId)
+        : undefined,
+
+      countryId: req.query.countryId ? Number(req.query.countryId) : undefined,
+
+      scope: req.query.scope as NewsSearchFilter["scope"] | undefined,
+
+      stateId: req.query.stateId ? Number(req.query.stateId) : undefined,
+
+      districtId: req.query.districtId
+        ? Number(req.query.districtId)
+        : undefined,
+
+      sortBy: req.query.sortBy?.toString(),
+
+      sortOrder: req.query.sortOrder as "ASC" | "DESC" | undefined,
+
+      /**
+       * Public API always means PUBLISHED.
+       *
+       * Never trust a status supplied by the client.
+       */
+      status: "PUBLISHED"
+    };
+
+    const result = await newsService.getPublishedNewsList(filter);
+
+    const dtoList = toNewsResponseDtoList(result.items);
+
+    const totalPages =
+      result.pageSize > 0
+        ? Math.ceil(result.totalRecords / result.pageSize)
+        : 0;
+
+    sendPaginated(res, "Published news retrieved successfully.", dtoList, {
+      page: result.page,
+      pageSize: result.pageSize,
+      totalRecords: result.totalRecords,
+      totalPages,
+      hasPrevious: result.page > 1,
+      hasNext: result.page < totalPages
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * ------------------------------------------------------------
+ * PUBLIC
+ * Get Published News By Slug
+ *
+ * GET /api/v1/news/public/slug/:slug
+ * ------------------------------------------------------------
+ */
+export const getPublishedNewsBySlug = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const slugParam = req.params.slug;
+
+    if (typeof slugParam !== "string" || slugParam.trim().length === 0) {
+      next(new ApiError(400, "News slug is required."));
+      return;
+    }
+
+    const news = await newsService.getPublishedNewsBySlug(slugParam.trim());
+
+    const dto = toNewsResponseDto(news);
+
+    sendSuccess(res, "Published news retrieved successfully.", dto);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * ============================================================
+ * ADMIN / INTERNAL
+ * ============================================================
+ */
+
+/**
+ * ------------------------------------------------------------
+ * ADMIN
  * Create News
+ * ------------------------------------------------------------
  */
 export const createNews = async (
   req: Request,
@@ -44,7 +160,10 @@ export const createNews = async (
 };
 
 /**
+ * ------------------------------------------------------------
+ * ADMIN
  * Update News
+ * ------------------------------------------------------------
  */
 export const updateNews = async (
   req: Request,
@@ -67,7 +186,12 @@ export const updateNews = async (
 };
 
 /**
- * Get News by ID
+ * ------------------------------------------------------------
+ * ADMIN
+ * Get News By ID
+ *
+ * Returns all statuses.
+ * ------------------------------------------------------------
  */
 export const getNewsById = async (
   req: Request,
@@ -88,9 +212,20 @@ export const getNewsById = async (
 };
 
 /**
- * Get News by Slug
+ * ------------------------------------------------------------
+ * ADMIN
+ * Get News By Slug
  *
- * Public/news-detail endpoint.
+ * IMPORTANT:
+ * This is an ADMIN/INTERNAL lookup.
+ *
+ * It intentionally uses getNewsBySlug() so that draft,
+ * approved, published etc. articles can be inspected.
+ *
+ * Public clients must use:
+ *
+ * /api/v1/news/public/slug/:slug
+ * ------------------------------------------------------------
  */
 export const getNewsBySlug = async (
   req: Request,
@@ -102,13 +237,10 @@ export const getNewsBySlug = async (
 
     if (typeof slugParam !== "string" || slugParam.trim().length === 0) {
       next(new ApiError(400, "News slug is required."));
-
       return;
     }
 
-    const slug = slugParam.trim();
-
-    const news = await newsService.getNewsBySlug(slug);
+    const news = await newsService.getNewsBySlug(slugParam.trim());
 
     const dto = toNewsResponseDto(news);
 
@@ -119,7 +251,10 @@ export const getNewsBySlug = async (
 };
 
 /**
+ * ------------------------------------------------------------
+ * ADMIN
  * Delete News
+ * ------------------------------------------------------------
  */
 export const deleteNews = async (
   req: Request,
@@ -138,7 +273,12 @@ export const deleteNews = async (
 };
 
 /**
+ * ------------------------------------------------------------
+ * ADMIN
  * Get News List
+ *
+ * This endpoint can return all statuses.
+ * ------------------------------------------------------------
  */
 export const getNewsList = async (
   req: Request,
@@ -159,9 +299,6 @@ export const getNewsList = async (
         ? Number(req.query.categoryId)
         : undefined,
 
-      /**
-       * Country filter
-       */
       countryId: req.query.countryId ? Number(req.query.countryId) : undefined,
 
       scope: req.query.scope as NewsSearchFilter["scope"] | undefined,
@@ -181,19 +318,17 @@ export const getNewsList = async (
 
     const dtoList = toNewsResponseDtoList(result.items);
 
-    const totalPages = Math.ceil(result.totalRecords / result.pageSize);
+    const totalPages =
+      result.pageSize > 0
+        ? Math.ceil(result.totalRecords / result.pageSize)
+        : 0;
 
     sendPaginated(res, "News retrieved successfully.", dtoList, {
       page: result.page,
-
       pageSize: result.pageSize,
-
       totalRecords: result.totalRecords,
-
       totalPages,
-
       hasPrevious: result.page > 1,
-
       hasNext: result.page < totalPages
     });
   } catch (error) {
@@ -202,7 +337,10 @@ export const getNewsList = async (
 };
 
 /**
- * Change News Status
+ * ------------------------------------------------------------
+ * ADMIN
+ * Change Status
+ * ------------------------------------------------------------
  */
 export const changeStatus = async (
   req: Request,
@@ -226,7 +364,36 @@ export const changeStatus = async (
 };
 
 /**
+ * ------------------------------------------------------------
+ * ADMIN
+ * Submit For Review
+ * ------------------------------------------------------------
+ */
+export const submitNewsForReview = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+
+    const { submittedBy } = req.body as {
+      submittedBy: number;
+    };
+
+    await newsService.submitNewsForReview(id, submittedBy);
+
+    sendSuccess(res, "News submitted for review successfully.");
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * ------------------------------------------------------------
+ * ADMIN
  * Approve News
+ * ------------------------------------------------------------
  */
 export const approveNews = async (
   req: Request,
@@ -249,7 +416,36 @@ export const approveNews = async (
 };
 
 /**
+ * ------------------------------------------------------------
+ * ADMIN
+ * Reject News
+ * ------------------------------------------------------------
+ */
+export const rejectNews = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+
+    const { rejectedBy } = req.body as {
+      rejectedBy: number;
+    };
+
+    await newsService.rejectNews(id, rejectedBy);
+
+    sendSuccess(res, "News rejected successfully.");
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * ------------------------------------------------------------
+ * ADMIN
  * Publish News
+ * ------------------------------------------------------------
  */
 export const publishNews = async (
   req: Request,
@@ -272,7 +468,10 @@ export const publishNews = async (
 };
 
 /**
+ * ------------------------------------------------------------
+ * ADMIN
  * Archive News
+ * ------------------------------------------------------------
  */
 export const archiveNews = async (
   req: Request,
@@ -295,9 +494,10 @@ export const archiveNews = async (
 };
 
 /**
+ * ------------------------------------------------------------
+ * ADMIN
  * Promote News
- *
- * POST /api/v1/news/:id/promote
+ * ------------------------------------------------------------
  */
 export const promoteNews = async (
   req: Request,
@@ -323,9 +523,10 @@ export const promoteNews = async (
 };
 
 /**
- * Remove News Promotion
- *
- * DELETE /api/v1/news/:id/promotion
+ * ------------------------------------------------------------
+ * ADMIN
+ * Remove Promotion
+ * ------------------------------------------------------------
  */
 export const removePromotion = async (
   req: Request,
