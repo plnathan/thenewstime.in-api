@@ -12,6 +12,7 @@ import {
   districtRouter,
   stateRouter
 } from "./api/v1/locations/location.routes.js";
+import masterDataRoutes from "./api/v1/master-data/master-data.routes.js";
 import mediaRoutes from "./api/v1/media/media.routes.js";
 
 const app = express();
@@ -48,8 +49,10 @@ app.use("/api/v1/media", mediaRoutes);
 
 app.use("/api/v1/news", newsRoutes);
 
+app.use("/api/v1/master-data", masterDataRoutes);
+
 //app.use("/api", routes);
-app.use("/api/v1/news", newsRoutes);
+//app.use("/api/v1/news", newsRoutes);
 
 configureSwagger(app);
 

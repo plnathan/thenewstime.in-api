@@ -9,6 +9,13 @@ const getClient = () => {
 
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
+  // console.log("Cloudinary configuration:", {
+  //   cloudName,
+  //   apiKeyPresent: Boolean(apiKey),
+  //   apiSecretPresent: Boolean(apiSecret),
+  //   apiSecretLength: apiSecret?.length
+  // });
+
   if (!cloudName || !apiKey || !apiSecret) {
     throw new ApiError(500, "Cloudinary configuration is missing.");
   }
