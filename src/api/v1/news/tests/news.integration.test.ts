@@ -444,7 +444,7 @@ describe("GET /api/v1/news - Scope Filters", () => {
     expect(response.body.success).toBe(false);
   });
 
-  it("should reject old WORLD scope", async () => {
+  it("should reject deprecated GLOBAL scope", async () => {
     const response = await request(app).get("/api/v1/news").query({
       scope: "GLOBAL"
     });
@@ -556,15 +556,10 @@ describe("GET /api/v1/news", () => {
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
 
-    // expect(response.body.data).toBeDefined();
-    // expect(response.body.pagination).toBeDefined();
-    expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeDefined();
     expect(Array.isArray(response.body.data)).toBe(true);
 
     expect(response.body.meta).toBeDefined();
-
     expect(response.body.meta.page).toBe(1);
     expect(response.body.meta.pageSize).toBe(20);
     expect(response.body.meta.totalRecords).toBeDefined();
@@ -582,6 +577,46 @@ describe("GET /api/v1/news", () => {
     expect(response.body.success).toBe(true);
 
     expect(response.body.data).toBeDefined();
+  });
+});
+
+/**
+ * ============================================================
+ * GET /api/v1/news/public
+ * ============================================================
+ */
+describe("GET /api/v1/news/public", () => {
+  it("should return PUBLISHED news only", async () => {
+    const response = await request(app).get("/api/v1/news/public").query({
+      page: 1,
+      pageSize: 20
+    });
+
+    expect(response.status).toBe(200);
+
+    expect(response.body.success).toBe(true);
+
+    expect(Array.isArray(response.body.data)).toBe(true);
+
+    for (const item of response.body.data) {
+      expect(item.status).toBe("PUBLISHED");
+    }
+  });
+
+  it("should ignore a client supplied status", async () => {
+    const response = await request(app).get("/api/v1/news/public").query({
+      page: 1,
+      pageSize: 20,
+      status: "DRAFT"
+    });
+
+    expect(response.status).toBe(200);
+
+    expect(response.body.success).toBe(true);
+
+    for (const item of response.body.data) {
+      expect(item.status).toBe("PUBLISHED");
+    }
   });
 });
 
@@ -648,20 +683,6 @@ describe("POST /api/v1/news/:id/promote", () => {
   });
 });
 
-describe("PATCH /api/v1/news/:id/archive", () => {
-  it("should archive a published news article", async () => {
-    const response = await request(app)
-      .patch(`/api/v1/news/${createdId}/archive`)
-      .send({
-        archivedBy: 1
-      });
-
-    expect(response.status).toBe(200);
-
-    expect(response.body.success).toBe(true);
-  });
-});
-
 describe("DELETE /api/v1/news/:id/promotion", () => {
   it("should remove news promotion", async () => {
     const response = await request(app)
@@ -679,6 +700,67 @@ describe("DELETE /api/v1/news/:id/promotion", () => {
     expect(response.body.data.displayPriority).toBe(0);
 
     expect(response.body.data.displayPriorityUntil).toBeNull();
+  });
+});
+
+describe("PATCH /api/v1/news/:id/archive", () => {
+  it("should archive a published news article", async () => {
+    const response = await request(app)
+      .patch(`/api/v1/news/${createdId}/archive`)
+      .send({
+        archivedBy: 1
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(response.body.success).toBe(true);
+  });
+});
+
+/**
+ * ============================================================
+ * ARCHIVED -> DRAFT ACTIVATION
+ * ============================================================
+ */
+describe("PATCH /api/v1/news/:id/activate", () => {
+  it("should activate archived news back to DRAFT", async () => {
+    expect(createdId).toBeGreaterThan(0);
+
+    // The previous archive test has already moved this article:
+    // PUBLISHED -> ARCHIVED
+
+    const activateResponse = await request(app)
+      .patch(`/api/v1/news/${createdId}/activate`)
+      .send({
+        activatedBy: 1
+      });
+
+    expect(activateResponse.status).toBe(200);
+
+    expect(activateResponse.body.success).toBe(true);
+
+    expect(activateResponse.body.data).toBeDefined();
+
+    expect(activateResponse.body.data.status).toBe("DRAFT");
+
+    expect(activateResponse.body.data.publishedAt).toBeNull();
+  });
+
+  it("should reject activation when news is not archived", async () => {
+    // The previous test has already moved this article:
+    // ARCHIVED -> DRAFT
+
+    const response = await request(app)
+      .patch(`/api/v1/news/${createdId}/activate`)
+      .send({
+        activatedBy: 1
+      });
+
+    expect(response.status).toBe(400);
+
+    expect(response.body.success).toBe(false);
+
+    expect(response.body.message).toBe("Only archived news can be activated.");
   });
 });
 
@@ -707,10 +789,6 @@ describe("DELETE /api/v1/news/:id", () => {
     expect(response.body.success).toBe(false);
   });
 });
-
-
-
-
 
 // Additional POST Tests:
 // ✅ Valid request

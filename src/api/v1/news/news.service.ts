@@ -177,10 +177,7 @@ export const getNewsList = async (filter: NewsSearchFilter) => {
  * ============================================================
  */
 export const getPublishedNewsList = async (filter: NewsSearchFilter) => {
-  return newsRepository.findAll({
-    ...filter,
-    status: "PUBLISHED"
-  });
+  return newsRepository.findPublishedAll(filter);
 };
 
 /**
@@ -355,6 +352,62 @@ export const archiveNews = async (
   archivedBy: number
 ): Promise<void> => {
   await changeStatus(id, "ARCHIVED", archivedBy);
+};
+
+/**
+ * ============================================================
+ * ACTIVATE ARCHIVED NEWS
+ *
+ * ARCHIVED -> DRAFT
+ *
+ * This is intentionally a dedicated workflow action.
+ * It must not be possible through the generic status endpoint.
+ * ============================================================
+ */
+export const activateNews = async (
+  id: number,
+  activatedBy: number
+): Promise<News> => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existingNews = await newsRepository.findById(id, client);
+
+    if (!existingNews) {
+      throw new ApiError(404, "News not found.");
+    }
+
+    if (existingNews.status !== "ARCHIVED") {
+      throw new ApiError(
+        400,
+        "Only archived news can be activated."
+      );
+    }
+
+    const activatedNews = await newsRepository.activate(
+      id,
+      activatedBy,
+      client
+    );
+
+    if (!activatedNews) {
+      throw new ApiError(
+        400,
+        "Unable to activate news."
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return activatedNews;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 /**

@@ -106,6 +106,8 @@ npx vitest run src/api/v1/news/tests/news.controller.test.ts
 
 npx vitest run src/api/v1/news/tests/news.repository.test.ts
 
+npx vitest run src/api/v1/news/tests/news.service.test.ts
+
 ****************** XXXX *********************
 
 Cloudinary

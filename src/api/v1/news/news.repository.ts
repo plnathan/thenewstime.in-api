@@ -565,28 +565,34 @@ export const changeStatus = async (
       break;
 
     default:
-      sql = `
-    UPDATE news
-    SET
-      status = $1::news_status,
+            sql = `
+        UPDATE news
+        SET
+          status = $1::news_status,
 
-      display_priority =
-        CASE
-          WHEN $1::news_status = 'ARCHIVED' THEN 0
-          ELSE display_priority
-        END,
+          archived_by =
+            CASE
+              WHEN $1::news_status = 'ARCHIVED' THEN $2
+              ELSE archived_by
+            END,
 
-      display_priority_until =
-        CASE
-          WHEN $1::news_status = 'ARCHIVED' THEN NULL
-          ELSE display_priority_until
-        END,
+          display_priority =
+            CASE
+              WHEN $1::news_status = 'ARCHIVED' THEN 0
+              ELSE display_priority
+            END,
 
-      updated_by = $2,
-      updated_at = NOW()
+          display_priority_until =
+            CASE
+              WHEN $1::news_status = 'ARCHIVED' THEN NULL
+              ELSE display_priority_until
+            END,
 
-    WHERE id = $3;
-  `;
+          updated_by = $2,
+          updated_at = NOW()
+
+        WHERE id = $3;
+      `;
 
       values = [status, userId, id];
 
@@ -594,6 +600,61 @@ export const changeStatus = async (
   }
 
   await db.query(sql, values);
+};
+
+/**
+ * Activate Archived News
+ *
+ * ARCHIVED -> DRAFT
+ *
+ * Activation intentionally resets the publishing workflow fields
+ * so the article must go through the normal workflow again.
+ */
+export const activate = async (
+  id: number,
+  activatedBy: number,
+  client?: PoolClient
+): Promise<News | null> => {
+  const db = client ?? pool;
+
+  const sql = `
+    UPDATE news
+    SET
+      status = 'DRAFT',
+
+      drafted_by = $2,
+      drafted_at = NOW(),
+
+      approved_by = NULL,
+      approved_at = NULL,
+
+      published_by = NULL,
+      published_at = NULL,
+
+      archived_by = NULL,
+
+      display_priority = 0,
+      display_priority_until = NULL,
+
+      updated_by = $2,
+      updated_at = NOW()
+
+    WHERE id = $1
+      AND status = 'ARCHIVED'
+
+    RETURNING id;
+  `;
+
+  const result: QueryResult = await db.query(sql, [
+    id,
+    activatedBy
+  ]);
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return findById(id, client);
 };
 
 /**
@@ -745,23 +806,47 @@ export const findAll = async (
   const offsetIndex = queryValues.length;
 
   /**
+   * Public/homepage ordering
+   *
+   * IMPORTANT:
+   * Promotion/display priority must never override
+   * chronological published_at ordering on the public website.
+   */
+  const orderByClause = filter.publicOrder
+    ? `
+      n.published_at DESC NULLS LAST,
+
+      CASE n.news_scope
+        WHEN 'STATE' THEN 1
+        WHEN 'INDIA' THEN 2
+        WHEN 'WORLD' THEN 3
+        WHEN 'DISTRICT' THEN 4
+        ELSE 5
+      END ASC,
+
+      n.id DESC
+    `
+    : `
+      CASE
+        WHEN n.display_priority_until IS NOT NULL
+          AND n.display_priority_until > NOW()
+          AND n.status = 'PUBLISHED'
+        THEN n.display_priority
+        ELSE 0
+      END DESC,
+
+      ${sortBy ? `${sortBy} ${sortOrder}` : "n.published_at DESC NULLS LAST"},
+
+      n.id DESC
+    `;
+
+  /**
    * Main query
    */
   const sql = `
     ${NEWS_SELECT}
     ${whereClause}
-    ORDER BY
-  CASE
-    WHEN n.display_priority_until IS NOT NULL
-      AND n.display_priority_until > NOW()
-      AND n.status = 'PUBLISHED'
-    THEN n.display_priority
-    ELSE 0
-  END DESC,
-
-  ${sortBy ? `${sortBy} ${sortOrder}` : "n.published_at DESC NULLS LAST"},
-
-  n.id DESC
+    ORDER BY ${orderByClause}
     LIMIT $${limitIndex}
     OFFSET $${offsetIndex};
   `;
@@ -794,7 +879,8 @@ export const findPublishedAll = async (
   return findAll(
     {
       ...filter,
-      status: "PUBLISHED"
+      status: "PUBLISHED",
+      publicOrder: true
     },
     client
   );

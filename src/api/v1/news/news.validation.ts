@@ -93,6 +93,10 @@ export const changeStatusSchema = z.object({
   userId: z.number().int().positive()
 });
 
+export const activateNewsSchema = z.object({
+  activatedBy: z.number().int().positive()
+});
+
 export const promoteNewsSchema = z.object({
   promotedBy: z.number().int().positive(),
 
@@ -162,3 +166,5 @@ export type UpdateNewsRequest = z.infer<typeof updateNewsSchema>;
 export type NewsSearchRequest = z.infer<typeof newsSearchSchema>;
 
 export type ChangeStatusRequest = z.infer<typeof changeStatusSchema>;
+
+export type ActivateNewsRequest = z.infer<typeof activateNewsSchema>;

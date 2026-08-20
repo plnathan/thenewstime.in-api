@@ -5,6 +5,7 @@ import * as newsController from "./news.controller.js";
 import { validate } from "../../../shared/middleware/validate.middleware.js";
 
 import {
+  activateNewsSchema,
   changeStatusSchema,
   createNewsSchema,
   idParamSchema,
@@ -114,6 +115,20 @@ router.patch("/:id/publish", newsController.publishNews);
  * PATCH /api/v1/news/:id/archive
  */
 router.patch("/:id/archive", newsController.archiveNews);
+
+/**
+ * PATCH /api/v1/news/:id/activate
+ *
+ * Activate archived news.
+ *
+ * ARCHIVED -> DRAFT
+ */
+router.patch(
+  "/:id/activate",
+  validate(idParamSchema, "params"),
+  validate(activateNewsSchema, "body"),
+  newsController.activateNews
+);
 
 /**
  * POST /api/v1/news/:id/promote

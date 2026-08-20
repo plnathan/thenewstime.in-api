@@ -496,6 +496,43 @@ export const archiveNews = async (
 /**
  * ------------------------------------------------------------
  * ADMIN
+ * Activate Archived News
+ *
+ * ARCHIVED -> DRAFT
+ * ------------------------------------------------------------
+ */
+export const activateNews = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+
+    const { activatedBy } = req.body as {
+      activatedBy: number;
+    };
+
+    const news = await newsService.activateNews(
+      id,
+      activatedBy
+    );
+
+    const dto = toNewsResponseDto(news);
+
+    sendSuccess(
+      res,
+      "News activated successfully.",
+      dto
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * ------------------------------------------------------------
+ * ADMIN
  * Promote News
  * ------------------------------------------------------------
  */

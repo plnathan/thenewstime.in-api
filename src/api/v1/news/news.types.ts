@@ -215,6 +215,21 @@ export interface NewsSearchFilter {
   sortBy?: string | undefined;
 
   sortOrder?: "ASC" | "DESC" | undefined;
+
+  /**
+   * Public/homepage ordering.
+   *
+   * When true:
+   *
+   * 1. PUBLISHED news only
+   * 2. published_at DESC
+   * 3. scope priority for identical published_at values
+   * 4. id DESC as deterministic tie-breaker
+   *
+   * Promotion/display priority must NOT override
+   * chronological public ordering.
+   */
+  publicOrder?: boolean | undefined;
 }
 
 export interface PaginatedNews {

@@ -20,6 +20,7 @@ vi.mock("../news.repository.js", () => ({
   deleteNews: vi.fn(),
   findAll: vi.fn(),
   changeStatus: vi.fn(),
+  activate: vi.fn(),
   promote: vi.fn(),
   removePromotion: vi.fn()
 }));
@@ -302,6 +303,46 @@ describe("archiveNews()", () => {
     repository.changeStatus.mockResolvedValue(undefined);
 
     await expect(newsService.archiveNews(1, 10)).resolves.not.toThrow();
+  });
+});
+
+describe("activateNews()", () => {
+  it("should activate archived news back to DRAFT", async () => {
+    repository.findById.mockResolvedValue({
+      ...mockNews,
+
+      status: "ARCHIVED"
+    });
+
+    repository.activate.mockResolvedValue({
+      ...mockNews,
+
+      status: "DRAFT"
+    });
+
+    const result = await newsService.activateNews(1, 10);
+
+    expect(result.status).toBe("DRAFT");
+
+    expect(repository.activate).toHaveBeenCalledWith(1, 10, mockClient);
+
+    expect(mockClient.query).toHaveBeenCalledWith("COMMIT");
+  });
+
+  it("should reject activation when news is not archived", async () => {
+    repository.findById.mockResolvedValue({
+      ...mockNews,
+
+      status: "PUBLISHED"
+    });
+
+    await expect(newsService.activateNews(1, 10)).rejects.toBeInstanceOf(
+      ApiError
+    );
+
+    expect(repository.activate).not.toHaveBeenCalled();
+
+    expect(mockClient.query).toHaveBeenCalledWith("ROLLBACK");
   });
 });
 

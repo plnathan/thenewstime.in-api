@@ -25,6 +25,7 @@ vi.mock("../news.service.js", () => ({
   approveNews: vi.fn(),
   publishNews: vi.fn(),
   archiveNews: vi.fn(),
+  activateNews: vi.fn(),
   promoteNews: vi.fn(),
   removePromotion: vi.fn()
 }));
@@ -302,6 +303,34 @@ describe("archiveNews()", () => {
     expect(newsService.archiveNews).toHaveBeenCalledWith(1, 10);
 
     expect(sendSuccess).toHaveBeenCalled();
+  });
+});
+
+describe("activateNews()", () => {
+  it("should activate archived news successfully", async () => {
+    req.params = {
+      id: "1"
+    };
+
+    req.body = {
+      activatedBy: 10
+    };
+
+    vi.mocked(newsService.activateNews).mockResolvedValue({
+      ...mockNews,
+
+      status: "DRAFT"
+    });
+
+    await newsController.activateNews(req, res, next);
+
+    expect(newsService.activateNews).toHaveBeenCalledWith(1, 10);
+
+    expect(sendSuccess).toHaveBeenCalledWith(
+      res,
+      "News activated successfully.",
+      mockNewsResponse
+    );
   });
 });
 

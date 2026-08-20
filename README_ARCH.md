@@ -635,3 +635,15 @@ DRAFT
 │ └── Draft
 │
 └── Approve ──► APPROVED
+
+DRAFT
+  ↓ approve
+PUBLISHED
+  ↓ archive/deactivate
+ARCHIVED
+  ↓ activate
+DRAFT
+  ↓ edit
+DRAFT
+  ↓ approve
+PUBLISHED

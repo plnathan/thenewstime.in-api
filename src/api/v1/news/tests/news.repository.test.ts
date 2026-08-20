@@ -313,6 +313,81 @@ describe("changeStatus()", () => {
   });
 });
 
+describe("activate()", () => {
+  it("should activate archived news", async () => {
+    vi.mocked(pool.query)
+      .mockResolvedValueOnce({
+        rows: [{ id: 1 }],
+        rowCount: 1
+      } as never)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 1,
+            news_number: 1001,
+            title: mockNews.title,
+            slug: mockNews.slug,
+            summary: mockNews.summary,
+            content: mockNews.content,
+            news_scope: "STATE",
+
+            category_id: 5,
+            category_code: "POLITICS",
+            category_display_name: "Politics",
+            category_url_name: "politics",
+
+            country_id: 1,
+            country_code: "IN",
+            country_display_name: "India",
+            country_url_name: "india",
+            country_iso_code: "IN",
+
+            state_id: 33,
+            state_country_id: 1,
+            state_code: "TN",
+            state_display_name: "Tamil Nadu",
+            state_url_name: "tamil-nadu",
+
+            district_id: 601,
+            district_state_id: 33,
+            district_code: "CHN",
+            district_display_name: "Chennai",
+            district_url_name: "chennai",
+
+            status: "DRAFT",
+
+            display_priority: 0,
+            display_priority_until: null,
+
+            drafted_by: 10,
+            approved_by: null,
+            published_by: null,
+            archived_by: null,
+
+            drafted_at: new Date(),
+            approved_at: null,
+            published_at: null,
+
+            created_by: 1,
+            updated_by: 10,
+
+            created_at: new Date(),
+            updated_at: new Date()
+          }
+        ],
+        rowCount: 1
+      } as never);
+
+    const result = await repository.activate(1, 10);
+
+    expect(result).not.toBeNull();
+
+    expect(result?.status).toBe("DRAFT");
+
+    expect(pool.query).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("findAll()", () => {
   it("should return paginated news list", async () => {
     vi.mocked(pool.query)
@@ -369,6 +444,97 @@ describe("findAll()", () => {
     expect(result.pageSize).toBe(20);
 
     expect(result.items.length).toBe(1);
+  });
+});
+
+describe("findPublishedAll()", () => {
+  it("should force PUBLISHED status and public chronological ordering", async () => {
+    vi.mocked(pool.query)
+      .mockResolvedValueOnce({
+        rows: [{ total: 1 }],
+        rowCount: 1
+      } as never)
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 1,
+            news_number: 1001,
+            title: mockNews.title,
+            slug: mockNews.slug,
+            summary: mockNews.summary,
+            content: mockNews.content,
+            news_scope: "STATE",
+
+            category_id: 5,
+            category_code: "POLITICS",
+            category_display_name: "Politics",
+            category_url_name: "politics",
+
+            country_id: 1,
+            country_code: "IN",
+            country_display_name: "India",
+            country_url_name: "india",
+            country_iso_code: "IN",
+
+            state_id: 33,
+            state_country_id: 1,
+            state_code: "TN",
+            state_display_name: "Tamil Nadu",
+            state_url_name: "tamil-nadu",
+
+            district_id: 601,
+            district_state_id: 33,
+            district_code: "CHN",
+            district_display_name: "Chennai",
+            district_url_name: "chennai",
+
+            status: "PUBLISHED",
+
+            display_priority: 10,
+            display_priority_until: new Date(),
+
+            drafted_by: 1,
+            approved_by: 1,
+            published_by: 1,
+            archived_by: null,
+
+            drafted_at: new Date(),
+            approved_at: new Date(),
+            published_at: new Date(),
+
+            created_by: 1,
+            updated_by: 1,
+
+            created_at: new Date(),
+            updated_at: new Date()
+          }
+        ],
+        rowCount: 1
+      } as never);
+
+    const result = await repository.findPublishedAll({
+      page: 1,
+      pageSize: 20
+    });
+
+    expect(result.items).toHaveLength(1);
+
+    const mainQuery =
+      vi.mocked(pool.query).mock.calls[1]?.[0];
+
+    expect(mainQuery).toContain("n.status = $1");
+
+    expect(mainQuery).toContain(
+      "n.published_at DESC NULLS LAST"
+    );
+
+    expect(mainQuery).toContain(
+      "WHEN 'STATE' THEN 1"
+    );
+
+    expect(mainQuery).not.toContain(
+      "n.display_priority_until IS NOT NULL"
+    );
   });
 });
 
