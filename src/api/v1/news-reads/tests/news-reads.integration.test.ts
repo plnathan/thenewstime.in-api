@@ -167,9 +167,9 @@ describe("News Reads API", () => {
     }
   });
 
-  describe("POST /api/news-reads", () => {
+  describe("POST /api/v1/news-reads", () => {
     it("should create a news read for published news", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: publishedNewsId,
         sessionId: "news-reads-session-001",
         browser: "Chrome",
@@ -190,7 +190,7 @@ describe("News Reads API", () => {
     });
 
     it("should ignore duplicate read from the same session", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: publishedNewsId,
         sessionId: "news-reads-session-001"
       });
@@ -203,7 +203,7 @@ describe("News Reads API", () => {
     });
 
     it("should allow a different session to read the same article", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: publishedNewsId,
         sessionId: "news-reads-session-002"
       });
@@ -216,7 +216,7 @@ describe("News Reads API", () => {
     });
 
     it("should allow the same session to read a different article", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: draftNewsId,
         sessionId: "news-reads-session-001"
       });
@@ -228,7 +228,7 @@ describe("News Reads API", () => {
     });
 
     it("should reject draft news", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: draftNewsId,
         sessionId: "news-reads-draft-session"
       });
@@ -237,7 +237,7 @@ describe("News Reads API", () => {
     });
 
     it("should reject archived news", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: archivedNewsId,
         sessionId: "news-reads-archived-session"
       });
@@ -246,7 +246,7 @@ describe("News Reads API", () => {
     });
 
     it("should reject nonexistent news", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: 999999999,
         sessionId: "news-reads-invalid-session"
       });
@@ -255,10 +255,10 @@ describe("News Reads API", () => {
     });
   });
 
-  describe("GET /api/news-reads/news/:id/count", () => {
+  describe("GET /api/v1/news-reads/news/:id/count", () => {
     it("should return total reads for published news", async () => {
       const response = await request(app).get(
-        `/api/news-reads/news/${publishedNewsId}/count`
+        `/api/v1/news-reads/news/${publishedNewsId}/count`
       );
 
       expect(response.status).toBe(200);
@@ -270,17 +270,17 @@ describe("News Reads API", () => {
 
     it("should return 404 for nonexistent news", async () => {
       const response = await request(app).get(
-        "/api/news-reads/news/999999999/count"
+        "/api/v1/news-reads/news/999999999/count"
       );
 
       expect(response.status).toBe(404);
     });
   });
 
-  describe("GET /api/news-reads/popular", () => {
+  describe("GET /api/v1/news-reads/popular", () => {
     it("should return popular news ordered by read count", async () => {
       const response = await request(app).get(
-        "/api/news-reads/popular?limit=5"
+        "/api/v1/news-reads/popular?limit=5"
       );
 
       expect(response.status).toBe(200);
@@ -299,7 +299,7 @@ describe("News Reads API", () => {
 
     it("should return only published news", async () => {
       const response = await request(app).get(
-        "/api/news-reads/popular?limit=100"
+        "/api/v1/news-reads/popular?limit=100"
       );
 
       expect(response.status).toBe(200);
@@ -317,7 +317,7 @@ describe("News Reads API", () => {
 
     it("should respect the limit parameter", async () => {
       const response = await request(app).get(
-        "/api/news-reads/popular?limit=1"
+        "/api/v1/news-reads/popular?limit=1"
       );
 
       expect(response.status).toBe(200);
@@ -328,7 +328,7 @@ describe("News Reads API", () => {
 
   describe("Validation", () => {
     it("should reject missing sessionId", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: publishedNewsId
       });
 
@@ -336,7 +336,7 @@ describe("News Reads API", () => {
     });
 
     it("should reject invalid newsId", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: -1,
         sessionId: "invalid-news-id"
       });
@@ -345,7 +345,7 @@ describe("News Reads API", () => {
     });
 
     it("should reject invalid visitorId UUID", async () => {
-      const response = await request(app).post("/api/news-reads").send({
+      const response = await request(app).post("/api/v1/news-reads").send({
         newsId: publishedNewsId,
         sessionId: "uuid-test-session",
         visitorId: "not-a-valid-uuid"
@@ -356,7 +356,7 @@ describe("News Reads API", () => {
 
     it("should reject invalid popular limit", async () => {
       const response = await request(app).get(
-        "/api/news-reads/popular?limit=200"
+        "/api/v1/news-reads/popular?limit=200"
       );
 
       expect(response.status).toBe(400);
