@@ -50,6 +50,8 @@ export const mockNews: News = {
     urlName: "politics"
   },
 
+  views: 0,
+
   status: "DRAFT",
 
   displayPriority: 0,
@@ -119,6 +121,7 @@ export const mockNewsResponse = {
     urlName: "politics"
   },
   media: [],
+  views: 0,
   status: "DRAFT",
   displayPriority: 0,
   displayPriorityUntil: null,

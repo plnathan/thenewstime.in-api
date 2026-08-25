@@ -50,6 +50,7 @@ app.use("/api/v1/news", newsRoutes);
 
 app.use("/api/v1/master-data", masterDataRoutes);
 
+console.log("Registering News Reads routes at /api/v1/news-reads");
 /**
  * News Reads
  *
