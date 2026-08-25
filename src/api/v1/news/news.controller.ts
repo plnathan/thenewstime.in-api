@@ -67,7 +67,7 @@ export const getPublishedNewsList = async (
       sortBy: req.query.sortBy?.toString(),
 
       sortOrder: req.query.sortOrder as "ASC" | "DESC" | undefined,
-
+      popularOrder: req.query.popular === "true",
       /**
        * Public API always means PUBLISHED.
        *
@@ -513,18 +513,11 @@ export const activateNews = async (
       activatedBy: number;
     };
 
-    const news = await newsService.activateNews(
-      id,
-      activatedBy
-    );
+    const news = await newsService.activateNews(id, activatedBy);
 
     const dto = toNewsResponseDto(news);
 
-    sendSuccess(
-      res,
-      "News activated successfully.",
-      dto
-    );
+    sendSuccess(res, "News activated successfully.", dto);
   } catch (error) {
     next(error);
   }

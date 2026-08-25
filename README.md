@@ -108,9 +108,12 @@ npx vitest run src/api/v1/news/tests/news.repository.test.ts
 
 npx vitest run src/api/v1/news/tests/news.service.test.ts
 
+npx vitest src/api/v1/news-reads/tests/news-reads.integration.test.ts
+
 ****************** XXXX *********************
 
 Cloudinary
 ----------
+
 npm install cloudinary multer
 npm install -D @types/multer

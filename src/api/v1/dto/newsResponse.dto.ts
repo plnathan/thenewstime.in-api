@@ -113,6 +113,8 @@ export interface NewsResponseDto {
 
   media: NewsMediaResponseDto[];
 
+  views: number;
+
   status: string;
 
   displayPriority: number | null;

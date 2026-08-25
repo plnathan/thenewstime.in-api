@@ -83,6 +83,11 @@ export interface News {
    */
   media?: NewsMediaItem[];
 
+  /**
+   * Total recorded article views.
+   */
+  views: number;
+
   newsScope: NewsScope;
 
   countryId: number | null;
@@ -230,6 +235,8 @@ export interface NewsSearchFilter {
    * chronological public ordering.
    */
   publicOrder?: boolean | undefined;
+
+  popularOrder?: boolean | undefined;
 }
 
 export interface PaginatedNews {

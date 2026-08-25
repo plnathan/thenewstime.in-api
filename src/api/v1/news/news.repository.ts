@@ -28,6 +28,11 @@ import { mapNews } from "./news.db.mapper.js";
 const NEWS_SELECT = `
   SELECT
     n.id,
+    (
+      SELECT COUNT(*)::BIGINT
+      FROM news_reads nr
+      WHERE nr.news_id = n.id
+    ) AS view_count,
     n.news_number,
     n.title,
     n.slug,
@@ -565,7 +570,7 @@ export const changeStatus = async (
       break;
 
     default:
-            sql = `
+      sql = `
         UPDATE news
         SET
           status = $1::news_status,
@@ -645,10 +650,7 @@ export const activate = async (
     RETURNING id;
   `;
 
-  const result: QueryResult = await db.query(sql, [
-    id,
-    activatedBy
-  ]);
+  const result: QueryResult = await db.query(sql, [id, activatedBy]);
 
   if (result.rowCount === 0) {
     return null;
@@ -812,8 +814,16 @@ export const findAll = async (
    * Promotion/display priority must never override
    * chronological published_at ordering on the public website.
    */
-  const orderByClause = filter.publicOrder
+  const orderByClause = filter.popularOrder
     ? `
+    view_count DESC,
+
+    n.published_at DESC NULLS LAST,
+
+    n.id DESC
+  `
+    : filter.publicOrder
+      ? `
       n.published_at DESC NULLS LAST,
 
       CASE n.news_scope
@@ -826,7 +836,7 @@ export const findAll = async (
 
       n.id DESC
     `
-    : `
+      : `
       CASE
         WHEN n.display_priority_until IS NOT NULL
           AND n.display_priority_until > NOW()

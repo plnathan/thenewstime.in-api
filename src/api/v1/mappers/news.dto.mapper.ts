@@ -131,6 +131,8 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
 
     media,
 
+    views: news.views,
+    
     status: news.status,
 
     displayPriority: news.displayPriority,

@@ -1,5 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
-import { ApiError } from "../utils/apiErrorInfo.js"; //"../utils/ApiError.js";
+import { ZodError } from "zod";
+
+import { ApiError } from "../utils/apiErrorInfo.js";
 
 export const errorHandler = (
   err: Error,
@@ -9,11 +11,30 @@ export const errorHandler = (
 ) => {
   console.error("Global error:", err);
 
+  /**
+   * Zod validation errors
+   *
+   * Controllers use schema.parse(), which throws ZodError
+   * when request data is invalid.
+   *
+   * These are client errors, therefore they must return 400.
+   */
+  if (err instanceof ZodError) {
+    return res.status(400).json({
+      success: false,
+      message: "Validation failed.",
+      errors: err.issues
+    });
+  }
+
+  /**
+   * Application/API errors
+   */
   if (err instanceof ApiError) {
     const isValidationError =
       Array.isArray(err.details) &&
       err.details.every(
-        (item:any) =>
+        (item: unknown) =>
           typeof item === "object" &&
           item !== null &&
           "code" in item &&
@@ -36,6 +57,9 @@ export const errorHandler = (
     });
   }
 
+  /**
+   * Unexpected/unhandled errors
+   */
   return res.status(500).json({
     success: false,
     message: "Internal server error",
