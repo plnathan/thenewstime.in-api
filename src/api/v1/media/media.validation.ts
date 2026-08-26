@@ -14,9 +14,9 @@ export const mediaOrderSchema = z.object({
   items: z
     .array(
       z.object({
-        mediaId: z.number().int().positive(),
+        mediaId: z.coerce.number().int().positive(),
 
-        displayOrder: z.number().int().positive()
+        displayOrder: z.coerce.number().int().positive()
       })
     )
     .min(1)
