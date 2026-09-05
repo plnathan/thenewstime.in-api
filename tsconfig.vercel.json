@@ -1,7 +1,4 @@
 {
   "extends": "./tsconfig.json",
-  "include": [
-    "src",
-    "api"
-  ]
+  "include": ["src", "api", "src/**/*.d.ts"]
 }

@@ -209,3 +209,18 @@ COMMENT ON TYPE media_status IS
 'Media status.';
 
 COMMIT;
+
+-------------------------------------------------
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_type
+        WHERE typname = 'permission_status'
+    ) THEN
+        CREATE TYPE "permission_status"
+        AS ENUM ('ACTIVE', 'INACTIVE');
+    END IF;
+END
+$$;
+-----------------------------------------------------

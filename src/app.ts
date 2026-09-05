@@ -16,6 +16,10 @@ import {
 } from "./api/v1/locations/location.routes.js";
 import masterDataRoutes from "./api/v1/master-data/master-data.routes.js";
 import mediaRoutes from "./api/v1/media/media.routes.js";
+import authRoutes from "./api/v1/security/auth/auth.routes.js";
+import permissionRoutes from "./api/v1/security/permissions/permission.routes.js";
+import roleRoutes from "./api/v1/security/roles/role.routes.js";
+import userRoutes from "./api/v1/security/users/user.routes.js";
 
 const app = express();
 
@@ -47,6 +51,14 @@ app.use("/api/v1/districts", districtRouter);
 app.use("/api/v1/media", mediaRoutes);
 
 app.use("/api/v1/news", newsRoutes);
+
+app.use("/api/v1/auth", authRoutes);
+
+app.use("/api/v1/security/roles", roleRoutes);
+
+app.use("/api/v1/security/permissions", permissionRoutes);
+
+app.use("/api/v1/security/users", userRoutes);
 
 app.use("/api/v1/master-data", masterDataRoutes);
 

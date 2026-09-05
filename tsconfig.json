@@ -42,5 +42,5 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["src","api", "docs"]
+  "include": ["src","api", "docs","src/**/*.d.ts"]
 }

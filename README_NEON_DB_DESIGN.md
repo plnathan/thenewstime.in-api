@@ -544,3 +544,19 @@ ADD CONSTRAINT uq_news_slug UNIQUE (slug);
 &districtId=5
 &sortBy=published_at
 &sortOrder=DESC
+
+---------------------------------
+## Security Module:
+users
+   │
+   ├── user_roles ───────── roles
+   │                          │
+   │                          └── role_permissions ─── permissions
+   │
+   ├── user_sessions
+   │
+   ├── login_attempts
+   │
+   ├── password_reset_tokens
+   │
+   └── user_verifications

@@ -280,21 +280,36 @@ describe("News Reads API", () => {
   describe("GET /api/v1/news-reads/popular", () => {
     it("should return popular news ordered by read count", async () => {
       const response = await request(app).get(
-        "/api/v1/news-reads/popular?limit=5"
+        "/api/v1/news-reads/popular?limit=100"
       );
 
       expect(response.status).toBe(200);
 
       expect(Array.isArray(response.body.data)).toBe(true);
 
+      /**
+       * The test article must be present in the larger result set.
+       *
+       * We cannot use limit=5 here because the integration database may
+       * already contain other published articles with higher read counts.
+       */
       const publishedItem = response.body.data.find(
         (item: { newsId: number; readCount: number }) =>
           item.newsId === publishedNewsId
       );
 
       expect(publishedItem).toBeDefined();
-
       expect(publishedItem.readCount).toBe(2);
+
+      /**
+       * Verify that popular news is ordered by read count DESC.
+       */
+      for (let i = 1; i < response.body.data.length; i += 1) {
+        const previous = response.body.data[i - 1];
+        const current = response.body.data[i];
+
+        expect(previous.readCount).toBeGreaterThanOrEqual(current.readCount);
+      }
     });
 
     it("should return only published news", async () => {
