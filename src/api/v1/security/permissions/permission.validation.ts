@@ -7,8 +7,8 @@ export const createPermissionSchema = z.object({
     .min(2)
     .max(100)
     .regex(
-      /^[A-Z0-9_:-]+$/,
-      "Permission code must contain only uppercase letters, numbers, underscores, colons or hyphens."
+      /^[A-Za-z0-9_.:-]+$/,
+      "Permission code must contain only letters, numbers, underscores, periods, colons or hyphens."
     ),
 
   displayName: z.string().trim().min(2).max(150),

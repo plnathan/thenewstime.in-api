@@ -40,7 +40,8 @@ const mockUser: AuthUser = {
       code: "REPORTER",
       displayName: "Reporter"
     }
-  ]
+  ],
+  permissions: []
 };
 
 const mockLoginResult: LoginResult = {

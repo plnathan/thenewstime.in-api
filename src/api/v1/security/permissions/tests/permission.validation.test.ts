@@ -37,9 +37,7 @@ const validUpdatePermission = {
 
 describe("createPermissionSchema", () => {
   it("should accept a valid permission", () => {
-    const result = createPermissionSchema.safeParse(
-      validCreatePermission
-    );
+    const result = createPermissionSchema.safeParse(validCreatePermission);
 
     expect(result.success).toBe(true);
 
@@ -71,11 +69,22 @@ describe("createPermissionSchema", () => {
     }
   });
 
+  it("should accept a permission code containing lowercase letters", () => {
+    const result = createPermissionSchema.safeParse({
+      code: "news_read",
+      displayName: "Read News"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("should accept valid permission code characters", () => {
     const validCodes = [
       "NEWS_READ",
+      "news_read",
       "NEWS:READ",
       "NEWS-READ",
+      "NEWS.READ",
       "NEWS_READ_123",
       "NEWS:READ-123",
       "123_PERMISSION"
@@ -91,15 +100,6 @@ describe("createPermissionSchema", () => {
     }
   });
 
-  it("should reject a permission code containing lowercase letters", () => {
-    const result = createPermissionSchema.safeParse({
-      code: "news_read",
-      displayName: "Read News"
-    });
-
-    expect(result.success).toBe(false);
-  });
-
   it("should reject a permission code containing spaces", () => {
     const result = createPermissionSchema.safeParse({
       code: "NEWS READ",
@@ -111,11 +111,12 @@ describe("createPermissionSchema", () => {
 
   it("should reject a permission code containing unsupported special characters", () => {
     const invalidCodes = [
-      "NEWS.READ",
       "NEWS/READ",
       "NEWS@READ",
       "NEWS#READ",
-      "NEWS READ"
+      "NEWS READ",
+      "NEWS+READ",
+      "NEWS=READ"
     ];
 
     for (const code of invalidCodes) {
@@ -137,6 +138,15 @@ describe("createPermissionSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("should accept a code with exactly 2 characters", () => {
+    const result = createPermissionSchema.safeParse({
+      code: "AB",
+      displayName: "Read News"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("should reject a code longer than 100 characters", () => {
     const result = createPermissionSchema.safeParse({
       code: "A".repeat(101),
@@ -144,6 +154,15 @@ describe("createPermissionSchema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("should accept a code with exactly 100 characters", () => {
+    const result = createPermissionSchema.safeParse({
+      code: "A".repeat(100),
+      displayName: "Read News"
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("should reject an empty code", () => {
@@ -171,6 +190,24 @@ describe("createPermissionSchema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("should accept a display name with exactly 2 characters", () => {
+    const result = createPermissionSchema.safeParse({
+      code: "NEWS_READ",
+      displayName: "AB"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept a display name with exactly 150 characters", () => {
+    const result = createPermissionSchema.safeParse({
+      code: "NEWS_READ",
+      displayName: "A".repeat(150)
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("should reject an empty display name", () => {
@@ -214,6 +251,16 @@ describe("createPermissionSchema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("should accept a description with exactly 300 characters", () => {
+    const result = createPermissionSchema.safeParse({
+      code: "NEWS_READ",
+      displayName: "Read News",
+      description: "A".repeat(300)
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("should accept a module up to 50 characters", () => {
@@ -366,9 +413,7 @@ describe("createPermissionSchema", () => {
 
 describe("updatePermissionSchema", () => {
   it("should accept a valid update payload", () => {
-    const result = updatePermissionSchema.safeParse(
-      validUpdatePermission
-    );
+    const result = updatePermissionSchema.safeParse(validUpdatePermission);
 
     expect(result.success).toBe(true);
 
@@ -448,12 +493,7 @@ describe("updatePermissionSchema", () => {
   });
 
   it("should reject an invalid status", () => {
-    const invalidStatuses = [
-      "active",
-      "inactive",
-      "DISABLED",
-      "PENDING"
-    ];
+    const invalidStatuses = ["active", "inactive", "DISABLED", "PENDING"];
 
     for (const status of invalidStatuses) {
       const result = updatePermissionSchema.safeParse({
@@ -484,12 +524,28 @@ describe("updatePermissionSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("should accept displayName with exactly 2 characters", () => {
+    const result = updatePermissionSchema.safeParse({
+      displayName: "AB"
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("should reject displayName longer than 150 characters", () => {
     const result = updatePermissionSchema.safeParse({
       displayName: "A".repeat(151)
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("should accept displayName with exactly 150 characters", () => {
+    const result = updatePermissionSchema.safeParse({
+      displayName: "A".repeat(150)
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("should trim description", () => {
@@ -512,6 +568,22 @@ describe("updatePermissionSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("should accept description with exactly 300 characters", () => {
+    const result = updatePermissionSchema.safeParse({
+      description: "A".repeat(300)
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("should accept module with exactly 50 characters", () => {
+    const result = updatePermissionSchema.safeParse({
+      module: "A".repeat(50)
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("should reject module longer than 50 characters", () => {
     const result = updatePermissionSchema.safeParse({
       module: "A".repeat(51)
@@ -520,12 +592,28 @@ describe("updatePermissionSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("should accept resource with exactly 50 characters", () => {
+    const result = updatePermissionSchema.safeParse({
+      resource: "A".repeat(50)
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("should reject resource longer than 50 characters", () => {
     const result = updatePermissionSchema.safeParse({
       resource: "A".repeat(51)
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("should accept action with exactly 50 characters", () => {
+    const result = updatePermissionSchema.safeParse({
+      action: "A".repeat(50)
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("should reject action longer than 50 characters", () => {
@@ -560,21 +648,18 @@ describe("updatePermissionSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should reject unknown fields", () => {
+  it("should strip unknown fields", () => {
     const result = updatePermissionSchema.safeParse({
       displayName: "Updated Permission",
       unknownField: "unexpected"
     });
 
-    /*
-     * Zod object schemas strip unknown keys by default.
-     * Therefore the payload itself is valid, but the unknown field
-     * should not appear in the parsed result.
-     */
     expect(result.success).toBe(true);
 
     if (result.success) {
-      expect(result.data).not.toHaveProperty("unknownField");
+      expect(result.data).toEqual({
+        displayName: "Updated Permission"
+      });
     }
   });
 });

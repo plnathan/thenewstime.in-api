@@ -22,6 +22,16 @@ export interface AuthRoleRow {
   display_name: string;
 }
 
+export interface AuthPermissionRow {
+  id: number;
+  code: string;
+  display_name: string;
+  module: string | null;
+  resource: string | null;
+  action: string | null;
+  display_order: number;
+}
+
 export interface SessionRow {
   id: number;
   user_id: number;
@@ -212,6 +222,50 @@ export const findRolesByUserId = async (
   return result.rows;
 };
 
+export const findPermissionsByUserId = async (
+  userId: number,
+  client?: PoolClient
+): Promise<AuthPermissionRow[]> => {
+  const db = client ?? pool;
+
+  const result = await db.query<AuthPermissionRow>(
+    `
+    SELECT DISTINCT
+      p.id,
+      p.code,
+      p.display_name,
+      COALESCE(p.module, '') AS module,
+      p.resource,
+      p.action,
+      p.display_order
+    FROM user_roles ur
+
+    INNER JOIN roles r
+      ON r.id = ur.role_id
+
+    INNER JOIN role_permissions rp
+      ON rp.role_id = r.id
+
+    INNER JOIN permissions p
+      ON p.id = rp.permission_id
+
+    WHERE ur.user_id = $1
+
+      AND r.status = 'ACTIVE'
+
+      AND p.status = 'ACTIVE'
+
+    ORDER BY
+      module,
+      p.display_order ASC,
+      p.id ASC
+    `,
+    [userId]
+  );
+
+  return result.rows;
+};
+
 export const assignRole = async (
   userId: number,
   roleId: number,
@@ -308,7 +362,7 @@ export const createUser = async (
   const createdUser = result.rows[0];
 
   if (!createdUser?.id) {
-    throw new Error('Failed to create user: no id returned from insert');
+    throw new Error("Failed to create user: no id returned from insert");
   }
 
   return Number(createdUser.id);
@@ -407,7 +461,7 @@ export const createSession = async (
   const createdSession = result.rows[0];
 
   if (!createdSession?.id) {
-    throw new Error('Failed to create session: no id returned from insert');
+    throw new Error("Failed to create session: no id returned from insert");
   }
 
   return Number(createdSession.id);

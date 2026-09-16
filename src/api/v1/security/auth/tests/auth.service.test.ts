@@ -50,6 +50,7 @@ vi.mock("../auth.repository.js", () => ({
   existsByMobile: vi.fn(),
   findRoleByCode: vi.fn(),
   findRolesByUserId: vi.fn(),
+  findPermissionsByUserId: vi.fn(),
   assignRole: vi.fn(),
   createUser: vi.fn(),
   updateSuccessfulLogin: vi.fn(),
@@ -139,7 +140,8 @@ const createAuthUser = (): AuthUser => {
         code: "REPORTER",
         displayName: "Reporter"
       }
-    ]
+    ],
+    permissions: []
   };
 };
 
@@ -207,6 +209,8 @@ describe("Auth Service", () => {
     mockedRepository.findUserByUsername.mockResolvedValue(createUserRow());
 
     mockedRepository.findRolesByUserId.mockResolvedValue(createRoles());
+
+    mockedRepository.findPermissionsByUserId.mockResolvedValue([]);
 
     mockedRepository.createUser.mockResolvedValue(101);
 
@@ -319,6 +323,11 @@ describe("Auth Service", () => {
       expect(mockedRepository.findUserById).toHaveBeenCalledWith(101, client);
 
       expect(mockedRepository.findRolesByUserId).toHaveBeenCalledWith(
+        101,
+        client
+      );
+
+      expect(mockedRepository.findPermissionsByUserId).toHaveBeenCalledWith(
         101,
         client
       );
@@ -614,20 +623,17 @@ describe("Auth Service", () => {
         "hashed-password"
       );
 
-      /*
-      |----------------------------------------------------------------------
-      | FIX:
-      | buildAuthUser() calls these repository methods with the optional
-      | client argument omitted, which Vitest records as undefined.
-      |----------------------------------------------------------------------
-      */
-
       expect(mockedRepository.findUserById).toHaveBeenCalledWith(
         101,
         undefined
       );
 
       expect(mockedRepository.findRolesByUserId).toHaveBeenCalledWith(
+        101,
+        undefined
+      );
+
+      expect(mockedRepository.findPermissionsByUserId).toHaveBeenCalledWith(
         101,
         undefined
       );
@@ -738,6 +744,11 @@ describe("Auth Service", () => {
 
       expect(result).toEqual(createLoginResult());
 
+      expect(mockedRepository.findPermissionsByUserId).toHaveBeenCalledWith(
+        101,
+        undefined
+      );
+
       expect(mockedRepository.createSession).toHaveBeenCalledWith(
         expect.objectContaining({
           ipAddress: null,
@@ -775,6 +786,8 @@ describe("Auth Service", () => {
       expect(mockedCreateAccessToken).not.toHaveBeenCalled();
 
       expect(mockedRepository.createSession).not.toHaveBeenCalled();
+
+      expect(mockedRepository.findPermissionsByUserId).not.toHaveBeenCalled();
     });
   });
 
@@ -828,6 +841,16 @@ describe("Auth Service", () => {
       ).toHaveBeenCalledWith("old-token-hash");
 
       expect(mockedRepository.findUserById).toHaveBeenCalledWith(101);
+
+      expect(mockedRepository.findRolesByUserId).toHaveBeenCalledWith(
+        101,
+        undefined
+      );
+
+      expect(mockedRepository.findPermissionsByUserId).toHaveBeenCalledWith(
+        101,
+        undefined
+      );
 
       expect(mockedCreateAccessToken).toHaveBeenCalledWith(createAuthUser());
 
@@ -946,6 +969,11 @@ describe("Auth Service", () => {
       await refresh("valid-token");
 
       expect(mockedCreateAccessToken).toHaveBeenCalledWith(createAuthUser());
+
+      expect(mockedRepository.findPermissionsByUserId).toHaveBeenCalledWith(
+        101,
+        undefined
+      );
     });
 
     it("should generate and hash a new refresh token", async () => {
@@ -1083,6 +1111,11 @@ describe("Auth Service", () => {
         101,
         undefined
       );
+
+      expect(mockedRepository.findPermissionsByUserId).toHaveBeenCalledWith(
+        101,
+        undefined
+      );
     });
 
     it("should throw when the user does not exist", async () => {
@@ -1094,6 +1127,8 @@ describe("Auth Service", () => {
       });
 
       expect(mockedRepository.findRolesByUserId).not.toHaveBeenCalled();
+
+      expect(mockedRepository.findPermissionsByUserId).not.toHaveBeenCalled();
     });
 
     it("should map database user fields to AuthUser fields", async () => {
@@ -1122,6 +1157,8 @@ describe("Auth Service", () => {
         }
       ]);
 
+      mockedRepository.findPermissionsByUserId.mockResolvedValue([]);
+
       const result = await getCurrentUser(777);
 
       expect(result).toEqual({
@@ -1143,7 +1180,8 @@ describe("Auth Service", () => {
             code: "EDITOR",
             displayName: "Editor"
           }
-        ]
+        ],
+        permissions: []
       });
     });
 
@@ -1154,7 +1192,14 @@ describe("Auth Service", () => {
 
       expect(result.roles).toEqual([]);
 
+      expect(result.permissions).toEqual([]);
+
       expect(mockedRepository.findRolesByUserId).toHaveBeenCalledWith(
+        101,
+        undefined
+      );
+
+      expect(mockedRepository.findPermissionsByUserId).toHaveBeenCalledWith(
         101,
         undefined
       );

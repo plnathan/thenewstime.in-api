@@ -58,18 +58,15 @@ describe("User Controller", () => {
     email: `${username}@example.com`,
     mobile: null,
     status: "ACTIVE",
-    roles
+    roles,
+    permissions: []
   });
 
   const createRequest = (overrides: Partial<Request> = {}): Request =>
     ({
       body: {},
       params: {},
-      user: createAuthenticatedUser(
-        1,
-        "admin",
-        [superAdminRole]
-      ),
+      user: createAuthenticatedUser(1, "admin", [superAdminRole]),
       ...overrides
     }) as Request;
 
@@ -94,6 +91,22 @@ describe("User Controller", () => {
     passwordExpiresAt: null,
     failedLoginCount: 0,
     status: "ACTIVE",
+
+    roles: [
+      {
+        id: 2,
+        code: "EDITOR",
+        displayName: "Editor",
+        status: "ACTIVE"
+      },
+      {
+        id: 3,
+        code: "REPORTER",
+        displayName: "Reporter",
+        status: "ACTIVE"
+      }
+    ],
+
     createdBy: 1,
     createdAt: new Date(),
     updatedBy: 1,
@@ -102,9 +115,7 @@ describe("User Controller", () => {
 
   const mockUserList: UserListItem[] = [
     {
-      ...mockUser,
-      roleCode: "EDITOR",
-      roleDisplayName: "Editor"
+      ...mockUser
     }
   ];
 
@@ -115,13 +126,14 @@ describe("User Controller", () => {
     email: "new@example.com",
     mobile: "9876543211",
     password: "password123",
-    roleId: 2
+    roleIds: [2, 3]
   };
 
   const mockUpdateInput: UpdateUserInput = {
     fullName: "Updated User",
     displayName: "Updated",
-    email: "updated@example.com"
+    email: "updated@example.com",
+    roleIds: [2, 3]
   };
 
   beforeEach(() => {
@@ -207,10 +219,7 @@ describe("User Controller", () => {
     });
 
     it("should forward service errors to next", async () => {
-      const error = new ApiError(
-        404,
-        "User not found."
-      );
+      const error = new ApiError(404, "User not found.");
 
       vi.mocked(service.getById).mockRejectedValue(error);
 
@@ -232,24 +241,17 @@ describe("User Controller", () => {
   // ===========================================================================
 
   describe("create", () => {
-    it("should create a user and return 201", async () => {
+    it("should create a user with multiple roles and return 201", async () => {
       vi.mocked(service.create).mockResolvedValue(mockUser);
 
       const req = createRequest({
         body: mockCreateInput,
-        user: createAuthenticatedUser(
-          10,
-          "admin",
-          [superAdminRole]
-        )
+        user: createAuthenticatedUser(10, "admin", [superAdminRole])
       });
 
       await controller.create(req, response, next);
 
-      expect(service.create).toHaveBeenCalledWith(
-        mockCreateInput,
-        10
-      );
+      expect(service.create).toHaveBeenCalledWith(mockCreateInput, 10);
 
       expect(sendSuccess).toHaveBeenCalledWith(
         response,
@@ -266,26 +268,33 @@ describe("User Controller", () => {
 
       const req = createRequest({
         body: mockCreateInput,
-        user: createAuthenticatedUser(
-          55,
-          "creator",
-          [adminRole]
-        )
+        user: createAuthenticatedUser(55, "creator", [adminRole])
       });
 
       await controller.create(req, response, next);
 
-      expect(service.create).toHaveBeenCalledWith(
-        mockCreateInput,
-        55
-      );
+      expect(service.create).toHaveBeenCalledWith(mockCreateInput, 55);
+    });
+
+    it("should preserve all selected role ids in the request body", async () => {
+      vi.mocked(service.create).mockResolvedValue(mockUser);
+
+      const input: CreateUserInput = {
+        ...mockCreateInput,
+        roleIds: [2, 3, 4]
+      };
+
+      const req = createRequest({
+        body: input
+      });
+
+      await controller.create(req, response, next);
+
+      expect(service.create).toHaveBeenCalledWith(input, 1);
     });
 
     it("should forward service errors to next", async () => {
-      const error = new ApiError(
-        409,
-        "Username already exists."
-      );
+      const error = new ApiError(409, "Username already exists.");
 
       vi.mocked(service.create).mockRejectedValue(error);
 
@@ -305,7 +314,7 @@ describe("User Controller", () => {
   // ===========================================================================
 
   describe("update", () => {
-    it("should update a user and return success response", async () => {
+    it("should update a user with multiple roles and return success response", async () => {
       vi.mocked(service.update).mockResolvedValue(mockUser);
 
       const req = createRequest({
@@ -313,20 +322,12 @@ describe("User Controller", () => {
           id: "101"
         },
         body: mockUpdateInput,
-        user: createAuthenticatedUser(
-          10,
-          "admin",
-          [superAdminRole]
-        )
+        user: createAuthenticatedUser(10, "admin", [superAdminRole])
       });
 
       await controller.update(req, response, next);
 
-      expect(service.update).toHaveBeenCalledWith(
-        101,
-        mockUpdateInput,
-        10
-      );
+      expect(service.update).toHaveBeenCalledWith(101, mockUpdateInput, 10);
 
       expect(sendSuccess).toHaveBeenCalledWith(
         response,
@@ -345,11 +346,7 @@ describe("User Controller", () => {
           id: "500"
         },
         body: mockUpdateInput,
-        user: createAuthenticatedUser(
-          55,
-          "creator",
-          [adminRole]
-        )
+        user: createAuthenticatedUser(55, "creator", [adminRole])
       });
 
       await controller.update(req, response, next);
@@ -358,18 +355,30 @@ describe("User Controller", () => {
        * Target user id = 500
        * Authenticated user id = 55
        */
-      expect(service.update).toHaveBeenCalledWith(
-        500,
-        mockUpdateInput,
-        55
-      );
+      expect(service.update).toHaveBeenCalledWith(500, mockUpdateInput, 55);
+    });
+
+    it("should preserve all selected role ids in the update body", async () => {
+      vi.mocked(service.update).mockResolvedValue(mockUser);
+
+      const input: UpdateUserInput = {
+        roleIds: [1, 2, 3]
+      };
+
+      const req = createRequest({
+        params: {
+          id: "101"
+        },
+        body: input
+      });
+
+      await controller.update(req, response, next);
+
+      expect(service.update).toHaveBeenCalledWith(101, input, 1);
     });
 
     it("should forward service errors to next", async () => {
-      const error = new ApiError(
-        404,
-        "User not found."
-      );
+      const error = new ApiError(404, "User not found.");
 
       vi.mocked(service.update).mockRejectedValue(error);
 
@@ -398,27 +407,18 @@ describe("User Controller", () => {
         status: "INACTIVE"
       };
 
-      vi.mocked(service.deactivate).mockResolvedValue(
-        inactiveUser
-      );
+      vi.mocked(service.deactivate).mockResolvedValue(inactiveUser);
 
       const req = createRequest({
         params: {
           id: "101"
         },
-        user: createAuthenticatedUser(
-          10,
-          "admin",
-          [superAdminRole]
-        )
+        user: createAuthenticatedUser(10, "admin", [superAdminRole])
       });
 
       await controller.remove(req, response, next);
 
-      expect(service.deactivate).toHaveBeenCalledWith(
-        101,
-        10
-      );
+      expect(service.deactivate).toHaveBeenCalledWith(101, 10);
 
       expect(sendSuccess).toHaveBeenCalledWith(
         response,
@@ -435,19 +435,13 @@ describe("User Controller", () => {
         status: "INACTIVE"
       };
 
-      vi.mocked(service.deactivate).mockResolvedValue(
-        inactiveUser
-      );
+      vi.mocked(service.deactivate).mockResolvedValue(inactiveUser);
 
       const req = createRequest({
         params: {
           id: "700"
         },
-        user: createAuthenticatedUser(
-          55,
-          "creator",
-          [adminRole]
-        )
+        user: createAuthenticatedUser(55, "creator", [adminRole])
       });
 
       await controller.remove(req, response, next);
@@ -456,10 +450,7 @@ describe("User Controller", () => {
        * Target user id = 700
        * Authenticated user id = 55
        */
-      expect(service.deactivate).toHaveBeenCalledWith(
-        700,
-        55
-      );
+      expect(service.deactivate).toHaveBeenCalledWith(700, 55);
     });
 
     it("should forward service errors to next", async () => {
@@ -474,11 +465,7 @@ describe("User Controller", () => {
         params: {
           id: "10"
         },
-        user: createAuthenticatedUser(
-          10,
-          "admin",
-          [superAdminRole]
-        )
+        user: createAuthenticatedUser(10, "admin", [superAdminRole])
       });
 
       await controller.remove(req, response, next);

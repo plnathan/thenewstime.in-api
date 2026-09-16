@@ -7,9 +7,9 @@ import * as permissionService from "../permission.service.js";
 import { sendSuccess } from "../../../../../shared/utils/response.js";
 
 import type {
-  CreatePermissionInput,
-  Permission,
-  UpdatePermissionInput
+CreatePermissionInput,
+Permission,
+UpdatePermissionInput
 } from "../permission.types.js";
 
 /* -------------------------------------------------------------------------- */
@@ -17,17 +17,18 @@ import type {
 /* -------------------------------------------------------------------------- */
 
 vi.mock("../permission.service.js", () => ({
-  getAll: vi.fn(),
-  getById: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
-  assignToRole: vi.fn(),
-  removeFromRole: vi.fn(),
-  getRolePermissions: vi.fn()
+getAll: vi.fn(),
+getById: vi.fn(),
+create: vi.fn(),
+update: vi.fn(),
+deactivate: vi.fn(),
+assignToRole: vi.fn(),
+removeFromRole: vi.fn(),
+getRolePermissions: vi.fn()
 }));
 
 vi.mock("../../../../../shared/utils/response.js", () => ({
-  sendSuccess: vi.fn()
+sendSuccess: vi.fn()
 }));
 
 /* -------------------------------------------------------------------------- */
@@ -35,64 +36,70 @@ vi.mock("../../../../../shared/utils/response.js", () => ({
 /* -------------------------------------------------------------------------- */
 
 const mockPermission: Permission = {
-  id: 101,
-  code: "TEST_PERMISSION_READ",
-  displayName: "Test Permission Read",
-  description: "Permission controller test permission",
-  module: "TEST",
-  resource: "repository",
-  action: "read",
-  displayOrder: 900,
-  isSystemPermission: false,
-  status: "ACTIVE",
-  createdBy: 1,
-  createdAt: new Date("2026-01-01T00:00:00.000Z"),
-  updatedBy: 1,
-  updatedAt: new Date("2026-01-01T00:00:00.000Z")
+id: 101,
+code: "TEST_PERMISSION_READ",
+displayName: "Test Permission Read",
+description: "Permission controller test permission",
+module: "TEST",
+resource: "repository",
+action: "read",
+displayOrder: 900,
+isSystemPermission: false,
+status: "ACTIVE",
+createdBy: 1,
+createdAt: new Date("2026-01-01T00:00:00.000Z"),
+updatedBy: 1,
+updatedAt: new Date("2026-01-01T00:00:00.000Z")
 };
 
 const mockPermissionList: Permission[] = [
-  mockPermission,
-  {
-    ...mockPermission,
-    id: 102,
-    code: "TEST_PERMISSION_CREATE",
-    displayName: "Test Permission Create",
-    action: "create"
-  }
+mockPermission,
+{
+...mockPermission,
+id: 102,
+code: "TEST_PERMISSION_CREATE",
+displayName: "Test Permission Create",
+action: "create"
+}
 ];
 
 const createInput: CreatePermissionInput = {
-  code: "TEST_PERMISSION_READ",
-  displayName: "Test Permission Read",
-  description: "Permission controller test permission",
-  module: "TEST",
-  resource: "repository",
-  action: "read",
-  displayOrder: 900,
-  isSystemPermission: false
+code: "TEST_PERMISSION_READ",
+displayName: "Test Permission Read",
+description: "Permission controller test permission",
+module: "TEST",
+resource: "repository",
+action: "read",
+displayOrder: 900,
+isSystemPermission: false
 };
 
 const updateInput: UpdatePermissionInput = {
-  displayName: "Updated Permission",
-  description: "Updated permission description",
-  module: "UPDATED_TEST",
-  resource: "updated_repository",
-  action: "update",
-  displayOrder: 901,
-  status: "ACTIVE"
+displayName: "Updated Permission",
+description: "Updated permission description",
+module: "UPDATED_TEST",
+resource: "updated_repository",
+action: "update",
+displayOrder: 901,
+status: "ACTIVE"
 };
 
 const updatedPermission: Permission = {
-  ...mockPermission,
-  displayName: "Updated Permission",
-  description: "Updated permission description",
-  module: "UPDATED_TEST",
-  resource: "updated_repository",
-  action: "update",
-  displayOrder: 901,
-  status: "ACTIVE",
-  updatedBy: 25
+...mockPermission,
+displayName: "Updated Permission",
+description: "Updated permission description",
+module: "UPDATED_TEST",
+resource: "updated_repository",
+action: "update",
+displayOrder: 901,
+status: "ACTIVE",
+updatedBy: 25
+};
+
+const deactivatedPermission: Permission = {
+...mockPermission,
+status: "INACTIVE",
+updatedBy: 25
 };
 
 /* -------------------------------------------------------------------------- */
@@ -100,25 +107,25 @@ const updatedPermission: Permission = {
 /* -------------------------------------------------------------------------- */
 
 const createRequest = (overrides: Partial<Request> = {}): Request => {
-  return {
-    params: {},
-    body: {},
-    user: {
-      id: 25
-    },
-    ...overrides
-  } as Request;
+return {
+params: {},
+body: {},
+user: {
+id: 25
+},
+...overrides
+} as Request;
 };
 
 const createResponse = (): Response => {
-  return {
-    status: vi.fn().mockReturnThis(),
-    json: vi.fn().mockReturnThis()
-  } as unknown as Response;
+return {
+status: vi.fn().mockReturnThis(),
+json: vi.fn().mockReturnThis()
+} as unknown as Response;
 };
 
 const createNext = (): NextFunction => {
-  return vi.fn();
+return vi.fn();
 };
 
 /* -------------------------------------------------------------------------- */
@@ -126,612 +133,759 @@ const createNext = (): NextFunction => {
 /* -------------------------------------------------------------------------- */
 
 describe("Permission Controller", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+beforeEach(() => {
+vi.clearAllMocks();
+});
+
+/* ------------------------------------------------------------------------ */
+/* getAll                                                                   */
+/* ------------------------------------------------------------------------ */
+
+describe("getAll", () => {
+it("should return all permissions successfully", async () => {
+vi.mocked(permissionService.getAll).mockResolvedValue(mockPermissionList);
+
+
+  const req = createRequest();
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getAll(req, res, next);
+
+  expect(permissionService.getAll).toHaveBeenCalledTimes(1);
+
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permissions retrieved successfully.",
+    mockPermissionList
+  );
+
+  expect(next).not.toHaveBeenCalled();
+});
+
+it("should return an empty permission list successfully", async () => {
+  vi.mocked(permissionService.getAll).mockResolvedValue([]);
+
+  const req = createRequest();
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getAll(req, res, next);
+
+  expect(permissionService.getAll).toHaveBeenCalledTimes(1);
+
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permissions retrieved successfully.",
+    []
+  );
+
+  expect(next).not.toHaveBeenCalled();
+});
+
+it("should forward service errors to next", async () => {
+  const error = new Error("Failed to retrieve permissions");
+
+  vi.mocked(permissionService.getAll).mockRejectedValue(error);
+
+  const req = createRequest();
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getAll(req, res, next);
+
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
+
+
+});
+
+/* ------------------------------------------------------------------------ */
+/* getById                                                                  */
+/* ------------------------------------------------------------------------ */
+
+describe("getById", () => {
+it("should return a permission successfully", async () => {
+vi.mocked(permissionService.getById).mockResolvedValue(mockPermission);
+
+
+  const req = createRequest({
+    params: {
+      id: "101"
+    }
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* getAll                                                                   */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("getAll", () => {
-    it("should return all permissions successfully", async () => {
-      vi.mocked(permissionService.getAll).mockResolvedValue(mockPermissionList);
+  await permissionController.getById(req, res, next);
 
-      const req = createRequest();
-      const res = createResponse();
-      const next = createNext();
+  expect(permissionService.getById).toHaveBeenCalledWith(101);
 
-      await permissionController.getAll(req, res, next);
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission retrieved successfully.",
+    mockPermission
+  );
 
-      expect(permissionService.getAll).toHaveBeenCalledTimes(1);
+  expect(next).not.toHaveBeenCalled();
+});
 
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permissions retrieved successfully.",
-        mockPermissionList
-      );
+it("should convert permission id from string to number", async () => {
+  vi.mocked(permissionService.getById).mockResolvedValue(mockPermission);
 
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it("should return an empty permission list successfully", async () => {
-      vi.mocked(permissionService.getAll).mockResolvedValue([]);
-
-      const req = createRequest();
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.getAll(req, res, next);
-
-      expect(permissionService.getAll).toHaveBeenCalledTimes(1);
-
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permissions retrieved successfully.",
-        []
-      );
-
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it("should forward service errors to next", async () => {
-      const error = new Error("Failed to retrieve permissions");
-
-      vi.mocked(permissionService.getAll).mockRejectedValue(error);
-
-      const req = createRequest();
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.getAll(req, res, next);
-
-      expect(next).toHaveBeenCalledWith(error);
-      expect(sendSuccess).not.toHaveBeenCalled();
-    });
+  const req = createRequest({
+    params: {
+      id: "123"
+    }
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* getById                                                                  */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("getById", () => {
-    it("should return a permission successfully", async () => {
-      vi.mocked(permissionService.getById).mockResolvedValue(mockPermission);
+  await permissionController.getById(req, res, next);
 
-      const req = createRequest({
-        params: {
-          id: "101"
-        }
-      });
+  expect(permissionService.getById).toHaveBeenCalledWith(123);
+});
 
-      const res = createResponse();
-      const next = createNext();
+it("should forward service errors to next", async () => {
+  const error = new Error("Permission not found");
 
-      await permissionController.getById(req, res, next);
+  vi.mocked(permissionService.getById).mockRejectedValue(error);
 
-      expect(permissionService.getById).toHaveBeenCalledWith(101);
-
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permission retrieved successfully.",
-        mockPermission
-      );
-
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it("should convert permission id from string to number", async () => {
-      vi.mocked(permissionService.getById).mockResolvedValue(mockPermission);
-
-      const req = createRequest({
-        params: {
-          id: "123"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.getById(req, res, next);
-
-      expect(permissionService.getById).toHaveBeenCalledWith(123);
-    });
-
-    it("should forward service errors to next", async () => {
-      const error = new Error("Permission not found");
-
-      vi.mocked(permissionService.getById).mockRejectedValue(error);
-
-      const req = createRequest({
-        params: {
-          id: "999"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.getById(req, res, next);
-
-      expect(next).toHaveBeenCalledWith(error);
-      expect(sendSuccess).not.toHaveBeenCalled();
-    });
+  const req = createRequest({
+    params: {
+      id: "999"
+    }
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* create                                                                   */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("create", () => {
-    it("should create a permission successfully", async () => {
-      vi.mocked(permissionService.create).mockResolvedValue(mockPermission);
+  await permissionController.getById(req, res, next);
 
-      const req = createRequest({
-        body: createInput
-      });
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
 
-      const res = createResponse();
-      const next = createNext();
 
-      await permissionController.create(req, res, next);
+});
 
-      expect(permissionService.create).toHaveBeenCalledWith(createInput, 25);
+/* ------------------------------------------------------------------------ */
+/* create                                                                   */
+/* ------------------------------------------------------------------------ */
 
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permission created successfully.",
-        mockPermission,
-        201
-      );
+describe("create", () => {
+it("should create a permission successfully", async () => {
+vi.mocked(permissionService.create).mockResolvedValue(mockPermission);
 
-      expect(next).not.toHaveBeenCalled();
-    });
 
-    it("should pass the authenticated user id to the service", async () => {
-      vi.mocked(permissionService.create).mockResolvedValue(mockPermission);
-
-      const req = createRequest({
-        body: createInput,
-        user: {
-          id: 99,
-          username: "test-user",
-          roles: []
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.create(req, res, next);
-
-      expect(permissionService.create).toHaveBeenCalledWith(createInput, 99);
-    });
-
-    it("should forward service errors to next", async () => {
-      const error = new Error("Permission creation failed");
-
-      vi.mocked(permissionService.create).mockRejectedValue(error);
-
-      const req = createRequest({
-        body: createInput
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.create(req, res, next);
-
-      expect(next).toHaveBeenCalledWith(error);
-      expect(sendSuccess).not.toHaveBeenCalled();
-    });
+  const req = createRequest({
+    body: createInput
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* update                                                                   */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("update", () => {
-    it("should update a permission successfully", async () => {
-      vi.mocked(permissionService.update).mockResolvedValue(updatedPermission);
+  await permissionController.create(req, res, next);
 
-      const req = createRequest({
-        params: {
-          id: "101"
-        },
-        body: updateInput
-      });
+  expect(permissionService.create).toHaveBeenCalledWith(createInput, 25);
 
-      const res = createResponse();
-      const next = createNext();
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission created successfully.",
+    mockPermission,
+    201
+  );
 
-      await permissionController.update(req, res, next);
+  expect(next).not.toHaveBeenCalled();
+});
 
-      expect(permissionService.update).toHaveBeenCalledWith(
-        101,
-        updateInput,
-        25
-      );
+it("should pass the authenticated user id to the service", async () => {
+  vi.mocked(permissionService.create).mockResolvedValue(mockPermission);
 
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permission updated successfully.",
-        updatedPermission
-      );
-
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it("should convert permission id from string to number", async () => {
-      vi.mocked(permissionService.update).mockResolvedValue(updatedPermission);
-
-      const req = createRequest({
-        params: {
-          id: "205"
-        },
-        body: updateInput
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.update(req, res, next);
-
-      expect(permissionService.update).toHaveBeenCalledWith(
-        205,
-        updateInput,
-        25
-      );
-    });
-
-    it("should pass the authenticated user id to the service", async () => {
-      vi.mocked(permissionService.update).mockResolvedValue(updatedPermission);
-
-      const req = createRequest({
-        params: {
-          id: "101"
-        },
-        body: updateInput,
-        user: {
-          id: 77,
-          username: "test-user",
-          roles: []
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.update(req, res, next);
-
-      expect(permissionService.update).toHaveBeenCalledWith(
-        101,
-        updateInput,
-        77
-      );
-    });
-
-    it("should forward service errors to next", async () => {
-      const error = new Error("Permission update failed");
-
-      vi.mocked(permissionService.update).mockRejectedValue(error);
-
-      const req = createRequest({
-        params: {
-          id: "101"
-        },
-        body: updateInput
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.update(req, res, next);
-
-      expect(next).toHaveBeenCalledWith(error);
-      expect(sendSuccess).not.toHaveBeenCalled();
-    });
+  const req = createRequest({
+    body: createInput,
+    user: {
+      id: 99,
+      username: "test-user",
+      roles: []
+    }
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* getRolePermissions                                                       */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("getRolePermissions", () => {
-    it("should return permissions assigned to a role", async () => {
-      vi.mocked(permissionService.getRolePermissions).mockResolvedValue(
-        mockPermissionList
-      );
+  await permissionController.create(req, res, next);
 
-      const req = createRequest({
-        params: {
-          roleId: "10"
-        }
-      });
+  expect(permissionService.create).toHaveBeenCalledWith(createInput, 99);
+});
 
-      const res = createResponse();
-      const next = createNext();
+it("should forward service errors to next", async () => {
+  const error = new Error("Permission creation failed");
 
-      await permissionController.getRolePermissions(req, res, next);
+  vi.mocked(permissionService.create).mockRejectedValue(error);
 
-      expect(permissionService.getRolePermissions).toHaveBeenCalledWith(10);
-
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Role permissions retrieved successfully.",
-        mockPermissionList
-      );
-
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it("should return an empty list when a role has no permissions", async () => {
-      vi.mocked(permissionService.getRolePermissions).mockResolvedValue([]);
-
-      const req = createRequest({
-        params: {
-          roleId: "10"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.getRolePermissions(req, res, next);
-
-      expect(permissionService.getRolePermissions).toHaveBeenCalledWith(10);
-
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Role permissions retrieved successfully.",
-        []
-      );
-    });
-
-    it("should convert role id from string to number", async () => {
-      vi.mocked(permissionService.getRolePermissions).mockResolvedValue(
-        mockPermissionList
-      );
-
-      const req = createRequest({
-        params: {
-          roleId: "25"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.getRolePermissions(req, res, next);
-
-      expect(permissionService.getRolePermissions).toHaveBeenCalledWith(25);
-    });
-
-    it("should forward service errors to next", async () => {
-      const error = new Error("Failed to retrieve role permissions");
-
-      vi.mocked(permissionService.getRolePermissions).mockRejectedValue(error);
-
-      const req = createRequest({
-        params: {
-          roleId: "10"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.getRolePermissions(req, res, next);
-
-      expect(next).toHaveBeenCalledWith(error);
-      expect(sendSuccess).not.toHaveBeenCalled();
-    });
+  const req = createRequest({
+    body: createInput
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* assignToRole                                                             */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("assignToRole", () => {
-    it("should assign a permission to a role successfully", async () => {
-      vi.mocked(permissionService.assignToRole).mockResolvedValue(undefined);
+  await permissionController.create(req, res, next);
 
-      const req = createRequest({
-        params: {
-          roleId: "10",
-          permissionId: "101"
-        }
-      });
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
 
-      const res = createResponse();
-      const next = createNext();
 
-      await permissionController.assignToRole(req, res, next);
+});
 
-      expect(permissionService.assignToRole).toHaveBeenCalledWith(10, 101, 25);
+/* ------------------------------------------------------------------------ */
+/* update                                                                   */
+/* ------------------------------------------------------------------------ */
 
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permission assigned to role successfully."
-      );
+describe("update", () => {
+it("should update a permission successfully", async () => {
+vi.mocked(permissionService.update).mockResolvedValue(updatedPermission);
 
-      expect(next).not.toHaveBeenCalled();
-    });
 
-    it("should convert role and permission ids from strings to numbers", async () => {
-      vi.mocked(permissionService.assignToRole).mockResolvedValue(undefined);
-
-      const req = createRequest({
-        params: {
-          roleId: "20",
-          permissionId: "202"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.assignToRole(req, res, next);
-
-      expect(permissionService.assignToRole).toHaveBeenCalledWith(20, 202, 25);
-    });
-
-    it("should pass the authenticated user id to the service", async () => {
-      vi.mocked(permissionService.assignToRole).mockResolvedValue(undefined);
-
-      const req = createRequest({
-        params: {
-          roleId: "10",
-          permissionId: "101"
-        },
-        user: {
-          id: 88,
-          username: "test-user",
-          roles: []
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.assignToRole(req, res, next);
-
-      expect(permissionService.assignToRole).toHaveBeenCalledWith(10, 101, 88);
-    });
-
-    it("should forward service errors to next", async () => {
-      const error = new Error("Permission assignment failed");
-
-      vi.mocked(permissionService.assignToRole).mockRejectedValue(error);
-
-      const req = createRequest({
-        params: {
-          roleId: "10",
-          permissionId: "101"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.assignToRole(req, res, next);
-
-      expect(next).toHaveBeenCalledWith(error);
-      expect(sendSuccess).not.toHaveBeenCalled();
-    });
+  const req = createRequest({
+    params: {
+      id: "101"
+    },
+    body: updateInput
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* removeFromRole                                                           */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("removeFromRole", () => {
-    it("should remove a permission from a role successfully", async () => {
-      vi.mocked(permissionService.removeFromRole).mockResolvedValue(undefined);
+  await permissionController.update(req, res, next);
 
-      const req = createRequest({
-        params: {
-          roleId: "10",
-          permissionId: "101"
-        }
-      });
+  expect(permissionService.update).toHaveBeenCalledWith(
+    101,
+    updateInput,
+    25
+  );
 
-      const res = createResponse();
-      const next = createNext();
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission updated successfully.",
+    updatedPermission
+  );
 
-      await permissionController.removeFromRole(req, res, next);
+  expect(next).not.toHaveBeenCalled();
+});
 
-      expect(permissionService.removeFromRole).toHaveBeenCalledWith(10, 101);
+it("should convert permission id from string to number", async () => {
+  vi.mocked(permissionService.update).mockResolvedValue(updatedPermission);
 
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permission removed from role successfully."
-      );
-
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it("should convert role and permission ids from strings to numbers", async () => {
-      vi.mocked(permissionService.removeFromRole).mockResolvedValue(undefined);
-
-      const req = createRequest({
-        params: {
-          roleId: "20",
-          permissionId: "202"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.removeFromRole(req, res, next);
-
-      expect(permissionService.removeFromRole).toHaveBeenCalledWith(20, 202);
-    });
-
-    it("should forward service errors to next", async () => {
-      const error = new Error("Permission removal failed");
-
-      vi.mocked(permissionService.removeFromRole).mockRejectedValue(error);
-
-      const req = createRequest({
-        params: {
-          roleId: "10",
-          permissionId: "101"
-        }
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.removeFromRole(req, res, next);
-
-      expect(next).toHaveBeenCalledWith(error);
-      expect(sendSuccess).not.toHaveBeenCalled();
-    });
+  const req = createRequest({
+    params: {
+      id: "205"
+    },
+    body: updateInput
   });
 
-  /* ------------------------------------------------------------------------ */
-  /* Response helper verification                                             */
-  /* ------------------------------------------------------------------------ */
+  const res = createResponse();
+  const next = createNext();
 
-  describe("Response Helper Verification", () => {
-    it("should use sendSuccess for getAll", async () => {
-      vi.mocked(permissionService.getAll).mockResolvedValue(mockPermissionList);
+  await permissionController.update(req, res, next);
 
-      const req = createRequest();
-      const res = createResponse();
-      const next = createNext();
+  expect(permissionService.update).toHaveBeenCalledWith(
+    205,
+    updateInput,
+    25
+  );
+});
 
-      await permissionController.getAll(req, res, next);
+it("should pass the authenticated user id to the service", async () => {
+  vi.mocked(permissionService.update).mockResolvedValue(updatedPermission);
 
-      expect(sendSuccess).toHaveBeenCalledTimes(1);
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permissions retrieved successfully.",
-        mockPermissionList
-      );
-    });
-
-    it("should use sendSuccess with HTTP 201 for create", async () => {
-      vi.mocked(permissionService.create).mockResolvedValue(mockPermission);
-
-      const req = createRequest({
-        body: createInput
-      });
-
-      const res = createResponse();
-      const next = createNext();
-
-      await permissionController.create(req, res, next);
-
-      expect(sendSuccess).toHaveBeenCalledTimes(1);
-      expect(sendSuccess).toHaveBeenCalledWith(
-        res,
-        "Permission created successfully.",
-        mockPermission,
-        201
-      );
-    });
+  const req = createRequest({
+    params: {
+      id: "101"
+    },
+    body: updateInput,
+    user: {
+      id: 77,
+      username: "test-user",
+      roles: []
+    }
   });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.update(req, res, next);
+
+  expect(permissionService.update).toHaveBeenCalledWith(
+    101,
+    updateInput,
+    77
+  );
+});
+
+it("should forward service errors to next", async () => {
+  const error = new Error("Permission update failed");
+
+  vi.mocked(permissionService.update).mockRejectedValue(error);
+
+  const req = createRequest({
+    params: {
+      id: "101"
+    },
+    body: updateInput
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.update(req, res, next);
+
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
+
+
+});
+
+/* ------------------------------------------------------------------------ */
+/* deactivate                                                               */
+/* ------------------------------------------------------------------------ */
+
+describe("deactivate", () => {
+it("should deactivate a permission successfully", async () => {
+vi.mocked(permissionService.deactivate).mockResolvedValue(
+deactivatedPermission
+);
+
+
+  const req = createRequest({
+    params: {
+      id: "101"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.deactivate(req, res, next);
+
+  expect(permissionService.deactivate).toHaveBeenCalledWith(101, 25);
+
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission deactivated successfully.",
+    deactivatedPermission
+  );
+
+  expect(next).not.toHaveBeenCalled();
+});
+
+it("should convert permission id from string to number", async () => {
+  vi.mocked(permissionService.deactivate).mockResolvedValue(
+    deactivatedPermission
+  );
+
+  const req = createRequest({
+    params: {
+      id: "205"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.deactivate(req, res, next);
+
+  expect(permissionService.deactivate).toHaveBeenCalledWith(205, 25);
+});
+
+it("should pass the authenticated user id to the service", async () => {
+  vi.mocked(permissionService.deactivate).mockResolvedValue(
+    deactivatedPermission
+  );
+
+  const req = createRequest({
+    params: {
+      id: "101"
+    },
+    user: {
+      id: 77,
+      username: "test-user",
+      roles: []
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.deactivate(req, res, next);
+
+  expect(permissionService.deactivate).toHaveBeenCalledWith(101, 77);
+});
+
+it("should forward service errors to next", async () => {
+  const error = new Error("Permission deactivation failed");
+
+  vi.mocked(permissionService.deactivate).mockRejectedValue(error);
+
+  const req = createRequest({
+    params: {
+      id: "101"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.deactivate(req, res, next);
+
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
+
+
+});
+
+/* ------------------------------------------------------------------------ */
+/* getRolePermissions                                                       */
+/* ------------------------------------------------------------------------ */
+
+describe("getRolePermissions", () => {
+it("should return permissions assigned to a role", async () => {
+vi.mocked(permissionService.getRolePermissions).mockResolvedValue(
+mockPermissionList
+);
+
+
+  const req = createRequest({
+    params: {
+      roleId: "10"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getRolePermissions(req, res, next);
+
+  expect(permissionService.getRolePermissions).toHaveBeenCalledWith(10);
+
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Role permissions retrieved successfully.",
+    mockPermissionList
+  );
+
+  expect(next).not.toHaveBeenCalled();
+});
+
+it("should return an empty list when a role has no permissions", async () => {
+  vi.mocked(permissionService.getRolePermissions).mockResolvedValue([]);
+
+  const req = createRequest({
+    params: {
+      roleId: "10"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getRolePermissions(req, res, next);
+
+  expect(permissionService.getRolePermissions).toHaveBeenCalledWith(10);
+
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Role permissions retrieved successfully.",
+    []
+  );
+});
+
+it("should convert role id from string to number", async () => {
+  vi.mocked(permissionService.getRolePermissions).mockResolvedValue(
+    mockPermissionList
+  );
+
+  const req = createRequest({
+    params: {
+      roleId: "25"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getRolePermissions(req, res, next);
+
+  expect(permissionService.getRolePermissions).toHaveBeenCalledWith(25);
+});
+
+it("should forward service errors to next", async () => {
+  const error = new Error("Failed to retrieve role permissions");
+
+  vi.mocked(permissionService.getRolePermissions).mockRejectedValue(error);
+
+  const req = createRequest({
+    params: {
+      roleId: "10"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getRolePermissions(req, res, next);
+
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
+
+
+});
+
+/* ------------------------------------------------------------------------ */
+/* assignToRole                                                             */
+/* ------------------------------------------------------------------------ */
+
+describe("assignToRole", () => {
+it("should assign a permission to a role successfully", async () => {
+vi.mocked(permissionService.assignToRole).mockResolvedValue(undefined);
+
+
+  const req = createRequest({
+    params: {
+      roleId: "10",
+      permissionId: "101"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.assignToRole(req, res, next);
+
+  expect(permissionService.assignToRole).toHaveBeenCalledWith(10, 101, 25);
+
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission assigned to role successfully."
+  );
+
+  expect(next).not.toHaveBeenCalled();
+});
+
+it("should convert role and permission ids from strings to numbers", async () => {
+  vi.mocked(permissionService.assignToRole).mockResolvedValue(undefined);
+
+  const req = createRequest({
+    params: {
+      roleId: "20",
+      permissionId: "202"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.assignToRole(req, res, next);
+
+  expect(permissionService.assignToRole).toHaveBeenCalledWith(20, 202, 25);
+});
+
+it("should pass the authenticated user id to the service", async () => {
+  vi.mocked(permissionService.assignToRole).mockResolvedValue(undefined);
+
+  const req = createRequest({
+    params: {
+      roleId: "10",
+      permissionId: "101"
+    },
+    user: {
+      id: 88,
+      username: "test-user",
+      roles: []
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.assignToRole(req, res, next);
+
+  expect(permissionService.assignToRole).toHaveBeenCalledWith(10, 101, 88);
+});
+
+it("should forward service errors to next", async () => {
+  const error = new Error("Permission assignment failed");
+
+  vi.mocked(permissionService.assignToRole).mockRejectedValue(error);
+
+  const req = createRequest({
+    params: {
+      roleId: "10",
+      permissionId: "101"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.assignToRole(req, res, next);
+
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
+
+
+});
+
+/* ------------------------------------------------------------------------ */
+/* removeFromRole                                                           */
+/* ------------------------------------------------------------------------ */
+
+describe("removeFromRole", () => {
+it("should remove a permission from a role successfully", async () => {
+vi.mocked(permissionService.removeFromRole).mockResolvedValue(undefined);
+
+
+  const req = createRequest({
+    params: {
+      roleId: "10",
+      permissionId: "101"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.removeFromRole(req, res, next);
+
+  expect(permissionService.removeFromRole).toHaveBeenCalledWith(10, 101);
+
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission removed from role successfully."
+  );
+
+  expect(next).not.toHaveBeenCalled();
+});
+
+it("should convert role and permission ids from strings to numbers", async () => {
+  vi.mocked(permissionService.removeFromRole).mockResolvedValue(undefined);
+
+  const req = createRequest({
+    params: {
+      roleId: "20",
+      permissionId: "202"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.removeFromRole(req, res, next);
+
+  expect(permissionService.removeFromRole).toHaveBeenCalledWith(20, 202);
+});
+
+it("should forward service errors to next", async () => {
+  const error = new Error("Permission removal failed");
+
+  vi.mocked(permissionService.removeFromRole).mockRejectedValue(error);
+
+  const req = createRequest({
+    params: {
+      roleId: "10",
+      permissionId: "101"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.removeFromRole(req, res, next);
+
+  expect(next).toHaveBeenCalledWith(error);
+  expect(sendSuccess).not.toHaveBeenCalled();
+});
+
+
+});
+
+/* ------------------------------------------------------------------------ */
+/* Response helper verification                                             */
+/* ------------------------------------------------------------------------ */
+
+describe("Response Helper Verification", () => {
+it("should use sendSuccess for getAll", async () => {
+vi.mocked(permissionService.getAll).mockResolvedValue(mockPermissionList);
+
+
+  const req = createRequest();
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.getAll(req, res, next);
+
+  expect(sendSuccess).toHaveBeenCalledTimes(1);
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permissions retrieved successfully.",
+    mockPermissionList
+  );
+});
+
+it("should use sendSuccess with HTTP 201 for create", async () => {
+  vi.mocked(permissionService.create).mockResolvedValue(mockPermission);
+
+  const req = createRequest({
+    body: createInput
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.create(req, res, next);
+
+  expect(sendSuccess).toHaveBeenCalledTimes(1);
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission created successfully.",
+    mockPermission,
+    201
+  );
+});
+
+it("should use sendSuccess for deactivate", async () => {
+  vi.mocked(permissionService.deactivate).mockResolvedValue(
+    deactivatedPermission
+  );
+
+  const req = createRequest({
+    params: {
+      id: "101"
+    }
+  });
+
+  const res = createResponse();
+  const next = createNext();
+
+  await permissionController.deactivate(req, res, next);
+
+  expect(sendSuccess).toHaveBeenCalledTimes(1);
+  expect(sendSuccess).toHaveBeenCalledWith(
+    res,
+    "Permission deactivated successfully.",
+    deactivatedPermission
+  );
+});
+
+
+});
 });

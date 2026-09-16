@@ -50,7 +50,46 @@ export const update = async (
     throw new ApiError(400, "System permissions cannot be deactivated.");
   }
 
-  return (await repository.update(id, input, userId)) as Permission;
+  const permission = await repository.update(id, input, userId);
+
+  if (!permission) {
+    throw new ApiError(404, "Permission not found.");
+  }
+
+  return permission;
+};
+
+export const deactivate = async (
+  id: number,
+  userId: number
+): Promise<Permission> => {
+  const existing = await repository.findById(id);
+
+  if (!existing) {
+    throw new ApiError(404, "Permission not found.");
+  }
+
+  if (existing.isSystemPermission) {
+    throw new ApiError(400, "System permissions cannot be deactivated.");
+  }
+
+  if (existing.status === "INACTIVE") {
+    throw new ApiError(400, "Permission is already inactive.");
+  }
+
+  const permission = await repository.update(
+    id,
+    {
+      status: "INACTIVE"
+    },
+    userId
+  );
+
+  if (!permission) {
+    throw new ApiError(404, "Permission not found.");
+  }
+
+  return permission;
 };
 
 export const assignToRole = async (

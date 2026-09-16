@@ -637,13 +637,36 @@ DRAFT
 └── Approve ──► APPROVED
 
 DRAFT
-  ↓ approve
+↓ approve
 PUBLISHED
-  ↓ archive/deactivate
+↓ archive/deactivate
 ARCHIVED
-  ↓ activate
+↓ activate
 DRAFT
-  ↓ edit
+↓ edit
 DRAFT
-  ↓ approve
+↓ approve
 PUBLISHED
+
+---
+
+## Modules:
+
+| Module / Feature         | Status            |
+| ------------------------ | ----------------- |
+| News Management          | ✅ Existing       |
+| Authentication           | ✅ Complete       |
+| Users                    | ✅ Complete       |
+| Roles                    | ✅ Complete       |
+| Permissions              | ✅ Complete       |
+| RBAC                     | ✅ Complete       |
+| Advertisement Management | ⏭️ Next candidate |
+| Comments                 | ⏳                |
+| News Views / Analytics   | ⏳                |
+| E-Paper                  | ⏳                |
+| Media Management         | ⏳                |
+| Categories / Masters     | ⏳                |
+| Notifications            | ⏳                |
+| Search                   | ⏳                |
+| SEO / Sitemap            | ⏳                |
+| Reporting / Dashboard    | ⏳                |

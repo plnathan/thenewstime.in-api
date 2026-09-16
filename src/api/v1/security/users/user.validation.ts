@@ -5,6 +5,14 @@ const passwordSchema = z
   .min(8, "Password must be at least 8 characters.")
   .max(100, "Password must not exceed 100 characters.");
 
+const roleIdsSchema = z
+  .array(z.coerce.number().int().positive())
+  .min(1, "At least one role must be selected.")
+  .refine(
+    (roleIds) => new Set(roleIds).size === roleIds.length,
+    "Duplicate roles are not allowed."
+  );
+
 export const createUserSchema = z.object({
   fullName: z.string().trim().min(2).max(200),
 
@@ -26,7 +34,7 @@ export const createUserSchema = z.object({
 
   password: passwordSchema,
 
-  roleId: z.coerce.number().int().positive(),
+  roleIds: roleIdsSchema,
 
   profileImageUrl: z.string().trim().url().optional(),
 
@@ -52,7 +60,9 @@ export const updateUserSchema = z.object({
 
   password: passwordSchema.optional(),
 
-  passwordExpiresAt: z.string().datetime().optional()
+  passwordExpiresAt: z.string().datetime().optional(),
+
+  roleIds: roleIdsSchema.optional()
 });
 
 export const userIdSchema = z.object({

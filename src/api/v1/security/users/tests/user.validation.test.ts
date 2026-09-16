@@ -18,7 +18,7 @@ describe("User Validation", () => {
     email: "test@example.com",
     mobile: "9876543210",
     password: "password123",
-    roleId: 2,
+    roleIds: [2],
     profileImageUrl: "https://example.com/profile.jpg",
     mustChangePassword: true,
     passwordExpiresAt: "2026-12-31T23:59:59.000Z"
@@ -36,6 +36,19 @@ describe("User Validation", () => {
 
       if (result.success) {
         expect(result.data).toEqual(validCreateInput);
+      }
+    });
+
+    it("should accept multiple roles", () => {
+      const result = createUserSchema.safeParse({
+        ...validCreateInput,
+        roleIds: [1, 2, 3]
+      });
+
+      expect(result.success).toBe(true);
+
+      if (result.success) {
+        expect(result.data.roleIds).toEqual([1, 2, 3]);
       }
     });
 
@@ -240,42 +253,119 @@ describe("User Validation", () => {
       expect(maximum.success).toBe(true);
     });
 
-    it("should coerce roleId from a numeric string", () => {
+    // ========================================================================
+    // roleIds
+    // ========================================================================
+
+    it("should coerce numeric role id strings to numbers", () => {
       const result = createUserSchema.safeParse({
         ...validCreateInput,
-        roleId: "5"
+        roleIds: ["5"]
       });
 
       expect(result.success).toBe(true);
 
       if (result.success) {
-        expect(result.data.roleId).toBe(5);
-        expect(typeof result.data.roleId).toBe("number");
+        expect(result.data.roleIds).toEqual([5]);
+
+        expect(typeof result.data.roleIds[0]).toBe("number");
       }
     });
 
-    it("should reject zero or negative roleId", () => {
+    it("should coerce multiple numeric role id strings to numbers", () => {
+      const result = createUserSchema.safeParse({
+        ...validCreateInput,
+        roleIds: ["1", "2", "5"]
+      });
+
+      expect(result.success).toBe(true);
+
+      if (result.success) {
+        expect(result.data.roleIds).toEqual([1, 2, 5]);
+
+        expect(
+          result.data.roleIds.every((roleId) => typeof roleId === "number")
+        ).toBe(true);
+      }
+    });
+
+    it("should reject an empty roleIds array", () => {
+      const result = createUserSchema.safeParse({
+        ...validCreateInput,
+        roleIds: []
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject zero or negative role ids", () => {
       const zero = createUserSchema.safeParse({
         ...validCreateInput,
-        roleId: 0
+        roleIds: [0]
       });
 
       const negative = createUserSchema.safeParse({
         ...validCreateInput,
-        roleId: -1
+        roleIds: [-1]
+      });
+
+      const mixed = createUserSchema.safeParse({
+        ...validCreateInput,
+        roleIds: [2, -1]
       });
 
       expect(zero.success).toBe(false);
       expect(negative.success).toBe(false);
+      expect(mixed.success).toBe(false);
     });
 
-    it("should reject non-integer roleId", () => {
+    it("should reject non-integer role ids", () => {
       const result = createUserSchema.safeParse({
         ...validCreateInput,
-        roleId: 1.5
+        roleIds: [1.5]
       });
 
       expect(result.success).toBe(false);
+    });
+
+    it("should reject duplicate role ids", () => {
+      const result = createUserSchema.safeParse({
+        ...validCreateInput,
+        roleIds: [2, 3, 2]
+      });
+
+      expect(result.success).toBe(false);
+
+      if (!result.success) {
+        expect(
+          result.error.issues.some(
+            (issue) => issue.message === "Duplicate roles are not allowed."
+          )
+        ).toBe(true);
+      }
+    });
+
+    it("should reject duplicate role ids even when supplied as strings", () => {
+      const result = createUserSchema.safeParse({
+        ...validCreateInput,
+        roleIds: ["2", "3", "2"]
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it("should require roleIds", () => {
+      const { roleIds: _roleIds, ...withoutRoles } = validCreateInput;
+
+      const result = createUserSchema.safeParse(withoutRoles);
+
+      expect(result.success).toBe(false);
+
+      if (!result.success) {
+        const fields = result.error.issues.map((issue) => issue.path[0]);
+
+        expect(fields).toContain("roleIds");
+      }
     });
 
     it("should validate profileImageUrl as a URL", () => {
@@ -314,7 +404,7 @@ describe("User Validation", () => {
         displayName: "Test User",
         username: "testuser",
         password: "password123",
-        roleId: 2
+        roleIds: [2]
       });
 
       expect(result.success).toBe(true);
@@ -332,7 +422,7 @@ describe("User Validation", () => {
         expect(fields).toContain("displayName");
         expect(fields).toContain("username");
         expect(fields).toContain("password");
-        expect(fields).toContain("roleId");
+        expect(fields).toContain("roleIds");
       }
     });
   });
@@ -352,10 +442,69 @@ describe("User Validation", () => {
         status: "ACTIVE",
         mustChangePassword: false,
         password: "newpassword123",
-        passwordExpiresAt: "2027-12-31T23:59:59.000Z"
+        passwordExpiresAt: "2027-12-31T23:59:59.000Z",
+        roleIds: [2, 3]
       });
 
       expect(result.success).toBe(true);
+    });
+
+    it("should accept multiple role ids during update", () => {
+      const result = updateUserSchema.safeParse({
+        roleIds: [1, 2, 3]
+      });
+
+      expect(result.success).toBe(true);
+
+      if (result.success) {
+        expect(result.data.roleIds).toEqual([1, 2, 3]);
+      }
+    });
+
+    it("should coerce update role ids from numeric strings", () => {
+      const result = updateUserSchema.safeParse({
+        roleIds: ["2", "3"]
+      });
+
+      expect(result.success).toBe(true);
+
+      if (result.success) {
+        expect(result.data.roleIds).toEqual([2, 3]);
+      }
+    });
+
+    it("should reject an empty roleIds array during update", () => {
+      const result = updateUserSchema.safeParse({
+        roleIds: []
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject duplicate role ids during update", () => {
+      const result = updateUserSchema.safeParse({
+        roleIds: [2, 3, 2]
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject invalid role ids during update", () => {
+      const zero = updateUserSchema.safeParse({
+        roleIds: [0]
+      });
+
+      const negative = updateUserSchema.safeParse({
+        roleIds: [-1]
+      });
+
+      const decimal = updateUserSchema.safeParse({
+        roleIds: [1.5]
+      });
+
+      expect(zero.success).toBe(false);
+      expect(negative.success).toBe(false);
+      expect(decimal.success).toBe(false);
     });
 
     it("should allow an empty update payload", () => {
@@ -468,6 +617,7 @@ describe("User Validation", () => {
 
       if (result.success) {
         expect(result.data.id).toBe(101);
+
         expect(typeof result.data.id).toBe("number");
       }
     });

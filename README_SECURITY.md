@@ -767,3 +767,41 @@ Active SUPER_ADMIN → immediate access, without checking permissions
 Normal user with required permission → access
 Normal user without permission → 403
 Database/repository errors → forwarded through next(error)
+
+---------------------------
+## UI
+Authentication
+    ↓
+Role
+    ↓
+Frontend button visibility
+
+## Backend
+JWT
+ ↓
+authenticate
+ ↓
+authorize
+ ↓
+permission
+ ↓
+database operation
+
+------------------------
+
+Users
+ ├── users.view
+ ├── users.create
+ ├── users.update
+ └── users.deactivate
+
+Roles
+ ├── roles.view
+ ├── roles.create
+ ├── roles.update
+ └── roles.assign
+
+Permissions
+ ├── permissions.view
+ ├── permissions.create
+ └── permissions.update

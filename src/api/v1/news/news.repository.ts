@@ -190,7 +190,8 @@ export const create = async (
     data.draftedBy,
     data.createdBy
   ];
-
+  console.log("createNews insertSql:", insertSql);
+  console.log("createNews values:", values);
   const result: QueryResult = await db.query(insertSql, values);
 
   const newsId = Number(result.rows[0].id);

@@ -148,7 +148,7 @@ export const createNews = async (
 ): Promise<void> => {
   try {
     const payload = req.body as CreateNewsInput;
-
+    console.log("createNews payload:", payload);
     const news = await newsService.createNews(payload);
 
     const dto = toNewsResponseDto(news);

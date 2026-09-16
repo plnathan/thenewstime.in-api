@@ -17,7 +17,9 @@ export const getAll = async (
   try {
     const permissions = await service.getAll();
 
-    sendSuccess(res, "Permissions retrieved successfully.", permissions);
+    
+sendSuccess(res, "Permissions retrieved successfully.", permissions);
+
   } catch (error) {
     next(error);
   }
@@ -31,7 +33,9 @@ export const getById = async (
   try {
     const permission = await service.getById(Number(req.params.id));
 
-    sendSuccess(res, "Permission retrieved successfully.", permission);
+    
+sendSuccess(res, "Permission retrieved successfully.", permission);
+
   } catch (error) {
     next(error);
   }
@@ -45,9 +49,11 @@ export const create = async (
   try {
     const input = req.body as CreatePermissionInput;
 
-    const permission = await service.create(input, req.user.id);
+    
+const permission = await service.create(input, req.user.id);
 
-    sendSuccess(res, "Permission created successfully.", permission, 201);
+sendSuccess(res, "Permission created successfully.", permission, 201);
+
   } catch (error) {
     next(error);
   }
@@ -61,13 +67,38 @@ export const update = async (
   try {
     const input = req.body as UpdatePermissionInput;
 
-    const permission = await service.update(
+    
+const permission = await service.update(
+  Number(req.params.id),
+  input,
+  req.user.id
+);
+
+sendSuccess(res, "Permission updated successfully.", permission);
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deactivate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const permission = await service.deactivate(
       Number(req.params.id),
-      input,
       req.user.id
     );
 
-    sendSuccess(res, "Permission updated successfully.", permission);
+    
+sendSuccess(
+  res,
+  "Permission deactivated successfully.",
+  permission
+);
+
   } catch (error) {
     next(error);
   }
@@ -83,7 +114,13 @@ export const getRolePermissions = async (
       Number(req.params.roleId)
     );
 
-    sendSuccess(res, "Role permissions retrieved successfully.", permissions);
+    
+sendSuccess(
+  res,
+  "Role permissions retrieved successfully.",
+  permissions
+);
+
   } catch (error) {
     next(error);
   }
@@ -101,7 +138,9 @@ export const assignToRole = async (
       req.user.id
     );
 
-    sendSuccess(res, "Permission assigned to role successfully.");
+    
+sendSuccess(res, "Permission assigned to role successfully.");
+
   } catch (error) {
     next(error);
   }
@@ -118,7 +157,9 @@ export const removeFromRole = async (
       Number(req.params.permissionId)
     );
 
-    sendSuccess(res, "Permission removed from role successfully.");
+    
+sendSuccess(res, "Permission removed from role successfully.");
+
   } catch (error) {
     next(error);
   }

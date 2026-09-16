@@ -269,7 +269,7 @@ describe("Users API", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         ...testUser,
-        roleId
+        roleIds: [roleId]
       });
 
     expect(response.status).toBe(201);
@@ -319,7 +319,7 @@ describe("Users API", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         ...testUser,
-        roleId,
+        roleIds: [roleId],
         email: `duplicate_${timestamp}@example.com`,
         mobile: `76543${timestamp.toString().slice(-5)}`
       });
@@ -347,7 +347,7 @@ describe("Users API", () => {
         ...testUser,
         username: `duplicate_email_${timestamp}`,
         mobile: `65432${timestamp.toString().slice(-5)}`,
-        roleId
+        roleIds: [roleId]
       });
 
     expect(response.status).toBe(409);
@@ -373,7 +373,7 @@ describe("Users API", () => {
         ...testUser,
         username: `duplicate_mobile_${timestamp}`,
         email: `duplicate_mobile_${timestamp}@example.com`,
-        roleId
+        roleIds: [roleId]
       });
 
     expect(response.status).toBe(409);
@@ -402,7 +402,7 @@ describe("Users API", () => {
         username: `unknown_role_${timestamp}`,
         email: `unknown_role_${timestamp}@example.com`,
         mobile: `54321${timestamp.toString().slice(-5)}`,
-        roleId: 999999999
+        roleIds: [999999999]
       });
 
     expect(response.status).toBe(404);

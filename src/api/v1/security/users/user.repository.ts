@@ -6,7 +6,8 @@ import type {
   CreateUserInput,
   UpdateUserInput,
   User,
-  UserListItem
+  UserListItem,
+  UserRole
 } from "./user.types.js";
 
 const USER_SELECT = `
@@ -32,9 +33,18 @@ const USER_SELECT = `
   FROM users u
 `;
 
+const mapRole = (row: any): UserRole => ({
+  id: Number(row.role_id),
+  code: row.role_code,
+  displayName: row.role_display_name,
+  status: row.role_status
+});
+
 const mapUser = (row: any): User => ({
   id: Number(row.id),
+
   roleId: row.role_id === null ? null : Number(row.role_id),
+
   fullName: row.full_name,
   displayName: row.display_name,
   username: row.username,
@@ -47,11 +57,59 @@ const mapUser = (row: any): User => ({
   passwordExpiresAt: row.password_expires_at,
   failedLoginCount: Number(row.failed_login_count),
   status: row.status,
+
+  roles: [],
+
   createdBy: row.created_by === null ? null : Number(row.created_by),
+
   createdAt: row.created_at,
+
   updatedBy: row.updated_by === null ? null : Number(row.updated_by),
+
   updatedAt: row.updated_at
 });
+
+/*
+|--------------------------------------------------------------------------
+| ROLE LOADING
+|--------------------------------------------------------------------------
+*/
+
+export const findRolesByUserId = async (
+  userId: number,
+  client?: PoolClient
+): Promise<UserRole[]> => {
+  const db = client ?? pool;
+
+  const result = await db.query(
+    `
+      SELECT
+        r.id AS role_id,
+        r.code AS role_code,
+        r.display_name AS role_display_name,
+        r.status AS role_status
+      FROM user_roles ur
+      INNER JOIN roles r
+        ON r.id = ur.role_id
+      WHERE ur.user_id = $1
+      ORDER BY
+        r.display_order ASC,
+        r.id ASC
+    `,
+    [userId]
+  );
+
+  return result.rows.map(mapRole);
+};
+
+const attachRoles = async (user: User, client?: PoolClient): Promise<User> => {
+  const roles = await findRolesByUserId(user.id, client);
+
+  return {
+    ...user,
+    roles
+  };
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -74,7 +132,11 @@ export const findById = async (
     [id]
   );
 
-  return result.rows[0] ? mapUser(result.rows[0]) : null;
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  return attachRoles(mapUser(result.rows[0]), client);
 };
 
 export const findByUsername = async (
@@ -92,7 +154,11 @@ export const findByUsername = async (
     [username]
   );
 
-  return result.rows[0] ? mapUser(result.rows[0]) : null;
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  return attachRoles(mapUser(result.rows[0]), client);
 };
 
 export const findByEmail = async (
@@ -110,7 +176,11 @@ export const findByEmail = async (
     [email]
   );
 
-  return result.rows[0] ? mapUser(result.rows[0]) : null;
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  return attachRoles(mapUser(result.rows[0]), client);
 };
 
 export const findByMobile = async (
@@ -128,7 +198,11 @@ export const findByMobile = async (
     [mobile]
   );
 
-  return result.rows[0] ? mapUser(result.rows[0]) : null;
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  return attachRoles(mapUser(result.rows[0]), client);
 };
 
 /*
@@ -159,11 +233,35 @@ export const findAll = async (): Promise<UserListItem[]> => {
         u.created_at,
         u.updated_by,
         u.updated_at,
-        r.code AS role_code,
-        r.display_name AS role_display_name
+
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', r.id,
+              'code', r.code,
+              'displayName', r.display_name,
+              'status', r.status
+            )
+            ORDER BY
+              r.display_order ASC,
+              r.id ASC
+          ) FILTER (
+            WHERE r.id IS NOT NULL
+          ),
+          '[]'::json
+        ) AS roles
+
       FROM users u
+
+      LEFT JOIN user_roles ur
+        ON ur.user_id = u.id
+
       LEFT JOIN roles r
-        ON r.id = u.role_id
+        ON r.id = ur.role_id
+
+      GROUP BY
+        u.id
+
       ORDER BY
         u.created_at DESC,
         u.id DESC
@@ -172,8 +270,14 @@ export const findAll = async (): Promise<UserListItem[]> => {
 
   return result.rows.map((row) => ({
     ...mapUser(row),
-    roleCode: row.role_code,
-    roleDisplayName: row.role_display_name
+    roles: Array.isArray(row.roles)
+      ? row.roles.map((role: any) => ({
+          id: Number(role.id),
+          code: role.code,
+          displayName: role.displayName,
+          status: role.status
+        }))
+      : []
   }));
 };
 
@@ -189,18 +293,10 @@ export const create = async (
   createdBy: number,
   client?: PoolClient
 ): Promise<User> => {
-  /*
-   * If a transaction client is supplied by the caller,
-   * use it directly.
-   */
   if (client) {
     return createWithClient(input, passwordHash, createdBy, client);
   }
 
-  /*
-   * User creation and user-role assignment must succeed
-   * or fail together.
-   */
   const transactionClient = await pool.connect();
 
   try {
@@ -221,21 +317,37 @@ export const create = async (
           role_id,
           created_by
         )
-        VALUES
-        (
+        SELECT
           $1,
-          $2,
+          UNNEST($2::bigint[]),
           $3
-        )
       `,
-      [user.id, input.roleId, createdBy]
+      [user.id, input.roleIds, createdBy]
+    );
+
+    await transactionClient.query(
+      `
+        UPDATE users
+        SET
+          role_id = $1,
+          updated_at = NOW()
+        WHERE id = $2
+      `,
+      [input.roleIds[0], user.id]
     );
 
     await transactionClient.query("COMMIT");
 
-    return user;
+    const createdUser = await findById(user.id);
+
+    if (!createdUser) {
+      throw new Error("Created user could not be retrieved.");
+    }
+
+    return createdUser;
   } catch (error) {
     await transactionClient.query("ROLLBACK");
+
     throw error;
   } finally {
     transactionClient.release();
@@ -301,7 +413,7 @@ const createWithClient = async (
         updated_at
     `,
     [
-      input.roleId,
+      input.roleIds[0],
       input.fullName,
       input.displayName,
       input.username,
@@ -331,9 +443,70 @@ export const update = async (
   updatedBy: number,
   client?: PoolClient
 ): Promise<User | null> => {
-  const db = client ?? pool;
+  if (client) {
+    return updateWithClient(id, input, passwordHash, updatedBy, client);
+  }
 
-  const result = await db.query(
+  const transactionClient = await pool.connect();
+
+  try {
+    await transactionClient.query("BEGIN");
+
+    const updated = await updateWithClient(
+      id,
+      input,
+      passwordHash,
+      updatedBy,
+      transactionClient
+    );
+
+    if (!updated) {
+      await transactionClient.query("ROLLBACK");
+
+      return null;
+    }
+
+    if (input.roleIds) {
+      await synchronizeRoles(id, input.roleIds, updatedBy, transactionClient);
+
+      /*
+       * Keep users.role_id synchronized with
+       * the first selected role for backward
+       * compatibility.
+       */
+      await transactionClient.query(
+        `
+          UPDATE users
+          SET
+            role_id = $1,
+            updated_by = $2,
+            updated_at = NOW()
+          WHERE id = $3
+        `,
+        [input.roleIds[0], updatedBy, id]
+      );
+    }
+
+    await transactionClient.query("COMMIT");
+
+    return findById(id);
+  } catch (error) {
+    await transactionClient.query("ROLLBACK");
+
+    throw error;
+  } finally {
+    transactionClient.release();
+  }
+};
+
+const updateWithClient = async (
+  id: number,
+  input: UpdateUserInput,
+  passwordHash: string | null,
+  updatedBy: number,
+  client: PoolClient
+): Promise<User | null> => {
+  const result = await client.query(
     `
       UPDATE users
       SET
@@ -415,6 +588,50 @@ export const update = async (
 
 /*
 |--------------------------------------------------------------------------
+| ROLE SYNCHRONIZATION
+|--------------------------------------------------------------------------
+*/
+
+export const synchronizeRoles = async (
+  userId: number,
+  roleIds: number[],
+  updatedBy: number,
+  client: PoolClient
+): Promise<void> => {
+  await client.query(
+    `
+      DELETE FROM user_roles
+      WHERE user_id = $1
+        AND role_id <> ALL($2::bigint[])
+    `,
+    [userId, roleIds]
+  );
+
+  await client.query(
+    `
+      INSERT INTO user_roles
+      (
+        user_id,
+        role_id,
+        created_by
+      )
+      SELECT
+        $1,
+        UNNEST($2::bigint[]),
+        $3
+      ON CONFLICT
+      (
+        user_id,
+        role_id
+      )
+      DO NOTHING
+    `,
+    [userId, roleIds, updatedBy]
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
 | DEACTIVATE
 |--------------------------------------------------------------------------
 */
@@ -454,5 +671,9 @@ export const deactivate = async (
     [updatedBy, id]
   );
 
-  return result.rows[0] ? mapUser(result.rows[0]) : null;
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  return findById(id);
 };

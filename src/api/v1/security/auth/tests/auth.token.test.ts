@@ -33,7 +33,8 @@ const createTestUser = (): AuthUser => ({
       code: "REPORTER",
       displayName: "Reporter"
     }
-  ]
+  ],
+  permissions: []
 });
 
 describe("Auth Token Utilities", () => {

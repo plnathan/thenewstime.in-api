@@ -29,6 +29,68 @@ export const getById = async (id: number): Promise<User> => {
   return user;
 };
 
+/*
+|--------------------------------------------------------------------------
+| Validate Roles
+|--------------------------------------------------------------------------
+*/
+
+const validateRoleIds = async (
+  roleIds: number[],
+  actorId: number,
+  action: "create" | "update"
+): Promise<void> => {
+  const uniqueRoleIds = [...new Set(roleIds)];
+
+  if (uniqueRoleIds.length !== roleIds.length) {
+    throw new ApiError(400, "Duplicate roles are not allowed.");
+  }
+
+  if (!roleIds.length) {
+    throw new ApiError(400, "At least one role must be assigned.");
+  }
+
+  const roles = await Promise.all(
+    roleIds.map((roleId) => roleRepository.findById(roleId))
+  );
+
+  for (let index = 0; index < roles.length; index += 1) {
+    const role = roles[index];
+
+    if (!role) {
+      throw new ApiError(404, `Role ${roleIds[index]} not found.`);
+    }
+
+    if (role.status !== "ACTIVE") {
+      throw new ApiError(
+        400,
+        `Role "${role.displayName}" is not active and cannot be assigned.`
+      );
+    }
+
+    if (role.code === "SUPER_ADMIN") {
+      const actorRoles = await roleRepository.findUserRoles(actorId);
+
+      const actorIsSuperAdmin = actorRoles.some(
+        (item) => item.code === "SUPER_ADMIN" && item.status === "ACTIVE"
+      );
+
+      if (!actorIsSuperAdmin) {
+        throw new ApiError(
+          403,
+          `Only SUPER_ADMIN can ${action} a SUPER_ADMIN user.`
+        );
+      }
+    }
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| CREATE
+|--------------------------------------------------------------------------
+*/
+
 export const create = async (
   input: CreateUserInput,
   createdBy: number
@@ -55,46 +117,18 @@ export const create = async (
     }
   }
 
-  /*
-   * A user must always be created with an active role.
-   *
-   * user_roles is the authoritative RBAC relationship.
-   */
-  const role = await roleRepository.findById(input.roleId);
-
-  if (!role) {
-    throw new ApiError(404, "Role not found.");
-  }
-
-  if (role.status !== "ACTIVE") {
-    throw new ApiError(400, "Only active roles can be assigned.");
-  }
-
-  /*
-   * SUPER_ADMIN is a privileged role.
-   *
-   * Only an existing active SUPER_ADMIN can create
-   * another SUPER_ADMIN account.
-   */
-  if (role.code === "SUPER_ADMIN") {
-    const actorRoles = await roleRepository.findUserRoles(createdBy);
-
-    const actorIsSuperAdmin = actorRoles.some(
-      (item) => item.code === "SUPER_ADMIN" && item.status === "ACTIVE"
-    );
-
-    if (!actorIsSuperAdmin) {
-      throw new ApiError(
-        403,
-        "Only SUPER_ADMIN can create a SUPER_ADMIN user."
-      );
-    }
-  }
+  await validateRoleIds(input.roleIds, createdBy, "create");
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
 
   return repository.create(input, passwordHash, createdBy);
 };
+
+/*
+|--------------------------------------------------------------------------
+| UPDATE
+|--------------------------------------------------------------------------
+*/
 
 export const update = async (
   id: number,
@@ -107,18 +141,10 @@ export const update = async (
     throw new ApiError(404, "User not found.");
   }
 
-  /*
-   * Do not allow an administrator to deactivate or lock
-   * the currently authenticated account.
-   */
   if (id === updatedBy && input.status && input.status !== "ACTIVE") {
     throw new ApiError(400, "You cannot deactivate or lock your own account.");
   }
 
-  /*
-   * Prevent deactivation or locking of an active SUPER_ADMIN
-   * through the user management API.
-   */
   if (input.status && input.status !== "ACTIVE") {
     const targetRoles = await roleRepository.findUserRoles(id);
 
@@ -150,6 +176,10 @@ export const update = async (
     }
   }
 
+  if (input.roleIds) {
+    await validateRoleIds(input.roleIds, updatedBy, "update");
+  }
+
   let passwordHash: string | null = null;
 
   if (input.password) {
@@ -165,6 +195,12 @@ export const update = async (
   return updated;
 };
 
+/*
+|--------------------------------------------------------------------------
+| DEACTIVATE
+|--------------------------------------------------------------------------
+*/
+
 export const deactivate = async (
   id: number,
   updatedBy: number
@@ -179,19 +215,10 @@ export const deactivate = async (
     throw new ApiError(400, "User is already inactive.");
   }
 
-  /*
-   * Never allow a user to deactivate their own account.
-   */
   if (id === updatedBy) {
     throw new ApiError(400, "You cannot deactivate your own account.");
   }
 
-  /*
-   * Protect SUPER_ADMIN by role, not by username.
-   *
-   * This is important because the username is not the
-   * security boundary; the assigned role is.
-   */
   const targetRoles = await roleRepository.findUserRoles(id);
 
   const targetIsSuperAdmin = targetRoles.some(

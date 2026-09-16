@@ -15,6 +15,7 @@ import {
 } from "./auth.token.js";
 
 import type {
+  AuthPermission,
   AuthRole,
   AuthUser,
   LoginResult,
@@ -37,6 +38,8 @@ const buildAuthUser = async (
 
   const roles = await repository.findRolesByUserId(user.id, client);
 
+  const permissions = await repository.findPermissionsByUserId(user.id, client);
+
   return {
     id: user.id,
     fullName: user.full_name,
@@ -50,6 +53,16 @@ const buildAuthUser = async (
       id: role.id,
       code: role.code,
       displayName: role.display_name
+    })),
+
+    permissions: permissions.map((permission): AuthPermission => ({
+      id: permission.id,
+      code: permission.code,
+      displayName: permission.display_name,
+      module: permission.module,
+      resource: permission.resource,
+      action: permission.action,
+      displayOrder: Number(permission.display_order)
     }))
   };
 };

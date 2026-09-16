@@ -114,7 +114,11 @@ npx vitest src/api/v1/news-reads/tests/news-reads.integration.test.ts
 
 npx vitest run src/api/v1/security/tests/auth.integration.test.ts
 
+npx vitest run src/api/v1/security/auth/tests/auth.service.test.ts
+
 npx vitest run src/api/v1/security/tests/users.integration.test.ts
+
+npx vitest run src/api/v1/security/users/tests/user.repository.test.ts
 
 npx vitest run src/api/v1/security/tests/roles.integration.test.ts
 
@@ -125,6 +129,8 @@ npx vitest run src/api/v1/security/permissions/tests/permission.service.test.ts
 npx vitest run src/api/v1/security/permissions/tests/permission.repository.test.ts
 
 npx vitest run src/api/v1/security/permissions/tests
+
+npx vitest run src/api/v1/security/tests/permissions.integration.test.ts
 
 ****************** XXXX *********************
 

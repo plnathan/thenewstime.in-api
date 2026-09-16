@@ -33,12 +33,12 @@ describe("Permissions API", () => {
 
     const rolesResult = await pool.query(
       `
-      SELECT
-        id,
-        code
-      FROM roles
-      WHERE code IN ('SUPER_ADMIN', 'ADMIN')
-      `
+  SELECT
+    id,
+    code
+  FROM roles
+  WHERE code IN ('SUPER_ADMIN', 'ADMIN')
+  `
     );
 
     const superAdminRole = rolesResult.rows.find(
@@ -110,25 +110,25 @@ describe("Permissions API", () => {
 
     await pool.query(
       `
-      INSERT INTO user_roles
-      (
-        user_id,
-        role_id,
-        created_by
-      )
-      VALUES
-      (
-        $1,
-        $2,
-        $1
-      )
-      ON CONFLICT
-      (
-        user_id,
-        role_id
-      )
-      DO NOTHING
-      `,
+  INSERT INTO user_roles
+  (
+    user_id,
+    role_id,
+    created_by
+  )
+  VALUES
+  (
+    $1,
+    $2,
+    $1
+  )
+  ON CONFLICT
+  (
+    user_id,
+    role_id
+  )
+  DO NOTHING
+  `,
       [adminUserId, superAdminRoleId]
     );
 
@@ -160,28 +160,28 @@ describe("Permissions API", () => {
 
     const roleResult = await pool.query(
       `
-      INSERT INTO roles
-      (
-        code,
-        display_name,
-        description,
-        display_order,
-        status,
-        created_by,
-        updated_by
-      )
-      VALUES
-      (
-        $1,
-        $2,
-        $3,
-        999,
-        'ACTIVE',
-        $4,
-        $4
-      )
-      RETURNING id
-      `,
+  INSERT INTO roles
+  (
+    code,
+    display_name,
+    description,
+    display_order,
+    status,
+    created_by,
+    updated_by
+  )
+  VALUES
+  (
+    $1,
+    $2,
+    $3,
+    999,
+    'ACTIVE',
+    $4,
+    $4
+  )
+  RETURNING id
+  `,
       [
         testRoleCode,
         "Permissions Integration Test Role",
@@ -205,9 +205,9 @@ describe("Permissions API", () => {
     if (testRoleId > 0) {
       await pool.query(
         `
-        DELETE FROM role_permissions
-        WHERE role_id = $1
-        `,
+    DELETE FROM role_permissions
+    WHERE role_id = $1
+    `,
         [testRoleId]
       );
     }
@@ -221,17 +221,17 @@ describe("Permissions API", () => {
     if (testPermissionId > 0) {
       await pool.query(
         `
-        DELETE FROM role_permissions
-        WHERE permission_id = $1
-        `,
+    DELETE FROM role_permissions
+    WHERE permission_id = $1
+    `,
         [testPermissionId]
       );
 
       await pool.query(
         `
-        DELETE FROM permissions
-        WHERE id = $1
-        `,
+    DELETE FROM permissions
+    WHERE id = $1
+    `,
         [testPermissionId]
       );
     }
@@ -245,9 +245,9 @@ describe("Permissions API", () => {
     if (testRoleId > 0) {
       await pool.query(
         `
-        DELETE FROM roles
-        WHERE id = $1
-        `,
+    DELETE FROM roles
+    WHERE id = $1
+    `,
         [testRoleId]
       );
     }
@@ -261,25 +261,25 @@ describe("Permissions API", () => {
     if (adminUserId > 0) {
       await pool.query(
         `
-        DELETE FROM user_sessions
-        WHERE user_id = $1
-        `,
+    DELETE FROM user_sessions
+    WHERE user_id = $1
+    `,
         [adminUserId]
       );
 
       await pool.query(
         `
-        DELETE FROM user_roles
-        WHERE user_id = $1
-        `,
+    DELETE FROM user_roles
+    WHERE user_id = $1
+    `,
         [adminUserId]
       );
 
       await pool.query(
         `
-        DELETE FROM users
-        WHERE id = $1
-        `,
+    DELETE FROM users
+    WHERE id = $1
+    `,
         [adminUserId]
       );
     }
@@ -288,10 +288,11 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * AUTHENTICATION
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* AUTHENTICATION
+* ==========================================================================
+  */
 
   it("GET /api/v1/security/permissions - should return 401 without authentication", async () => {
     const response = await request(app).get("/api/v1/security/permissions");
@@ -299,11 +300,20 @@ describe("Permissions API", () => {
     expect(response.status).toBe(401);
   });
 
+  it("DELETE /api/v1/security/permissions/:id - should return 401 without authentication", async () => {
+    const response = await request(app).delete(
+      "/api/v1/security/permissions/999999999"
+    );
+
+    expect(response.status).toBe(401);
+  });
+
   /*
-   * ==========================================================================
-   * LIST
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* LIST
+* ==========================================================================
+  */
 
   it("GET /api/v1/security/permissions - should return all permissions", async () => {
     const response = await request(app)
@@ -317,10 +327,11 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * GET BY ID
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* GET BY ID
+* ==========================================================================
+  */
 
   it("GET /api/v1/security/permissions/:id - should return a permission by ID", async () => {
     const listResponse = await request(app)
@@ -360,10 +371,11 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * CREATE
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* CREATE
+* ==========================================================================
+  */
 
   it("POST /api/v1/security/permissions - should create a permission", async () => {
     const response = await request(app)
@@ -435,23 +447,33 @@ describe("Permissions API", () => {
     expect(response.status).toBe(400);
   });
 
-  it("POST /api/v1/security/permissions - should return 400 for lowercase permission code", async () => {
+  it("POST /api/v1/security/permissions - should accept lowercase permission code", async () => {
+    const lowercasePermissionCode = `news.lowercase.${Date.now()}.test`;
     const response = await request(app)
       .post("/api/v1/security/permissions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
-        code: "security:permissions:read",
-        displayName: "Invalid Permission"
+        code: lowercasePermissionCode,
+        displayName: "Lowercase Permission Test",
+        description: "Lowercase permission code test",
+        module: "NEWS",
+        resource: "NEWS",
+        action: "DELETE",
+        displayOrder: 999,
+        isSystemPermission: false
       });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(201);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.code).toBe(lowercasePermissionCode);
   });
 
   /*
-   * ==========================================================================
-   * UPDATE
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* UPDATE
+* ==========================================================================
+  */
 
   it("PATCH /api/v1/security/permissions/:id - should update a permission", async () => {
     expect(testPermissionId).toBeGreaterThan(0);
@@ -519,15 +541,15 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * SYSTEM PERMISSION PROTECTION
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* SYSTEM PERMISSION PROTECTION
+* ==========================================================================
+  */
 
   it("PATCH /api/v1/security/permissions/:id - should prevent deactivation of a system permission", async () => {
     const systemPermissionResult = await pool.query(
-      `
-      SELECT id
+      `       SELECT id
       FROM permissions
       WHERE is_system_permission = true
       ORDER BY id ASC
@@ -552,10 +574,11 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * ROLE-PERMISSION
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* ROLE-PERMISSION
+* ==========================================================================
+  */
 
   it("GET /api/v1/security/permissions/role/:roleId - should return role permissions", async () => {
     expect(testRoleId).toBeGreaterThan(0);
@@ -662,23 +685,74 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * INACTIVE PERMISSION
-   * ==========================================================================
-   */
 
-  it("PATCH /api/v1/security/permissions/:id - should deactivate a non-system permission", async () => {
+* ==========================================================================
+* INACTIVE PERMISSION
+* ==========================================================================
+  */
+
+  it("DELETE /api/v1/security/permissions/:id - should deactivate a non-system permission", async () => {
     expect(testPermissionId).toBeGreaterThan(0);
 
     const response = await request(app)
-      .patch(`/api/v1/security/permissions/${testPermissionId}`)
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        status: "INACTIVE"
-      });
+      .delete(`/api/v1/security/permissions/${testPermissionId}`)
+      .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
+
+    expect(response.body.data).toBeDefined();
+    expect(response.body.data.id).toBe(testPermissionId);
     expect(response.body.data.status).toBe("INACTIVE");
+    expect(response.body.data.isSystemPermission).toBe(false);
+  });
+
+  it("DELETE /api/v1/security/permissions/:id - should reject deactivation when permission is already inactive", async () => {
+    expect(testPermissionId).toBeGreaterThan(0);
+
+    const response = await request(app)
+      .delete(`/api/v1/security/permissions/${testPermissionId}`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("DELETE /api/v1/security/permissions/:id - should return 400 for invalid permission ID", async () => {
+    const response = await request(app)
+      .delete("/api/v1/security/permissions/invalid")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("DELETE /api/v1/security/permissions/:id - should return 404 for unknown permission", async () => {
+    const response = await request(app)
+      .delete("/api/v1/security/permissions/999999999")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("DELETE /api/v1/security/permissions/:id - should prevent deactivation of a system permission", async () => {
+    const systemPermissionResult = await pool.query(
+      `       SELECT id
+      FROM permissions
+      WHERE is_system_permission = true
+      ORDER BY id ASC
+      LIMIT 1
+      `
+    );
+
+    expect(systemPermissionResult.rows.length).toBeGreaterThan(0);
+
+    const systemPermissionId = Number(systemPermissionResult.rows[0].id);
+
+    expect(systemPermissionId).toBeGreaterThan(0);
+
+    const response = await request(app)
+      .delete(`/api/v1/security/permissions/${systemPermissionId}`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.status).toBe(400);
   });
 
   it("POST /api/v1/security/permissions/role/:roleId/:permissionId - should reject inactive permission assignment", async () => {
@@ -709,10 +783,11 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * INVALID ROLE-PERMISSION PARAMETERS
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* INVALID ROLE-PERMISSION PARAMETERS
+* ==========================================================================
+  */
 
   it("GET /api/v1/security/permissions/role/:roleId - should return an empty array for an unknown role", async () => {
     const response = await request(app)
@@ -735,10 +810,11 @@ describe("Permissions API", () => {
   });
 
   /*
-   * ==========================================================================
-   * FINAL VERIFICATION
-   * ==========================================================================
-   */
+
+* ==========================================================================
+* FINAL VERIFICATION
+* ==========================================================================
+  */
 
   it("GET /api/v1/security/permissions/:id - should return the final test permission state", async () => {
     expect(testPermissionId).toBeGreaterThan(0);

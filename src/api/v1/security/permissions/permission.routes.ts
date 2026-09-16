@@ -45,6 +45,13 @@ router.patch(
   controller.update
 );
 
+router.delete(
+  "/:id",
+  authorize("SECURITY", "permissions", "delete"),
+  validate(permissionIdSchema, "params"),
+  controller.deactivate
+);
+
 router.get(
   "/role/:roleId",
   authorize("SECURITY", "permissions", "read"),

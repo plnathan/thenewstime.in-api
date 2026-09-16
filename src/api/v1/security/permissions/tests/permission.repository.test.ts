@@ -939,15 +939,19 @@ describe("Permission Repository", () => {
     });
 
     it("should return false when the role is inactive", async () => {
+      // The permission is also assigned to secondRoleId by an earlier
+      // assignment test. Remove that assignment so the inactive test
+      // isolates testRoleId correctly.
+      await repository.removeFromRole(secondRoleId, permissionId);
+
       await pool.query(
-        `
-        UPDATE roles
-        SET
-          status = 'INACTIVE',
-          updated_by = $1,
-          updated_at = NOW()
-        WHERE id = $2
-        `,
+        `     UPDATE roles
+    SET
+      status = 'INACTIVE',
+      updated_by = $1,
+      updated_at = NOW()
+    WHERE id = $2
+    `,
         [testUserId, testRoleId]
       );
 
@@ -960,19 +964,23 @@ describe("Permission Repository", () => {
 
       expect(result).toBe(false);
 
-      // Restore role for cleanup consistency.
+      // Restore the role for subsequent tests.
       await pool.query(
-        `
-        UPDATE roles
-        SET
-          status = 'ACTIVE',
-          updated_by = $1,
-          updated_at = NOW()
-        WHERE id = $2
-        `,
+        `     UPDATE roles
+    SET
+      status = 'ACTIVE',
+      updated_by = $1,
+      updated_at = NOW()
+    WHERE id = $2
+    `,
         [testUserId, testRoleId]
       );
+
+      // Restore the second-role assignment for the following
+      // "another active role" authorization test.
+      await repository.assignToRole(secondRoleId, permissionId, testUserId);
     });
+
 
     it("should return true when another active role grants the permission", async () => {
       // Ensure second role belongs to the user.

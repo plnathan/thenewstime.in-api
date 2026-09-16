@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import bcrypt from "bcrypt";
 
-import { ApiError } from "../../../../../shared/utils/apiErrorInfo.js";
-
 import * as roleRepository from "../../roles/role.repository.js";
 import * as repository from "../user.repository.js";
 
@@ -59,6 +57,16 @@ const mockUser: User = {
   passwordExpiresAt: null,
   failedLoginCount: 0,
   status: "ACTIVE",
+
+  roles: [
+    {
+      id: 3,
+      code: "REPORTER",
+      displayName: "Reporter",
+      status: "ACTIVE"
+    }
+  ],
+
   createdBy: 1,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedBy: 1,
@@ -68,8 +76,20 @@ const mockUser: User = {
 const mockUserList: UserListItem[] = [
   {
     ...mockUser,
-    roleCode: "REPORTER",
-    roleDisplayName: "Reporter"
+    roles: [
+      {
+        id: 3,
+        code: "REPORTER",
+        displayName: "Reporter",
+        status: "ACTIVE"
+      },
+      {
+        id: 4,
+        code: "EDITOR",
+        displayName: "Editor",
+        status: "ACTIVE"
+      }
+    ]
   }
 ];
 
@@ -77,6 +97,13 @@ const activeRole = {
   id: 3,
   code: "REPORTER",
   displayName: "Reporter",
+  status: "ACTIVE"
+};
+
+const editorRole = {
+  id: 4,
+  code: "EDITOR",
+  displayName: "Editor",
   status: "ACTIVE"
 };
 
@@ -101,12 +128,16 @@ const createInput: CreateUserInput = {
   email: "test@example.com",
   mobile: "9876543210",
   password: "Password123!",
-  roleId: 3
+  roleIds: [3]
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+// ===========================================================================
+// getAll
+// ===========================================================================
 
 describe("user.service - getAll()", () => {
   it("should return all users", async () => {
@@ -118,6 +149,26 @@ describe("user.service - getAll()", () => {
     expect(repository.findAll).toHaveBeenCalledOnce();
   });
 
+  it("should return users containing multiple roles", async () => {
+    vi.mocked(repository.findAll).mockResolvedValue(mockUserList);
+
+    const result = await getAll();
+
+    expect(result).toHaveLength(1);
+
+    const firstUser = result[0];
+
+    if (!firstUser) {
+      throw new Error("Expected at least one user to be returned.");
+    }
+
+    expect(firstUser.roles).toHaveLength(2);
+    expect(firstUser.roles.map((role) => role.code)).toEqual([
+      "REPORTER",
+      "EDITOR"
+    ]);
+  });
+
   it("should propagate repository errors", async () => {
     const error = new Error("Database failure.");
 
@@ -127,6 +178,10 @@ describe("user.service - getAll()", () => {
   });
 });
 
+// ===========================================================================
+// getById
+// ===========================================================================
+
 describe("user.service - getById()", () => {
   it("should return the user when found", async () => {
     vi.mocked(repository.findById).mockResolvedValue(mockUser);
@@ -135,6 +190,30 @@ describe("user.service - getById()", () => {
 
     expect(result).toEqual(mockUser);
     expect(repository.findById).toHaveBeenCalledWith(101);
+  });
+
+  it("should return the user's roles", async () => {
+    vi.mocked(repository.findById).mockResolvedValue({
+      ...mockUser,
+      roles: [
+        {
+          id: 3,
+          code: "REPORTER",
+          displayName: "Reporter",
+          status: "ACTIVE"
+        },
+        {
+          id: 4,
+          code: "EDITOR",
+          displayName: "Editor",
+          status: "ACTIVE"
+        }
+      ]
+    });
+
+    const result = await getById(101);
+
+    expect(result.roles).toHaveLength(2);
   });
 
   it("should throw 404 when user is not found", async () => {
@@ -155,8 +234,12 @@ describe("user.service - getById()", () => {
   });
 });
 
+// ===========================================================================
+// create
+// ===========================================================================
+
 describe("user.service - create()", () => {
-  it("should create a user successfully", async () => {
+  it("should create a user successfully with one role", async () => {
     vi.mocked(repository.findByUsername).mockResolvedValue(null);
     vi.mocked(repository.findByEmail).mockResolvedValue(null);
     vi.mocked(repository.findByMobile).mockResolvedValue(null);
@@ -171,15 +254,7 @@ describe("user.service - create()", () => {
 
     expect(result).toEqual(mockUser);
 
-    expect(repository.findByUsername).toHaveBeenCalledWith(
-      createInput.username
-    );
-
-    expect(repository.findByEmail).toHaveBeenCalledWith(createInput.email);
-
-    expect(repository.findByMobile).toHaveBeenCalledWith(createInput.mobile);
-
-    expect(roleRepository.findById).toHaveBeenCalledWith(createInput.roleId);
+    expect(roleRepository.findById).toHaveBeenCalledWith(3);
 
     expect(bcrypt.hash).toHaveBeenCalledWith(createInput.password, 12);
 
@@ -188,6 +263,51 @@ describe("user.service - create()", () => {
       "hashed-password",
       1
     );
+  });
+
+  it("should create a user successfully with multiple roles", async () => {
+    const input: CreateUserInput = {
+      ...createInput,
+      roleIds: [3, 4]
+    };
+
+    vi.mocked(repository.findByUsername).mockResolvedValue(null);
+    vi.mocked(repository.findByEmail).mockResolvedValue(null);
+    vi.mocked(repository.findByMobile).mockResolvedValue(null);
+
+    vi.mocked(roleRepository.findById)
+      .mockResolvedValueOnce(activeRole as never)
+      .mockResolvedValueOnce(editorRole as never);
+
+    vi.mocked(bcrypt.hash).mockResolvedValue("hashed-password" as never);
+
+    vi.mocked(repository.create).mockResolvedValue({
+      ...mockUser,
+      roleId: 3,
+      roles: [
+        {
+          id: 3,
+          code: "REPORTER",
+          displayName: "Reporter",
+          status: "ACTIVE"
+        },
+        {
+          id: 4,
+          code: "EDITOR",
+          displayName: "Editor",
+          status: "ACTIVE"
+        }
+      ]
+    });
+
+    const result = await create(input, 1);
+
+    expect(result.roles).toHaveLength(2);
+
+    expect(roleRepository.findById).toHaveBeenNthCalledWith(1, 3);
+    expect(roleRepository.findById).toHaveBeenNthCalledWith(2, 4);
+
+    expect(repository.create).toHaveBeenCalledWith(input, "hashed-password", 1);
   });
 
   it("should reject a duplicate username", async () => {
@@ -239,11 +359,12 @@ describe("user.service - create()", () => {
     vi.mocked(repository.findByUsername).mockResolvedValue(null);
     vi.mocked(repository.findByEmail).mockResolvedValue(null);
     vi.mocked(repository.findByMobile).mockResolvedValue(null);
+
     vi.mocked(roleRepository.findById).mockResolvedValue(null);
 
     await expect(create(createInput, 1)).rejects.toMatchObject({
       statusCode: 404,
-      message: "Role not found."
+      message: "Role 3 not found."
     });
 
     expect(bcrypt.hash).not.toHaveBeenCalled();
@@ -254,13 +375,54 @@ describe("user.service - create()", () => {
     vi.mocked(repository.findByUsername).mockResolvedValue(null);
     vi.mocked(repository.findByEmail).mockResolvedValue(null);
     vi.mocked(repository.findByMobile).mockResolvedValue(null);
+
     vi.mocked(roleRepository.findById).mockResolvedValue(inactiveRole as never);
 
     await expect(create(createInput, 1)).rejects.toMatchObject({
       statusCode: 400,
-      message: "Only active roles can be assigned."
+      message: 'Role "Reporter" is not active and cannot be assigned.'
     });
 
+    expect(bcrypt.hash).not.toHaveBeenCalled();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("should reject duplicate role ids", async () => {
+    const input: CreateUserInput = {
+      ...createInput,
+      roleIds: [3, 3]
+    };
+
+    vi.mocked(repository.findByUsername).mockResolvedValue(null);
+    vi.mocked(repository.findByEmail).mockResolvedValue(null);
+    vi.mocked(repository.findByMobile).mockResolvedValue(null);
+
+    await expect(create(input, 1)).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Duplicate roles are not allowed."
+    });
+
+    expect(roleRepository.findById).not.toHaveBeenCalled();
+    expect(bcrypt.hash).not.toHaveBeenCalled();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it("should reject an empty role list", async () => {
+    const input: CreateUserInput = {
+      ...createInput,
+      roleIds: []
+    };
+
+    vi.mocked(repository.findByUsername).mockResolvedValue(null);
+    vi.mocked(repository.findByEmail).mockResolvedValue(null);
+    vi.mocked(repository.findByMobile).mockResolvedValue(null);
+
+    await expect(create(input, 1)).rejects.toMatchObject({
+      statusCode: 400,
+      message: "At least one role must be assigned."
+    });
+
+    expect(roleRepository.findById).not.toHaveBeenCalled();
     expect(bcrypt.hash).not.toHaveBeenCalled();
     expect(repository.create).not.toHaveBeenCalled();
   });
@@ -268,16 +430,16 @@ describe("user.service - create()", () => {
   it("should reject SUPER_ADMIN creation by a non-SUPER_ADMIN", async () => {
     const input: CreateUserInput = {
       ...createInput,
-      roleId: 1
+      roleIds: [3, 1]
     };
 
     vi.mocked(repository.findByUsername).mockResolvedValue(null);
     vi.mocked(repository.findByEmail).mockResolvedValue(null);
     vi.mocked(repository.findByMobile).mockResolvedValue(null);
 
-    vi.mocked(roleRepository.findById).mockResolvedValue(
-      superAdminRole as never
-    );
+    vi.mocked(roleRepository.findById)
+      .mockResolvedValueOnce(activeRole as never)
+      .mockResolvedValueOnce(superAdminRole as never);
 
     vi.mocked(roleRepository.findUserRoles).mockResolvedValue([
       {
@@ -299,16 +461,16 @@ describe("user.service - create()", () => {
   it("should allow an active SUPER_ADMIN to create another SUPER_ADMIN", async () => {
     const input: CreateUserInput = {
       ...createInput,
-      roleId: 1
+      roleIds: [3, 1]
     };
 
     vi.mocked(repository.findByUsername).mockResolvedValue(null);
     vi.mocked(repository.findByEmail).mockResolvedValue(null);
     vi.mocked(repository.findByMobile).mockResolvedValue(null);
 
-    vi.mocked(roleRepository.findById).mockResolvedValue(
-      superAdminRole as never
-    );
+    vi.mocked(roleRepository.findById)
+      .mockResolvedValueOnce(activeRole as never)
+      .mockResolvedValueOnce(superAdminRole as never);
 
     vi.mocked(roleRepository.findUserRoles).mockResolvedValue([
       {
@@ -318,11 +480,28 @@ describe("user.service - create()", () => {
     ] as never);
 
     vi.mocked(bcrypt.hash).mockResolvedValue("hashed-password" as never);
-    vi.mocked(repository.create).mockResolvedValue(mockUser);
+
+    vi.mocked(repository.create).mockResolvedValue({
+      ...mockUser,
+      roles: [
+        {
+          id: 3,
+          code: "REPORTER",
+          displayName: "Reporter",
+          status: "ACTIVE"
+        },
+        {
+          id: 1,
+          code: "SUPER_ADMIN",
+          displayName: "Super Admin",
+          status: "ACTIVE"
+        }
+      ]
+    });
 
     const result = await create(input, 1);
 
-    expect(result).toEqual(mockUser);
+    expect(result.roles).toHaveLength(2);
 
     expect(roleRepository.findUserRoles).toHaveBeenCalledWith(1);
 
@@ -334,7 +513,7 @@ describe("user.service - create()", () => {
   it("should reject SUPER_ADMIN creation when the actor has no roles", async () => {
     const input: CreateUserInput = {
       ...createInput,
-      roleId: 1
+      roleIds: [1]
     };
 
     vi.mocked(repository.findByUsername).mockResolvedValue(null);
@@ -410,7 +589,9 @@ describe("user.service - create()", () => {
     vi.mocked(repository.findByUsername).mockResolvedValue(null);
     vi.mocked(repository.findByEmail).mockResolvedValue(null);
     vi.mocked(repository.findByMobile).mockResolvedValue(null);
+
     vi.mocked(roleRepository.findById).mockResolvedValue(activeRole as never);
+
     vi.mocked(bcrypt.hash).mockResolvedValue("hashed-password" as never);
 
     const error = new Error("Create failed.");
@@ -420,6 +601,10 @@ describe("user.service - create()", () => {
     await expect(create(createInput, 1)).rejects.toBe(error);
   });
 });
+
+// ===========================================================================
+// update
+// ===========================================================================
 
 describe("user.service - update()", () => {
   const updateInput: UpdateUserInput = {
@@ -446,6 +631,180 @@ describe("user.service - update()", () => {
     expect(repository.findByMobile).toHaveBeenCalledWith(updateInput.mobile);
 
     expect(repository.update).toHaveBeenCalledWith(101, updateInput, null, 1);
+  });
+
+  it("should update a user with multiple roles", async () => {
+    const input: UpdateUserInput = {
+      fullName: "Updated User",
+      roleIds: [3, 4]
+    };
+
+    vi.mocked(repository.findById).mockResolvedValue(mockUser);
+
+    vi.mocked(roleRepository.findById)
+      .mockResolvedValueOnce(activeRole as never)
+      .mockResolvedValueOnce(editorRole as never);
+
+    vi.mocked(repository.update).mockResolvedValue({
+      ...mockUser,
+      roleId: 3,
+      roles: [
+        {
+          id: 3,
+          code: "REPORTER",
+          displayName: "Reporter",
+          status: "ACTIVE"
+        },
+        {
+          id: 4,
+          code: "EDITOR",
+          displayName: "Editor",
+          status: "ACTIVE"
+        }
+      ]
+    });
+
+    const result = await update(101, input, 1);
+
+    expect(result.roles).toHaveLength(2);
+
+    expect(roleRepository.findById).toHaveBeenNthCalledWith(1, 3);
+    expect(roleRepository.findById).toHaveBeenNthCalledWith(2, 4);
+
+    expect(repository.update).toHaveBeenCalledWith(101, input, null, 1);
+  });
+
+  it("should reject duplicate role ids during update", async () => {
+    const input: UpdateUserInput = {
+      roleIds: [3, 3]
+    };
+
+    vi.mocked(repository.findById).mockResolvedValue(mockUser);
+
+    await expect(update(101, input, 1)).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Duplicate roles are not allowed."
+    });
+
+    expect(roleRepository.findById).not.toHaveBeenCalled();
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("should reject an empty role list during update", async () => {
+    const input: UpdateUserInput = {
+      roleIds: []
+    };
+
+    vi.mocked(repository.findById).mockResolvedValue(mockUser);
+
+    await expect(update(101, input, 1)).rejects.toMatchObject({
+      statusCode: 400,
+      message: "At least one role must be assigned."
+    });
+
+    expect(roleRepository.findById).not.toHaveBeenCalled();
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("should reject a non-existent role during update", async () => {
+    const input: UpdateUserInput = {
+      roleIds: [999]
+    };
+
+    vi.mocked(repository.findById).mockResolvedValue(mockUser);
+    vi.mocked(roleRepository.findById).mockResolvedValue(null);
+
+    await expect(update(101, input, 1)).rejects.toMatchObject({
+      statusCode: 404,
+      message: "Role 999 not found."
+    });
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("should reject an inactive role during update", async () => {
+    const input: UpdateUserInput = {
+      roleIds: [5]
+    };
+
+    vi.mocked(repository.findById).mockResolvedValue(mockUser);
+    vi.mocked(roleRepository.findById).mockResolvedValue(inactiveRole as never);
+
+    await expect(update(101, input, 1)).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'Role "Reporter" is not active and cannot be assigned.'
+    });
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("should reject assigning SUPER_ADMIN during update by a non-SUPER_ADMIN", async () => {
+    const input: UpdateUserInput = {
+      roleIds: [3, 1]
+    };
+
+    vi.mocked(repository.findById).mockResolvedValue(mockUser);
+
+    vi.mocked(roleRepository.findById)
+      .mockResolvedValueOnce(activeRole as never)
+      .mockResolvedValueOnce(superAdminRole as never);
+
+    vi.mocked(roleRepository.findUserRoles).mockResolvedValue([
+      {
+        code: "REPORTER",
+        status: "ACTIVE"
+      }
+    ] as never);
+
+    await expect(update(101, input, 1)).rejects.toMatchObject({
+      statusCode: 403,
+      message: "Only SUPER_ADMIN can update a SUPER_ADMIN user."
+    });
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it("should allow assigning SUPER_ADMIN during update by an active SUPER_ADMIN", async () => {
+    const input: UpdateUserInput = {
+      roleIds: [3, 1]
+    };
+
+    vi.mocked(repository.findById).mockResolvedValue(mockUser);
+
+    vi.mocked(roleRepository.findById)
+      .mockResolvedValueOnce(activeRole as never)
+      .mockResolvedValueOnce(superAdminRole as never);
+
+    vi.mocked(roleRepository.findUserRoles).mockResolvedValue([
+      {
+        code: "SUPER_ADMIN",
+        status: "ACTIVE"
+      }
+    ] as never);
+
+    vi.mocked(repository.update).mockResolvedValue({
+      ...mockUser,
+      roles: [
+        {
+          id: 3,
+          code: "REPORTER",
+          displayName: "Reporter",
+          status: "ACTIVE"
+        },
+        {
+          id: 1,
+          code: "SUPER_ADMIN",
+          displayName: "Super Admin",
+          status: "ACTIVE"
+        }
+      ]
+    });
+
+    const result = await update(101, input, 1);
+
+    expect(result.roles).toHaveLength(2);
+
+    expect(repository.update).toHaveBeenCalledWith(101, input, null, 1);
   });
 
   it("should throw 404 when the target user does not exist", async () => {
@@ -542,6 +901,7 @@ describe("user.service - update()", () => {
     expect(result.status).toBe("INACTIVE");
 
     expect(roleRepository.findUserRoles).toHaveBeenCalledWith(101);
+
     expect(repository.update).toHaveBeenCalledWith(
       101,
       { status: "INACTIVE" },
@@ -650,6 +1010,10 @@ describe("user.service - update()", () => {
   });
 });
 
+// ===========================================================================
+// deactivate
+// ===========================================================================
+
 describe("user.service - deactivate()", () => {
   it("should deactivate a normal active user", async () => {
     vi.mocked(repository.findById).mockResolvedValue(mockUser);
@@ -686,6 +1050,7 @@ describe("user.service - deactivate()", () => {
     });
 
     expect(roleRepository.findUserRoles).not.toHaveBeenCalled();
+
     expect(repository.deactivate).not.toHaveBeenCalled();
   });
 
@@ -701,6 +1066,7 @@ describe("user.service - deactivate()", () => {
     });
 
     expect(roleRepository.findUserRoles).not.toHaveBeenCalled();
+
     expect(repository.deactivate).not.toHaveBeenCalled();
   });
 
@@ -713,6 +1079,7 @@ describe("user.service - deactivate()", () => {
     });
 
     expect(roleRepository.findUserRoles).not.toHaveBeenCalled();
+
     expect(repository.deactivate).not.toHaveBeenCalled();
   });
 

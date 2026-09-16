@@ -4,6 +4,16 @@ export interface AuthRole {
   displayName: string;
 }
 
+export interface AuthPermission {
+  id: number;
+  code: string;
+  displayName: string;
+  module: string | null;
+  resource: string | null;
+  action: string | null;
+  displayOrder: number;
+}
+
 export interface AuthUser {
   id: number;
   fullName: string;
@@ -13,6 +23,7 @@ export interface AuthUser {
   mobile: string | null;
   status: string;
   roles: AuthRole[];
+  permissions: AuthPermission[];
 }
 
 export interface RegisterInput {

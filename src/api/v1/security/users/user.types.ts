@@ -1,8 +1,22 @@
 export type UserStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED" | "LOCKED";
 
+export interface UserRole {
+  id: number;
+  code: string;
+  displayName: string;
+  status: string;
+}
+
 export interface User {
   id: number;
+
+  /*
+   * Kept for backward compatibility with existing authentication
+   * and security code. user_roles is the authoritative RBAC
+   * relationship when a user has multiple roles.
+   */
   roleId: number | null;
+
   fullName: string;
   displayName: string;
   username: string;
@@ -15,6 +29,9 @@ export interface User {
   passwordExpiresAt: Date | null;
   failedLoginCount: number;
   status: UserStatus;
+
+  roles: UserRole[];
+
   createdBy: number | null;
   createdAt: Date;
   updatedBy: number | null;
@@ -28,7 +45,9 @@ export interface CreateUserInput {
   email?: string | undefined;
   mobile?: string | undefined;
   password: string;
-  roleId: number;
+
+  roleIds: number[];
+
   profileImageUrl?: string | undefined;
   mustChangePassword?: boolean | undefined;
   passwordExpiresAt?: string | undefined;
@@ -44,9 +63,8 @@ export interface UpdateUserInput {
   mustChangePassword?: boolean | undefined;
   password?: string | undefined;
   passwordExpiresAt?: string | undefined;
+
+  roleIds?: number[] | undefined;
 }
 
-export interface UserListItem extends User {
-  roleCode: string | null;
-  roleDisplayName: string | null;
-}
+export interface UserListItem extends User {}
