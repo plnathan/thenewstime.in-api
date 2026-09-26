@@ -21,6 +21,11 @@ import permissionRoutes from "./api/v1/security/permissions/permission.routes.js
 import roleRoutes from "./api/v1/security/roles/role.routes.js";
 import userRoutes from "./api/v1/security/users/user.routes.js";
 
+import advertisementRoutes from "./api/v1/advertisements/advertisement/advertisement.routes.js";
+import advertisementClientRoutes from "./api/v1/advertisements/clients/client.routes.js";
+import placementRoutes from "./api/v1/advertisements/placements/placement.routes.js";
+import advertisementTrackingRoutes from "./api/v1/advertisements/tracking/tracking.routes.js";
+
 const app = express();
 
 app.use(cors());
@@ -39,6 +44,14 @@ app.get("/", (_req: any, res: any) => {
     message: "API is running successfully!"
   });
 });
+
+app.use("/api/v1/advertisements/placements", placementRoutes);
+
+app.use("/api/v1/advertisements/tracking", advertisementTrackingRoutes);
+
+app.use("/api/v1/advertisements", advertisementRoutes);
+
+app.use("/api/v1/advertisement-clients", advertisementClientRoutes);
 
 app.use("/api/v1/categories", categoryRoutes);
 

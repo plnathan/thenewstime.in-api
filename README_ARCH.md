@@ -1,3 +1,41 @@
+## Deployment Architecture:
+
+                    ┌──────────────────┐
+                    │   Developer      │
+                    │   machine        │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    Local/test database
+                             │
+                             ▼
+                         Vitest
+
+
+                    ┌──────────────────┐
+                    │      CI/CD       │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    Dedicated test DB
+                             │
+                             ▼
+                         Vitest
+                             │
+                       ALL PASS?
+                       /       \
+                     NO         YES
+                     │           │
+                  STOP        Deploy
+                                │
+                                ▼
+                         Production Neon
+
+
+## Layered Architecture:
+
+Routes → Controller → Service → Repository → Mapper → Zod validation
+
 ## Proposed Architecture :
 
 React (Frontend)

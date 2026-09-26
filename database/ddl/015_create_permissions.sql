@@ -476,3 +476,55 @@ DO UPDATE SET
     updated_at = NOW();
 
 COMMIT;
+
+-- ============================================================
+-- ADVERTISEMENT MANAGEMENT PERMISSIONS
+-- ============================================================
+
+-- ============================================================
+-- ADVERTISEMENT MANAGEMENT PERMISSIONS
+-- ============================================================
+
+INSERT INTO permissions
+(
+	code,
+    module,
+    resource,
+    action,
+    display_name,
+    display_order,
+    is_system_permission,
+    status
+)
+VALUES
+(
+	'advertisements.read',
+    'ADVERTISEMENT',
+    'advertisements',
+    'read',
+    'View Advertisements',
+    10,
+    TRUE,
+    'ACTIVE'
+),
+(
+	'advertisements.create',
+    'ADVERTISEMENT',
+    'advertisements',
+    'create',
+    'Create Advertisements',
+    20,
+    TRUE,
+    'ACTIVE'
+),
+(
+	'advertisements.update',
+    'ADVERTISEMENT',
+    'advertisements',
+    'update',
+    'Update Advertisements',
+    30,
+    TRUE,
+    'ACTIVE'
+)
+ON CONFLICT DO NOTHING;

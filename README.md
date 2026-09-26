@@ -1,3 +1,5 @@
+## Learn Prisma/Drizzle
+
 Install Prettier
 
 cd back-end
@@ -100,6 +102,34 @@ npm install @scalar/api-reference
 To run the specific file test
 ------------------------------
 
+npm test -- advertisements/advertisement
+
+npm test -- advertisements/placements
+
+npm test -- advertisements/placement-rules
+
+If your Vitest configuration does not match that filename filter, use:
+
+npx vitest run src/api/v1/advertisements/advertisement/tests
+
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.validation.test.ts
+
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.service.test.ts
+
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.repository.test.ts
+
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.controller.test.ts
+
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.integration.test.ts
+
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.workflow.integration.test.ts
+
+Then run the complete test suite:
+
+npm run test:run
+
+npx vitest run
+
 npx vitest
 
 npx vitest run src/api/v1/news/tests/news.integration.test.ts
@@ -130,8 +160,83 @@ npx vitest run src/api/v1/security/permissions/tests/permission.repository.test.
 
 npx vitest run src/api/v1/security/permissions/tests
 
-npx vitest run src/api/v1/security/tests/permissions.integration.test.ts
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.workflow.integration.test.ts
 
+npm test -- advertisement.workflow.integration.test.ts
+
+npm test -- placement.integration.test.ts
+
+npm test -- placement.controller.test.ts placement.service.test.ts placement.repository.test.ts placement.validation.test.ts
+
+npx vitest run src/api/v1/advertisements/placement
+
+npm test -- placement.integration.test.ts
+
+npx vitest run src/api/v1/advertisements/placement-rules/tests/placement-rule.validation.test.ts
+
+npx vitest run src/api/v1/advertisements/placement-rules/tests/placement-rule.repository.test.ts
+
+npx vitest run src/api/v1/advertisements/placement-rules/tests/placement-rule.service.test.ts
+
+npx vitest run src/api/v1/advertisements/placement-rules/tests/placement-rule.controller.test.ts
+
+npx vitest run src/api/v1/advertisements/placement-rules/tests/placement-rule.integration.test.ts
+
+npm test -- advertisements/placement-rules
+
+npx vitest run src/api/v1/advertisements/schedules/tests/schedule.validation.test.ts
+
+npx vitest run src/api/v1/advertisements/schedules/tests/schedule.repository.test.ts
+
+npx vitest run src/api/v1/advertisements/schedules/tests/schedule.service.test.ts
+
+npx vitest run src/api/v1/advertisements/schedules/tests/schedule.controller.test.ts
+
+npx vitest run src/api/v1/advertisements/schedules/tests/schedule.integration.test.ts
+
+npm test -- advertisements/schedules
+
+npx vitest run src/api/v1/advertisements/schedules/tests
+
+npx vitest run src/api/v1/advertisements/delivery/tests/delivery.controller.test.ts
+
+npx vitest run src/api/v1/advertisements/delivery/tests/delivery.service.test.ts
+
+npx vitest run src/api/v1/advertisements/delivery/tests/delivery.repository.test.ts
+
+npx vitest run src/api/v1/advertisements/delivery/tests/delivery.validation.test.ts
+
+npx vitest run src/api/v1/advertisements/formats/tests/format.repository.test.ts
+
+npx vitest run src/api/v1/advertisements/targets/tests/target.repository.test.ts
+
+npm test -- advertisements/delivery
+
+npx vitest run src/api/v1/advertisements/advertisement/tests/advertisement.repository.test.ts src/api/v1/advertisements/advertisement/tests/advertisement.service.test.ts
+
+npx vitest run src/api/v1/advertisements/delivery/tests/delivery.integration.test.ts
+
+npx vitest run src/api/v1/advertisements/clients/tests/client.validation.test.ts
+
+npx vitest run src/api/v1/advertisements/clients/tests/client.service.test.ts
+
+npx vitest run src/api/v1/advertisements/clients/tests/client.repository.test.ts
+
+npx vitest run src/api/v1/advertisements/clients/tests/client.controller.test.ts
+
+npx vitest run src/api/v1/advertisements/clients/tests/client.integration.test.ts
+
+npx vitest run src/api/v1/advertisements/clients/tests/
+
+npx vitest run src/api/v1/advertisements/tracking/tests/tracking.repository.test.ts
+
+npx vitest run src/api/v1/advertisements/tracking/tests/tracking.service.test.ts
+
+npx vitest run src/api/v1/advertisements/tracking/tests/tracking.controller.test.ts
+
+npx vitest run src/api/v1/advertisements/tracking/tests/tracking.validation.test.ts
+
+npx vitest run src/api/v1/advertisements/tracking/tests/tracking.integration.test.ts
 ****************** XXXX *********************
 
 Cloudinary
