@@ -11,6 +11,7 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
   let testUserId = 0;
   let testRoleId = 0;
   let testClientId = 0;
+  let testPlacementId = 0;
   let testAdvertisementId = 0;
 
   const timestamp = Date.now();
@@ -27,6 +28,8 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
   const roleName = `fat_threshold_role_${timestamp}`;
 
   const clientCode = `FAT-${timestamp}`;
+
+  const testPlacementCode = `FAT-THRESHOLD-PLACEMENT-${timestamp}`;
 
   const password = "Test@12345";
 
@@ -822,6 +825,86 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
 
     /*
      * ======================================================================
+     * TEST PLACEMENT
+     * ======================================================================
+     *
+     * Advertisement creation now requires a valid persisted placement.
+     *
+     * Keep the placement as a dedicated fixture for this integration suite
+     * so the advertisement can be created through the same production API
+     * validation path used by the application.
+     */
+
+    const placementResult = await pool.query<{
+      id: number | string;
+    }>(
+      `
+        INSERT INTO advertisement_placements (
+          code,
+          display_name,
+          description,
+          page_type,
+          placement_type,
+          insertion_type,
+          display_order,
+          is_enabled,
+          collapse_when_empty,
+          fallback_behavior,
+          display_frequency,
+          frequency_value,
+          auto_close_enabled,
+          auto_close_seconds,
+          close_button_enabled,
+          close_on_overlay_click,
+          status,
+          created_by,
+          updated_by
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          'HOME',
+          'HOME_TOP',
+          'FIXED',
+          999,
+          TRUE,
+          TRUE,
+          'HIDE',
+          NULL,
+          NULL,
+          FALSE,
+          NULL,
+          TRUE,
+          TRUE,
+          'ACTIVE',
+          $4,
+          $4
+        )
+        RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `Financial Approval Threshold Integration Test Placement ${timestamp}`,
+        "Temporary placement for financial approval threshold integration tests.",
+        testUserId
+      ]
+    );
+
+    const placement = placementResult.rows[0];
+
+    if (placement === undefined) {
+      throw new Error(
+        "Failed to create financial approval threshold test placement."
+      );
+    }
+
+    testPlacementId = Number(placement.id);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * ======================================================================
      * ADVERTISEMENT FIXTURE
      * ======================================================================
      */
@@ -831,6 +914,8 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
+
+        placementId: testPlacementId,
 
         name: "Financial Approval Threshold Integration Test Advertisement",
 
@@ -978,12 +1063,64 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
       }
 
       try {
+        /*
+         * Runtime placement rules reference the advertisement and therefore
+         * must be removed before deleting the advertisement.
+         */
+        await pool.query(
+          `
+            DELETE FROM advertisement_placement_rules
+            WHERE advertisement_id = $1
+          `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+
+      try {
         await pool.query(
           `
             DELETE FROM advertisements
             WHERE id = $1
           `,
           [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+    }
+
+    /*
+     * ======================================================================
+     * PLACEMENT CLEANUP
+     * ======================================================================
+     *
+     * Placement cleanup is intentionally independent of advertisement
+     * cleanup. This guarantees that the temporary placement is removed even
+     * if advertisement creation fails and testAdvertisementId remains zero.
+     */
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placement_rules
+            WHERE placement_id = $1
+          `,
+          [testPlacementId]
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placements
+            WHERE id = $1
+          `,
+          [testPlacementId]
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1407,4 +1544,3 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
     expect(client?.ad_creation_hold).toBe(false);
   });
 });
-

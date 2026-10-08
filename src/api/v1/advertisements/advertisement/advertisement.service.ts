@@ -1,8 +1,11 @@
 import { pool } from "../../../../shared/config/db.js";
+
 import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
 
 import * as rateCardRepository from "../rate-cards/rate-card.repository.js";
+
 import * as pricingSnapshotService from "../pricing-snapshots/pricing-snapshot.service.js";
+
 import { calculateStandardAmount } from "../standard-amount/standard-amount.service.js";
 
 import * as repository from "./advertisement.repository.js";
@@ -20,15 +23,28 @@ import type {
   UpdateAdvertisementInput
 } from "./advertisement.types.js";
 
+type CreateAdvertisementInputWithPlacement = CreateAdvertisementInput & {
+  placementId?: number | null;
+};
+
+type UpdateAdvertisementInputWithPlacement = UpdateAdvertisementInput & {
+  placementId?: number | null;
+};
+
 const workflow: Record<
   AdvertisementWorkflowStatus,
   AdvertisementWorkflowStatus[]
 > = {
   DRAFT: ["SUBMITTED"],
+
   SUBMITTED: ["APPROVED", "REJECTED"],
+
   APPROVED: ["ON_HOLD", "ARCHIVED"],
+
   REJECTED: ["SUBMITTED"],
+
   ON_HOLD: ["APPROVED", "ARCHIVED"],
+
   ARCHIVED: ["DRAFT"]
 };
 
@@ -36,15 +52,19 @@ const roundToTwo = (value: number): number => Number(value.toFixed(2));
 
 interface AdvertisementFinancialCalculation {
   advertisementAmount: number | null;
+
   discountPercentage: number;
   discountAmount: number;
+
   advancePercentage: number;
   advanceAmount: number;
 }
 
 const calculateAdvertisementFinancials = (
   advertisementAmount: number | null | undefined,
+
   discountPercentage: number | undefined,
+
   advancePercentage: number | undefined
 ): AdvertisementFinancialCalculation => {
   const amount =
@@ -53,6 +73,7 @@ const calculateAdvertisementFinancials = (
       : advertisementAmount;
 
   const discountRate = discountPercentage ?? 0;
+
   const advanceRate = advancePercentage ?? 0;
 
   if (discountRate < 0 || discountRate > 100) {
@@ -80,9 +101,13 @@ const calculateAdvertisementFinancials = (
 
     return {
       advertisementAmount: null,
+
       discountPercentage: discountRate,
+
       discountAmount: 0,
+
       advancePercentage: advanceRate,
+
       advanceAmount: 0
     };
   }
@@ -109,9 +134,13 @@ const calculateAdvertisementFinancials = (
 
   return {
     advertisementAmount: amount,
+
     discountPercentage: discountRate,
+
     discountAmount,
+
     advancePercentage: advanceRate,
+
     advanceAmount
   };
 };
@@ -120,11 +149,13 @@ const toCalculatedFinancialFields = (
   financials: AdvertisementFinancialCalculation
 ) => ({
   discountAmount: financials.discountAmount,
+
   advanceAmount: financials.advanceAmount
 });
 
 const validateWorkflowTransition = (
   currentStatus: AdvertisementWorkflowStatus,
+
   nextStatus: AdvertisementWorkflowStatus
 ): void => {
   if (currentStatus === nextStatus) {
@@ -164,10 +195,66 @@ const normalizeRequiredReason = (reason: string, message: string): string => {
   return trimmed;
 };
 
+/* ------------------------------------------------------------
+ * Placement validation
+ * ------------------------------------------------------------ */
+
+const validatePlacementSelection = async (
+  placementId: number | null | undefined,
+  client?: import("pg").PoolClient
+): Promise<void> => {
+  if (placementId === undefined || placementId === null) {
+    throw new ApiError(400, "Advertisement placement is required.");
+  }
+
+  if (!Number.isInteger(placementId) || placementId <= 0) {
+    throw new ApiError(400, "Advertisement placement is invalid.");
+  }
+
+  const db = client ?? pool;
+
+  const result = await db.query<{
+    id: number | string;
+    status: string;
+    is_enabled: boolean;
+  }>(
+    `
+      SELECT
+        id,
+        status,
+        is_enabled
+      FROM advertisement_placements
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [placementId]
+  );
+
+  const placement = result.rows[0];
+
+  if (!placement) {
+    throw new ApiError(404, "Advertisement placement not found.");
+  }
+
+  if (placement.status !== "ACTIVE" || !placement.is_enabled) {
+    throw new ApiError(
+      409,
+      "The selected advertisement placement is not active."
+    );
+  }
+};
+
+/* ------------------------------------------------------------
+ * Workflow transition
+ * ------------------------------------------------------------ */
+
 const changeWorkflowStatus = async (
   id: number,
+
   nextStatus: AdvertisementWorkflowStatus,
+
   performedBy: number,
+
   options: {
     reason?: string | null;
     remarks?: string | null;
@@ -187,6 +274,7 @@ const changeWorkflowStatus = async (
     validateWorkflowTransition(advertisement.workflowStatus, nextStatus);
 
     const reason = options.reason ?? null;
+
     const remarks = options.remarks ?? null;
 
     if (nextStatus === "REJECTED" && !reason) {
@@ -241,8 +329,12 @@ const changeWorkflowStatus = async (
   }
 };
 
+/* ------------------------------------------------------------
+ * Create
+ * ------------------------------------------------------------ */
+
 export const createAdvertisement = async (
-  input: CreateAdvertisementInput,
+  input: CreateAdvertisementInputWithPlacement,
   createdBy: number
 ): Promise<Advertisement> => {
   if (input.isHouseAd) {
@@ -291,6 +383,55 @@ export const createAdvertisement = async (
     }
   }
 
+  /*
+   * Remove placementId from the object that will later be spread into
+   * repository.create().
+   *
+   * This is important because CreateAdvertisementInput expects:
+   *
+   *   placementId?: number
+   *
+   * while the service-level input intentionally allows:
+   *
+   *   placementId?: number | null
+   *
+   * With exactOptionalPropertyTypes enabled, spreading the original
+   * input would preserve `placementId?: number | null` and therefore
+   * make the repository.create() call invalid even when we conditionally
+   * add a valid placementId afterward.
+   */
+  const {
+    placementId: inputPlacementId,
+    ...inputWithoutPlacement
+  } = input;
+
+  /*
+   * Runtime placement is mandatory for every advertisement.
+   *
+   * A pricing placement may also be supplied when the advertisement
+   * is being created through the pricing workflow.
+   */
+  const runtimePlacementId =
+    inputPlacementId ?? input.pricing?.placementId ?? undefined;
+
+  await validatePlacementSelection(runtimePlacementId);
+
+  /*
+   * If both runtime placement and pricing placement are supplied,
+   * they must point to the same configured placement.
+   */
+  if (
+    input.pricing?.placementId !== undefined &&
+    inputPlacementId !== undefined &&
+    inputPlacementId !== null &&
+    input.pricing.placementId !== inputPlacementId
+  ) {
+    throw new ApiError(
+      400,
+      "Advertisement placement and pricing placement must match."
+    );
+  }
+
   const financials = calculateAdvertisementFinancials(
     input.advertisementAmount,
     input.discountPercentage,
@@ -298,47 +439,29 @@ export const createAdvertisement = async (
   );
 
   /*
-   * ------------------------------------------------------------
-   * Existing non-priced advertisement creation
-   * ------------------------------------------------------------
-   *
-   * If pricing is not supplied, preserve the existing repository
-   * creation contract.
-   *
-   * The pricing database columns are nullable and therefore remain
-   * NULL when no system pricing is requested.
+   * No pricing object means that the advertisement uses the explicitly
+   * selected runtime placement without creating a rate-card snapshot.
    */
   if (!input.pricing) {
     return repository.create(
       {
-        ...input,
+        ...inputWithoutPlacement,
+
+        /*
+         * runtimePlacementId has already passed validatePlacementSelection(),
+         * therefore this property is always a valid number at this point.
+         */
+        placementId: runtimePlacementId as number,
+
         discountPercentage: financials.discountPercentage,
+
         advancePercentage: financials.advancePercentage,
+
         ...toCalculatedFinancialFields(financials)
       },
       createdBy
     );
   }
-
-  /*
-   * ------------------------------------------------------------
-   * 8C-9D SYSTEM PRICING FLOW
-   * ------------------------------------------------------------
-   *
-   * Pricing values supplied by the caller:
-   *
-   *   placementId
-   *   pricingUnit
-   *   quantity
-   *
-   * System values:
-   *
-   *   rateAmount
-   *   standardAmount
-   *
-   * The rate is always obtained from the effective active
-   * system rate card.
-   */
 
   const client = await pool.connect();
 
@@ -377,40 +500,44 @@ export const createAdvertisement = async (
 
     const standardAmountResult = calculateStandardAmount({
       pricingUnit: rateCard.pricingUnit,
+
       rateAmount: rateCard.rateAmount,
+
       quantity: input.pricing.quantity,
+
       currencyCode: rateCard.currencyCode
     });
 
     const advertisement = await repository.create(
       {
-        ...input,
+        ...inputWithoutPlacement,
+
+        /*
+         * runtimePlacementId has already passed validatePlacementSelection(),
+         * therefore this property is always a valid number at this point.
+         */
+        placementId: runtimePlacementId as number,
+
         discountPercentage: financials.discountPercentage,
+
         advancePercentage: financials.advancePercentage,
+
         ...toCalculatedFinancialFields(financials),
 
-        /*
-         * System-calculated pricing fields.
-         */
         standardAmount: standardAmountResult.standardAmount,
+
         pricingPlacementId: input.pricing.placementId,
+
         pricingUnit: input.pricing.pricingUnit,
+
         pricingQuantity: input.pricing.quantity,
 
-        /*
-         * The rate-card currency is authoritative for
-         * system pricing.
-         */
         currencyCode: rateCard.currencyCode
       },
       createdBy,
       client
     );
 
-    /*
-     * Create the immutable pricing snapshot using the
-     * SAME transaction client.
-     */
     await pricingSnapshotService.createFromRateCard(
       advertisement.id,
       input.pricing.placementId,
@@ -421,10 +548,6 @@ export const createAdvertisement = async (
 
     await client.query("COMMIT");
 
-    /*
-     * The advertisement returned by repository.create()
-     * already contains the calculated pricing fields.
-     */
     return advertisement;
   } catch (error) {
     console.error("ADVERTISEMENT PRICING CREATION ERROR:", error);
@@ -436,6 +559,10 @@ export const createAdvertisement = async (
     client.release();
   }
 };
+
+/* ------------------------------------------------------------
+ * Get
+ * ------------------------------------------------------------ */
 
 export const getAdvertisementById = async (
   id: number
@@ -455,9 +582,13 @@ export const getAdvertisements = async (
   return repository.list(filters);
 };
 
+/* ------------------------------------------------------------
+ * Update
+ * ------------------------------------------------------------ */
+
 export const updateAdvertisement = async (
   id: number,
-  input: UpdateAdvertisementInput,
+  input: UpdateAdvertisementInputWithPlacement,
   updatedBy: number
 ): Promise<Advertisement> => {
   const advertisement = await repository.findById(id);
@@ -524,32 +655,22 @@ export const updateAdvertisement = async (
   }
 
   /*
-   * ------------------------------------------------------------
-   * Agreed amount / financial update
-   * ------------------------------------------------------------
+   * Placement is required on Create.
    *
-   * `agreedAmount` is the API/domain name for the negotiated
-   * commercial amount.
-   *
-   * `advertisementAmount` remains supported for compatibility
-   * with existing callers.
-   *
-   * Precedence:
-   *
-   *   1. agreedAmount
-   *   2. advertisementAmount
-   *   3. existing advertisement amount
-   *
-   * The effective amount is used for recalculating discount and
-   * advance amounts.
-   *
-   * `standardAmount` is intentionally NOT changed here because
-   * system pricing is immutable after the pricing snapshot.
+   * On Update, placementId is optional so existing advertisements
+   * can be updated without changing their runtime placement.
    */
+  if (input.placementId !== undefined && input.placementId !== null) {
+    await validatePlacementSelection(input.placementId);
+  } else if (advertisement.placement === null) {
+    throw new ApiError(
+      409,
+      "Advertisement does not have a persisted placement. Please select a placement before saving."
+    );
+  }
+
   const mergedAdvertisementAmount =
-    input.agreedAmount ??
-    input.advertisementAmount ??
-    advertisement.advertisementAmount;
+    input.advertisementAmount ?? advertisement.advertisementAmount;
 
   const mergedDiscountPercentage =
     input.discountPercentage ?? advertisement.discountPercentage;
@@ -563,12 +684,29 @@ export const updateAdvertisement = async (
     mergedAdvancePercentage
   );
 
+  /*
+   * Remove placementId from the spread so that `null` or `undefined`
+   * is never passed to repository.update() for an optional property.
+   *
+   * This is required because the project uses:
+   *
+   * exactOptionalPropertyTypes: true
+   */
+  const { placementId, ...updateInput } = input;
+
   const updated = await repository.update(
     id,
     {
-      ...input,
+      ...updateInput,
+
+      ...(placementId !== undefined && placementId !== null
+        ? { placementId }
+        : {}),
+
       discountPercentage: financials.discountPercentage,
+
       advancePercentage: financials.advancePercentage,
+
       ...toCalculatedFinancialFields(financials)
     },
     updatedBy
@@ -581,25 +719,27 @@ export const updateAdvertisement = async (
   return updated;
 };
 
+/* ------------------------------------------------------------
+ * Workflow API
+ * ------------------------------------------------------------ */
+
 export const submitAdvertisement = async (
   id: number,
   submittedBy: number,
   input: AdvertisementWorkflowInput = {}
-): Promise<AdvertisementWorkflowResult> => {
-  return changeWorkflowStatus(id, "SUBMITTED", submittedBy, {
+): Promise<AdvertisementWorkflowResult> =>
+  changeWorkflowStatus(id, "SUBMITTED", submittedBy, {
     remarks: normalizeRemarks(input.remarks)
   });
-};
 
 export const approveAdvertisement = async (
   id: number,
   approvedBy: number,
   input: AdvertisementWorkflowInput = {}
-): Promise<AdvertisementWorkflowResult> => {
-  return changeWorkflowStatus(id, "APPROVED", approvedBy, {
+): Promise<AdvertisementWorkflowResult> =>
+  changeWorkflowStatus(id, "APPROVED", approvedBy, {
     remarks: normalizeRemarks(input.remarks)
   });
-};
 
 export const rejectAdvertisement = async (
   id: number,
@@ -637,11 +777,10 @@ export const resumeAdvertisement = async (
   id: number,
   resumedBy: number,
   input: AdvertisementWorkflowInput = {}
-): Promise<AdvertisementWorkflowResult> => {
-  return changeWorkflowStatus(id, "APPROVED", resumedBy, {
+): Promise<AdvertisementWorkflowResult> =>
+  changeWorkflowStatus(id, "APPROVED", resumedBy, {
     remarks: normalizeRemarks(input.remarks)
   });
-};
 
 export const activateAdvertisement = async (
   id: number,
@@ -666,11 +805,10 @@ export const archiveAdvertisement = async (
   id: number,
   archivedBy: number,
   input: AdvertisementWorkflowInput = {}
-): Promise<AdvertisementWorkflowResult> => {
-  return changeWorkflowStatus(id, "ARCHIVED", archivedBy, {
+): Promise<AdvertisementWorkflowResult> =>
+  changeWorkflowStatus(id, "ARCHIVED", archivedBy, {
     remarks: normalizeRemarks(input.remarks)
   });
-};
 
 export const getAdvertisementWorkflowHistory = async (
   id: number

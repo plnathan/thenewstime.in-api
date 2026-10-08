@@ -15,6 +15,7 @@ vi.mock("../placement.repository.js", () => ({
   findAll: vi.fn(),
   findById: vi.fn(),
   findByCode: vi.fn(),
+  findActiveFormatById: vi.fn(),
   create: vi.fn(),
   update: vi.fn()
 }));
@@ -39,14 +40,28 @@ describe("Advertisement Placement Service", () => {
     closeButtonEnabled: true,
     closeOnOverlayClick: true,
     status: "ACTIVE",
+    formatId: null,
+    format: null,
     createdBy: 10,
     updatedBy: 10,
     createdAt: new Date(),
     updatedAt: new Date()
   };
 
+  const activeFormat = {
+    id: 1,
+    code: "DESKTOP_BANNER_728X90",
+    displayName: "Desktop Banner 728x90",
+    description: "Desktop banner format",
+    widthPx: 728,
+    heightPx: 90,
+    isResponsive: false
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+
+    vi.mocked(repository.findActiveFormatById).mockResolvedValue(activeFormat);
   });
 
   describe("getAll", () => {
@@ -95,6 +110,69 @@ describe("Advertisement Placement Service", () => {
 
       expect(result).toEqual(placement);
       expect(repository.findByCode).toHaveBeenCalledWith("HOME_TOP");
+      expect(repository.create).toHaveBeenCalledWith(input, 10);
+      expect(repository.findActiveFormatById).not.toHaveBeenCalled();
+    });
+
+    it("should validate an explicitly supplied format", async () => {
+      const input: CreateAdvertisementPlacementInput = {
+        code: "HOME_TOP",
+        displayName: "Homepage Top",
+        pageType: "HOME",
+        placementType: "HOME_TOP",
+        formatId: 1
+      };
+
+      vi.mocked(repository.findByCode).mockResolvedValue(null);
+      vi.mocked(repository.create).mockResolvedValue({
+        ...placement,
+        formatId: 1,
+        format: activeFormat
+      });
+
+      const result = await service.create(input, 10);
+
+      expect(result.formatId).toBe(1);
+      expect(result.format).toEqual(activeFormat);
+      expect(repository.findActiveFormatById).toHaveBeenCalledWith(1);
+      expect(repository.create).toHaveBeenCalledWith(input, 10);
+    });
+
+    it("should reject an inactive or missing format", async () => {
+      const input: CreateAdvertisementPlacementInput = {
+        code: "HOME_TOP",
+        displayName: "Homepage Top",
+        pageType: "HOME",
+        placementType: "HOME_TOP",
+        formatId: 999
+      };
+
+      vi.mocked(repository.findActiveFormatById).mockResolvedValue(null);
+
+      await expect(service.create(input, 10)).rejects.toEqual(
+        new ApiError(400, "Advertisement format not found or is inactive.")
+      );
+
+      expect(repository.findByCode).not.toHaveBeenCalled();
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it("should allow a placement without a format", async () => {
+      const input: CreateAdvertisementPlacementInput = {
+        code: "HOME_TOP",
+        displayName: "Homepage Top",
+        pageType: "HOME",
+        placementType: "HOME_TOP",
+        formatId: null
+      };
+
+      vi.mocked(repository.findByCode).mockResolvedValue(null);
+      vi.mocked(repository.create).mockResolvedValue(placement);
+
+      const result = await service.create(input, 10);
+
+      expect(result).toEqual(placement);
+      expect(repository.findActiveFormatById).not.toHaveBeenCalled();
       expect(repository.create).toHaveBeenCalledWith(input, 10);
     });
 
@@ -214,6 +292,92 @@ describe("Advertisement Placement Service", () => {
       expect(repository.findByCode).toHaveBeenCalledWith("NEWS_LIST_SIDEBAR");
       expect(repository.create).toHaveBeenCalledWith(input, 10);
     });
+  });
+
+  describe("update", () => {
+    it("should update an existing placement", async () => {
+      const input: UpdateAdvertisementPlacementInput = {
+        displayName: "Updated Homepage Top"
+      };
+
+      const updated = {
+        ...placement,
+        displayName: "Updated Homepage Top"
+      };
+
+      vi.mocked(repository.findById).mockResolvedValue(placement);
+      vi.mocked(repository.update).mockResolvedValue(updated);
+
+      const result = await service.update(1, input, 20);
+
+      expect(result).toEqual(updated);
+      expect(repository.findById).toHaveBeenCalledWith(1);
+      expect(repository.update).toHaveBeenCalledWith(1, input, 20);
+    });
+
+    it("should validate a supplied format when updating", async () => {
+      const input: UpdateAdvertisementPlacementInput = {
+        formatId: 1
+      };
+
+      const updated = {
+        ...placement,
+        formatId: 1,
+        format: activeFormat
+      };
+
+      vi.mocked(repository.findById).mockResolvedValue(placement);
+      vi.mocked(repository.findActiveFormatById).mockResolvedValue(
+        activeFormat
+      );
+      vi.mocked(repository.update).mockResolvedValue(updated);
+
+      const result = await service.update(1, input, 20);
+
+      expect(result).toEqual(updated);
+      expect(repository.findActiveFormatById).toHaveBeenCalledWith(1);
+      expect(repository.update).toHaveBeenCalledWith(1, input, 20);
+    });
+
+    it("should reject an inactive or missing format during update", async () => {
+      const input: UpdateAdvertisementPlacementInput = {
+        formatId: 999
+      };
+
+      vi.mocked(repository.findById).mockResolvedValue(placement);
+      vi.mocked(repository.findActiveFormatById).mockResolvedValue(null);
+
+      await expect(service.update(1, input, 20)).rejects.toEqual(
+        new ApiError(400, "Advertisement format not found or is inactive.")
+      );
+
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it("should allow explicitly removing the format", async () => {
+      const input: UpdateAdvertisementPlacementInput = {
+        formatId: null
+      };
+
+      const updated = {
+        ...placement,
+        formatId: null,
+        format: null
+      };
+
+      vi.mocked(repository.findById).mockResolvedValue({
+        ...placement,
+        formatId: 1,
+        format: activeFormat
+      });
+      vi.mocked(repository.update).mockResolvedValue(updated);
+
+      const result = await service.update(1, input, 20);
+
+      expect(result).toEqual(updated);
+      expect(repository.findActiveFormatById).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(1, input, 20);
+    });
 
     it("should allow changing fallback behavior to HOUSE_AD", async () => {
       const existing = {
@@ -236,28 +400,6 @@ describe("Advertisement Placement Service", () => {
       const result = await service.update(1, input, 20);
 
       expect(result).toEqual(updated);
-      expect(repository.update).toHaveBeenCalledWith(1, input, 20);
-    });
-  });
-
-  describe("update", () => {
-    it("should update an existing placement", async () => {
-      const input: UpdateAdvertisementPlacementInput = {
-        displayName: "Updated Homepage Top"
-      };
-
-      const updated = {
-        ...placement,
-        displayName: "Updated Homepage Top"
-      };
-
-      vi.mocked(repository.findById).mockResolvedValue(placement);
-      vi.mocked(repository.update).mockResolvedValue(updated);
-
-      const result = await service.update(1, input, 20);
-
-      expect(result).toEqual(updated);
-      expect(repository.findById).toHaveBeenCalledWith(1);
       expect(repository.update).toHaveBeenCalledWith(1, input, 20);
     });
 

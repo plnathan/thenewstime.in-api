@@ -73,7 +73,10 @@ export const getAdvertisements = async (
       ...(req.query.status
         ? {
             status: req.query.status as
-              "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED"
+              | "DRAFT"
+              | "ACTIVE"
+              | "INACTIVE"
+              | "ARCHIVED"
           }
         : {})
     };

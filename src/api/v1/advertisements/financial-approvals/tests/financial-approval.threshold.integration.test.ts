@@ -16,6 +16,7 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
   let reviewerRoleId = 0;
 
   let clientId = 0;
+  let placementId = 0;
   let advertisementId = 0;
 
   let creatorUsername = "";
@@ -298,12 +299,84 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
     return id;
   };
 
+  const createPlacement = async (): Promise<number> => {
+    const placementCode = `TFA-THRESHOLD-PLACEMENT-${timestamp}`;
+
+    const result = await pool.query<{
+      id: number | string;
+    }>(
+      `
+        INSERT INTO advertisement_placements
+        (
+          code,
+          display_name,
+          description,
+          page_type,
+          placement_type,
+          insertion_type,
+          display_order,
+          is_enabled,
+          collapse_when_empty,
+          fallback_behavior,
+          display_frequency,
+          frequency_value,
+          auto_close_enabled,
+          auto_close_seconds,
+          close_button_enabled,
+          close_on_overlay_click,
+          status,
+          created_by,
+          updated_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          'HOME',
+          'HOME_TOP',
+          'FIXED',
+          999,
+          TRUE,
+          TRUE,
+          'HIDE',
+          NULL,
+          NULL,
+          FALSE,
+          NULL,
+          TRUE,
+          TRUE,
+          'ACTIVE',
+          $4,
+          $4
+        )
+        RETURNING id
+      `,
+      [
+        placementCode,
+        `Threshold Integration Test Placement ${timestamp}`,
+        "Temporary placement for financial approval threshold integration tests.",
+        creatorUserId
+      ]
+    );
+
+    const rawId = result.rows[0]?.id;
+    const id = Number(rawId);
+
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error("Failed to create advertisement placement.");
+    }
+
+    return id;
+  };
+
   const createAdvertisement = async (): Promise<number> => {
     const response = await request(app)
       .post("/api/v1/advertisements")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
       .send({
         clientId,
+        placementId,
         name: "Threshold Integration Advertisement",
         internalName: `TFA-THRESHOLD-${timestamp}`,
         advertisementType: "DISPLAY",
@@ -747,6 +820,8 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
 
     clientId = await createClient();
 
+    placementId = await createPlacement();
+
     advertisementId = await createAdvertisement();
   });
 
@@ -783,10 +858,48 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
       try {
         await pool.query(
           `
+            DELETE FROM advertisement_placement_rules
+            WHERE advertisement_id = $1
+          `,
+          [advertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
             DELETE FROM advertisements
             WHERE id = $1
           `,
           [advertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+    }
+
+    if (placementId > 0) {
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placement_rules
+            WHERE placement_id = $1
+          `,
+          [placementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placements
+            WHERE id = $1
+          `,
+          [placementId]
         );
       } catch {
         // Cleanup should not fail the suite.

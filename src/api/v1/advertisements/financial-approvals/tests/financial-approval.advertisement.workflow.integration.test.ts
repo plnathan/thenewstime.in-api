@@ -16,6 +16,7 @@ describe("Advertisement Workflow API Integration", () => {
   let managerRoleId = 0;
 
   let testClientId = 0;
+  let testPlacementId = 0;
   let advertisementId = 0;
   let rejectionAdvertisementId = 0;
 
@@ -29,6 +30,7 @@ describe("Advertisement Workflow API Integration", () => {
   const creatorRoleCode = `TEST_FA_AD_CREATOR_${timestamp}`;
   const managerRoleCode = `TEST_FA_AD_MANAGER_${timestamp}`;
   const testClientCode = `TEST-FA-AD-${timestamp}`;
+  const testPlacementCode = `TEST-FA-WORKFLOW-${timestamp}`;
 
   const creatorPassword = "FA_Ad_Creator@123";
   const managerPassword = "FA_Ad_Manager@123";
@@ -295,6 +297,74 @@ describe("Advertisement Workflow API Integration", () => {
     testClientId = Number(clientResult.rows[0]?.id ?? 0);
     expect(testClientId).toBeGreaterThan(0);
 
+    /*
+     * ------------------------------------------------------------------------
+     * Create a temporary active runtime placement for the advertisements
+     * created by this workflow integration test.
+     *
+     * The current advertisement create flow requires a valid placementId
+     * and persists that relationship in advertisement_placement_rules.
+     * ------------------------------------------------------------------------
+     */
+    const placementResult = await pool.query(
+      `
+      INSERT INTO advertisement_placements
+      (
+        code,
+        display_name,
+        description,
+        page_type,
+        placement_type,
+        insertion_type,
+        display_order,
+        is_enabled,
+        collapse_when_empty,
+        fallback_behavior,
+        display_frequency,
+        frequency_value,
+        auto_close_enabled,
+        auto_close_seconds,
+        close_button_enabled,
+        close_on_overlay_click,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        'HOME',
+        'HOME_TOP',
+        'FIXED',
+        999,
+        TRUE,
+        TRUE,
+        'HIDE',
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        TRUE,
+        TRUE,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `FA Workflow Test Placement ${timestamp}`,
+        "Temporary runtime placement for advertisement workflow integration tests.",
+        creatorUserId
+      ]
+    );
+
+    testPlacementId = Number(placementResult.rows[0]?.id ?? 0);
+    expect(testPlacementId).toBeGreaterThan(0);
+
     const creatorLoginResponse = await request(app)
       .post("/api/v1/auth/login")
       .send({
@@ -323,9 +393,30 @@ describe("Advertisement Workflow API Integration", () => {
   });
 
   afterAll(async () => {
-    const advertisementIds = [advertisementId, rejectionAdvertisementId].filter(
+    const advertisementIds = [
+      advertisementId,
+      rejectionAdvertisementId
+    ].filter(
       (id, index, values) => id > 0 && values.indexOf(id) === index
     );
+
+    /*
+     * Runtime placement rules reference advertisements and placements.
+     * Remove the rules explicitly before deleting their parent records.
+     */
+    for (const id of advertisementIds) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+          [id]
+        );
+      } catch {
+        // Cleanup must not mask test results.
+      }
+    }
 
     for (const id of advertisementIds) {
       try {
@@ -339,6 +430,29 @@ describe("Advertisement Workflow API Integration", () => {
 
       try {
         await pool.query(`DELETE FROM advertisements WHERE id = $1`, [id]);
+      } catch {
+        // Cleanup must not mask test results.
+      }
+    }
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE placement_id = $1
+          `,
+          [testPlacementId]
+        );
+      } catch {
+        // Cleanup must not mask test results.
+      }
+
+      try {
+        await pool.query(
+          `DELETE FROM advertisement_placements WHERE id = $1`,
+          [testPlacementId]
+        );
       } catch {
         // Cleanup must not mask test results.
       }
@@ -423,7 +537,8 @@ describe("Advertisement Workflow API Integration", () => {
         openInNewTab: true,
         notes: "Advertisement workflow integration test.",
         agreedAmount: 50000,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        placementId: testPlacementId
       });
 
     expect(response.status).toBe(201);
@@ -434,6 +549,36 @@ describe("Advertisement Workflow API Integration", () => {
     expect(advertisementId).toBeGreaterThan(0);
     expect(response.body.data.workflowStatus).toBe("DRAFT");
     expect(response.body.data.status).toBe("DRAFT");
+
+    /*
+     * Verify that the runtime placement was actually persisted.
+     *
+     * advertisement_placement_rules does not contain an is_active column.
+     * The persisted relationship is identified by advertisement_id and
+     * placement_id.
+     */
+    const placementRuleResult = await pool.query(
+      `
+      SELECT
+        id,
+        advertisement_id,
+        placement_id
+      FROM advertisement_placement_rules
+      WHERE advertisement_id = $1
+        AND placement_id = $2
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [advertisementId, testPlacementId]
+    );
+
+    expect(placementRuleResult.rows.length).toBe(1);
+    expect(
+      Number(placementRuleResult.rows[0]?.advertisement_id ?? 0)
+    ).toBe(advertisementId);
+    expect(
+      Number(placementRuleResult.rows[0]?.placement_id ?? 0)
+    ).toBe(testPlacementId);
   });
 
   it("PATCH /api/v1/advertisements/:id - should allow Ad Creator to edit a DRAFT advertisement", async () => {
@@ -613,7 +758,8 @@ describe("Advertisement Workflow API Integration", () => {
         isClickable: true,
         openInNewTab: true,
         agreedAmount: 25000,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        placementId: testPlacementId
       });
 
     expect(response.status).toBe(201);
@@ -622,6 +768,29 @@ describe("Advertisement Workflow API Integration", () => {
     rejectionAdvertisementId = Number(response.body.data.id);
 
     expect(rejectionAdvertisementId).toBeGreaterThan(0);
+
+    const placementRuleResult = await pool.query(
+      `
+      SELECT
+        id,
+        advertisement_id,
+        placement_id
+      FROM advertisement_placement_rules
+      WHERE advertisement_id = $1
+        AND placement_id = $2
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [rejectionAdvertisementId, testPlacementId]
+    );
+
+    expect(placementRuleResult.rows.length).toBe(1);
+    expect(
+      Number(placementRuleResult.rows[0]?.advertisement_id ?? 0)
+    ).toBe(rejectionAdvertisementId);
+    expect(
+      Number(placementRuleResult.rows[0]?.placement_id ?? 0)
+    ).toBe(testPlacementId);
   });
 
   it("POST /api/v1/advertisements/:id/submit - should submit the rejection-workflow advertisement", async () => {

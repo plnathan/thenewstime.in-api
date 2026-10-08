@@ -371,3 +371,266 @@ FROM public.advertisement_clients
 ORDER BY id
 LIMIT 20;
 ------------------------------
+SELECT
+    column_name,
+    data_type,
+    is_nullable,
+    column_default
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'roles'
+ORDER BY ordinal_position;
+
+select * from permissions where module ='ADVERTISEMENT'
+-- ====================
+SELECT r.id AS role_id, r.display_name AS role_name, p.id AS permission_id, p.code AS permission_code, p.status AS permission_status FROM roles r JOIN role_permissions rp ON rp.role_id = r.id JOIN permissions p ON p.id = rp.permission_id WHERE r.id = 773 AND p.code IN ( 'advertisements.creatives.read', 'advertisements.creatives.create', 'advertisements.creatives.update', 'advertisements.creatives.delete' ) ORDER BY p.code;
+--INSERT INTO role_permissions ( role_id, permission_id ) SELECT 773, p.id FROM permissions p WHERE p.code IN ( 'advertisements.creatives.read', 'advertisements.creatives.create', 'advertisements.creatives.update', 'advertisements.creatives.delete' ) AND NOT EXISTS ( SELECT 1 FROM role_permissions rp WHERE rp.role_id = 773 AND rp.permission_id = p.id );
+-- OR
+
+-------------------------------
+
+INSERT INTO role_permissions (
+    role_id,
+    permission_id
+)
+SELECT
+    773,
+    p.id
+FROM permissions p
+WHERE p.code IN (
+    'advertisements.creatives.read',
+    'advertisements.creatives.create',
+    'advertisements.creatives.update',
+    'advertisements.creatives.delete'
+)
+AND p.status = 'ACTIVE'
+AND NOT EXISTS (
+    SELECT 1
+    FROM role_permissions rp
+    WHERE rp.role_id = 773
+      AND rp.permission_id = p.id
+);
+-------------------------
+SELECT
+    u.id AS user_id,
+    u.username,
+    r.id AS role_id,
+    r.display_name AS role_name,
+    p.id AS permission_id,
+    p.code,
+    p.module,
+    p.resource,
+    p.action,
+    p.status AS permission_status
+FROM users u
+LEFT JOIN user_roles ur
+    ON ur.user_id = u.id
+LEFT JOIN roles r
+    ON r.id = ur.role_id
+LEFT JOIN role_permissions rp
+    ON rp.role_id = r.id
+LEFT JOIN permissions p
+    ON p.id = rp.permission_id
+WHERE u.username = 'threshold_creator_1790318984036'
+  AND (
+      p.resource = 'advertisements.creatives'
+      OR p.resource = 'advertisements'
+      OR p.resource IS NULL
+  )
+ORDER BY p.resource, p.action;
+----------------------------------------------
+SELECT
+    column_name,
+    data_type
+FROM information_schema.columns
+WHERE table_name = 'role_permissions'
+ORDER BY ordinal_position;
+------------------------------
+SELECT
+    id,
+    name
+FROM roles
+WHERE id = 773;
+------------------------------
+SELECT
+    id,
+    code,
+    status
+FROM permissions
+WHERE code LIKE 'advertisements.creatives.%'
+ORDER BY code;
+-------------------------------
+SELECT
+    r.code,
+    r.display_name,
+    r.status
+FROM roles r
+WHERE r.code IN
+(
+    'AD_CREATOR',
+    'AD_MANAGER',
+    'AD_FINANCE_APPROVER'
+)
+ORDER BY r.display_order;
+
+---------------------------
+
+SELECT
+    r.code AS role_code,
+    p.code AS permission_code,
+    p.display_name AS permission_name
+FROM roles r
+JOIN role_permissions rp
+    ON rp.role_id = r.id
+JOIN permissions p
+    ON p.id = rp.permission_id
+WHERE r.code IN
+(
+    'AD_CREATOR',
+    'AD_MANAGER',
+    'AD_FINANCE_APPROVER'
+)
+ORDER BY
+    r.display_order,
+    p.display_order;
+------------------------------    
+SELECT
+    id,
+    code,
+    module,
+    resource,
+    action,
+    status
+FROM permissions
+WHERE resource = 'advertisements.creatives'
+ORDER BY action;
+-----------------------------
+SELECT
+  id,
+  code,
+  module,
+  resource,
+  action,
+  display_name,
+  status,
+  is_system_permission
+FROM permissions
+WHERE resource = 'advertisements.rotation'
+ORDER BY display_order, id;
+---------------------------------------------
+SELECT
+    id,
+    code,
+    format_id
+FROM advertisement_placements
+ORDER BY id;
+------------------------------
+SELECT
+    *
+FROM advertisement_placements
+select * from public.advertisement_formats
+select * from advertisements
+ORDER BY id;
+SELECT
+    constraint_name,
+    table_name,
+    column_name,
+    foreign_table_name,
+    foreign_column_name
+FROM information_schema.key_column_usage
+WHERE table_name = 'advertisement_placements'
+  AND column_name = 'format_id';
+------------------------------
+SELECT
+    kcu.constraint_name,
+    kcu.table_name,
+    kcu.column_name,
+    ccu.table_name AS foreign_table_name,
+    ccu.column_name AS foreign_column_name
+FROM information_schema.key_column_usage AS kcu
+JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = kcu.constraint_name
+    AND ccu.constraint_schema = kcu.constraint_schema
+WHERE kcu.table_name = 'advertisement_placements'
+  AND kcu.column_name = 'format_id';  
+------------------------------
+SELECT
+    column_name,
+    data_type,
+    is_nullable
+FROM information_schema.columns
+WHERE table_name = 'advertisement_placements'
+  AND column_name = 'format_id';
+------------------------------
+SELECT
+    indexname,
+    indexdef
+FROM pg_indexes
+WHERE tablename = 'advertisement_placements'
+  AND indexname = 'idx_advertisement_placements_format_id'; 
+-------------------------------
+SELECT
+    column_name,
+    data_type,
+    numeric_precision,
+    numeric_scale
+FROM information_schema.columns
+WHERE table_name = 'advertisements'
+ORDER BY ordinal_position;  
+------------------------------
+SELECT
+    column_name,
+    data_type
+FROM information_schema.columns
+WHERE table_name = 'advertisements'
+  AND column_name IN (
+      'pricing_unit',
+      'pricing_quantity',
+      'standard_amount',
+      'agreed_amount',
+      'advertisement_amount',
+      'discount_percentage',
+      'discount_amount',
+      'advance_percentage',
+      'advance_amount',
+      'adjustment_amount',
+      'currency_code'
+  )
+ORDER BY column_name;
+------------------------------
+SELECT
+    table_name,
+    column_name,
+    data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+      column_name ILIKE '%rate%'
+      OR column_name ILIKE '%pricing%'
+      OR column_name IN (
+          'pricing_unit',
+          'pricing_quantity',
+          'pricing_placement_id',
+          'standard_amount'
+      )
+  )
+ORDER BY
+    table_name,
+    ordinal_position;
+-------------------------------          
+SELECT
+    ordinal_position,
+    column_name,
+    data_type,
+    numeric_precision,
+    numeric_scale
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'advertisements'
+ORDER BY ordinal_position;
+------------------------------
+SELECT
+    *
+FROM public.advertisement_placements
+ORDER BY id;
+------------------------------

@@ -5,15 +5,18 @@ import * as rateCardRepository from "../../rate-cards/rate-card.repository.js";
 
 import type { Advertisement } from "../../../advertisements/advertisement/advertisement.types.js";
 
+import type { AdvertisementRuntimePlacement } from "../../../advertisements/advertisement/advertisement.repository.js";
+
 import * as repository from "../pricing-snapshot.repository.js";
 import * as service from "../pricing-snapshot.service.js";
 
 vi.mock(
   "../../../advertisements/advertisement/advertisement.repository.js",
   async (importOriginal) => {
-    const actual = await importOriginal<
-      typeof import("../../../advertisements/advertisement/advertisement.repository.js")
-    >();
+    const actual =
+      await importOriginal<
+        typeof import("../../../advertisements/advertisement/advertisement.repository.js")
+      >();
 
     return {
       ...actual,
@@ -40,15 +43,20 @@ const mockedRepository = vi.mocked(repository);
 
 const createAdvertisement = (
   overrides: Partial<Advertisement> = {}
-): Advertisement =>
+): Advertisement & {
+  placement: AdvertisementRuntimePlacement | null;
+} =>
   ({
     id: 10,
     pricingPlacementId: 20,
     pricingUnit: "DAY",
     pricingQuantity: 1,
     standardAmount: 5000,
+    placement: null,
     ...overrides
-  }) as Advertisement;
+  }) as Advertisement & {
+    placement: AdvertisementRuntimePlacement | null;
+  };
 
 const createRateCard = (overrides: Record<string, unknown> = {}) => ({
   id: 30,
@@ -158,9 +166,9 @@ describe("Advertisement Pricing Snapshot Service", () => {
 
       expect(result).toEqual(snapshot);
 
-      expect(
-        mockedRepository.findLatestByAdvertisementId
-      ).toHaveBeenCalledWith(10);
+      expect(mockedRepository.findLatestByAdvertisementId).toHaveBeenCalledWith(
+        10
+      );
     });
 
     it("should return null when no snapshot exists", async () => {
@@ -170,9 +178,9 @@ describe("Advertisement Pricing Snapshot Service", () => {
 
       expect(result).toBeNull();
 
-      expect(
-        mockedRepository.findLatestByAdvertisementId
-      ).toHaveBeenCalledWith(10);
+      expect(mockedRepository.findLatestByAdvertisementId).toHaveBeenCalledWith(
+        10
+      );
     });
   });
 
@@ -184,10 +192,7 @@ describe("Advertisement Pricing Snapshot Service", () => {
         snapshot
       );
 
-      const result = await service.getLatestByAdvertisementAndPlacement(
-        10,
-        20
-      );
+      const result = await service.getLatestByAdvertisementAndPlacement(10, 20);
 
       expect(result).toEqual(snapshot);
 
@@ -217,9 +222,10 @@ describe("Advertisement Pricing Snapshot Service", () => {
 
       expect(result).toEqual(snapshot);
 
-      expect(
-        mockedAdvertisementRepository.findById
-      ).toHaveBeenCalledWith(10, undefined);
+      expect(mockedAdvertisementRepository.findById).toHaveBeenCalledWith(
+        10,
+        undefined
+      );
 
       expect(mockedRateCardRepository.findById).toHaveBeenCalledWith(
         30,
@@ -253,9 +259,10 @@ describe("Advertisement Pricing Snapshot Service", () => {
         statusCode: 404
       });
 
-      expect(
-        mockedAdvertisementRepository.findById
-      ).toHaveBeenCalledWith(10, undefined);
+      expect(mockedAdvertisementRepository.findById).toHaveBeenCalledWith(
+        10,
+        undefined
+      );
 
       expect(mockedRateCardRepository.findById).not.toHaveBeenCalled();
 
@@ -275,9 +282,10 @@ describe("Advertisement Pricing Snapshot Service", () => {
         statusCode: 404
       });
 
-      expect(
-        mockedAdvertisementRepository.findById
-      ).toHaveBeenCalledWith(10, undefined);
+      expect(mockedAdvertisementRepository.findById).toHaveBeenCalledWith(
+        10,
+        undefined
+      );
 
       expect(mockedRateCardRepository.findById).toHaveBeenCalledWith(
         999,
@@ -300,9 +308,10 @@ describe("Advertisement Pricing Snapshot Service", () => {
         statusCode: 400
       });
 
-      expect(
-        mockedAdvertisementRepository.findById
-      ).toHaveBeenCalledWith(10, undefined);
+      expect(mockedAdvertisementRepository.findById).toHaveBeenCalledWith(
+        10,
+        undefined
+      );
 
       expect(mockedRateCardRepository.findById).not.toHaveBeenCalled();
 
@@ -322,9 +331,10 @@ describe("Advertisement Pricing Snapshot Service", () => {
         statusCode: 400
       });
 
-      expect(
-        mockedAdvertisementRepository.findById
-      ).toHaveBeenCalledWith(10, undefined);
+      expect(mockedAdvertisementRepository.findById).toHaveBeenCalledWith(
+        10,
+        undefined
+      );
 
       expect(mockedRateCardRepository.findById).not.toHaveBeenCalled();
 
@@ -344,9 +354,10 @@ describe("Advertisement Pricing Snapshot Service", () => {
         statusCode: 400
       });
 
-      expect(
-        mockedAdvertisementRepository.findById
-      ).toHaveBeenCalledWith(10, undefined);
+      expect(mockedAdvertisementRepository.findById).toHaveBeenCalledWith(
+        10,
+        undefined
+      );
 
       expect(mockedRateCardRepository.findById).not.toHaveBeenCalled();
 

@@ -368,68 +368,12 @@ describe("Advertisement Schedule API Integration", () => {
 
     /*
      * --------------------------------------------------
-     * LOGIN
-     * --------------------------------------------------
-     */
-    const loginResponse = await request(app).post("/api/v1/auth/login").send({
-      username: testUsername,
-      password
-    });
-
-    expect(loginResponse.status).toBe(200);
-
-    accessToken = loginResponse.body.data.tokens.accessToken;
-
-    expect(accessToken).toBeTruthy();
-
-    /*
-     * --------------------------------------------------
-     * CREATE TEST ADVERTISEMENT
-     * --------------------------------------------------
-     */
-    const advertisementResponse = await request(app)
-      .post("/api/v1/advertisements")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        clientId: testClientId,
-        name: `Schedule Test Advertisement ${timestamp}`,
-        advertisementType: "DISPLAY",
-        currencyCode: "INR",
-        agreedAmount: 1000,
-        destinationUrl: "https://example.com/schedule-test",
-        isClickable: true,
-        openInNewTab: true,
-        priority: 10
-      });
-
-    expect(advertisementResponse.status).toBe(201);
-
-    advertisementId = Number(advertisementResponse.body.data.id);
-
-    expect(advertisementId).toBeGreaterThan(0);
-
-    /*
-     * --------------------------------------------------
-     * APPROVE TEST ADVERTISEMENT
-     * --------------------------------------------------
-     */
-    await pool.query(
-      `
-      UPDATE advertisements
-      SET
-        workflow_status = 'APPROVED',
-        submitted_at = CURRENT_TIMESTAMP,
-        submitted_by = $2,
-        approved_at = CURRENT_TIMESTAMP,
-        approved_by = $2
-      WHERE id = $1
-    `,
-      [advertisementId, testUserId]
-    );
-
-    /*
-     * --------------------------------------------------
      * TEST ADVERTISEMENT PLACEMENT
+     *
+     * The Advertisement API now requires the runtime
+     * placement to exist before an advertisement can
+     * be created. Therefore this fixture must be
+     * created before the advertisement.
      * --------------------------------------------------
      */
     const placementResult = await pool.query(
@@ -493,6 +437,95 @@ describe("Advertisement Schedule API Integration", () => {
     placementId = Number(placementResult.rows[0].id);
 
     expect(placementId).toBeGreaterThan(0);
+
+    /*
+     * --------------------------------------------------
+     * LOGIN
+     * --------------------------------------------------
+     */
+    const loginResponse = await request(app).post("/api/v1/auth/login").send({
+      username: testUsername,
+      password
+    });
+
+    expect(loginResponse.status).toBe(200);
+
+    accessToken = loginResponse.body.data.tokens.accessToken;
+
+    expect(accessToken).toBeTruthy();
+
+    /*
+     * --------------------------------------------------
+     * CREATE TEST ADVERTISEMENT
+     *
+     * placementId is intentionally supplied here because
+     * runtime placement is now required during
+     * advertisement creation.
+     * --------------------------------------------------
+     */
+    const advertisementResponse = await request(app)
+      .post("/api/v1/advertisements")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        clientId: testClientId,
+        name: `Schedule Test Advertisement ${timestamp}`,
+        advertisementType: "DISPLAY",
+        placementId,
+        currencyCode: "INR",
+        agreedAmount: 1000,
+        destinationUrl: "https://example.com/schedule-test",
+        isClickable: true,
+        openInNewTab: true,
+        priority: 10
+      });
+
+    expect(advertisementResponse.status).toBe(201);
+
+    advertisementId = Number(advertisementResponse.body.data.id);
+
+    expect(advertisementId).toBeGreaterThan(0);
+
+    /*
+     * --------------------------------------------------
+     * APPROVE TEST ADVERTISEMENT
+     * --------------------------------------------------
+     */
+    await pool.query(
+      `
+      UPDATE advertisements
+      SET
+        workflow_status = 'APPROVED',
+        submitted_at = CURRENT_TIMESTAMP,
+        submitted_by = $2,
+        approved_at = CURRENT_TIMESTAMP,
+        approved_by = $2
+      WHERE id = $1
+    `,
+      [advertisementId, testUserId]
+    );
+
+    /*
+     * --------------------------------------------------
+     * RESET TEST ADVERTISEMENT PLACEMENT RULE
+     *
+     * Advertisement creation with placementId already
+     * persists a runtime placement rule. The schedule
+     * integration test needs a deterministic placement
+     * rule id, so remove the automatically-created rule
+     * before creating the test rule below.
+     *
+     * This advertisement is created exclusively for this
+     * integration test, so deleting its existing runtime
+     * placement rules is safe.
+     * --------------------------------------------------
+     */
+    await pool.query(
+      `
+      DELETE FROM advertisement_placement_rules
+      WHERE advertisement_id = $1
+    `,
+      [advertisementId]
+    );
 
     /*
      * --------------------------------------------------

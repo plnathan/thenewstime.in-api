@@ -17,6 +17,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
   let financeRoleId = 0;
 
   let testClientId = 0;
+  let testPlacementId = 0;
   let testAdvertisementId = 0;
   let testPaymentId = 0;
 
@@ -34,6 +35,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
   const financeRoleCode = `TEST_AD_FA_PARTIAL_REFUND_FINANCE_${timestamp}`;
 
   const testClientCode = `TFA-PR-${timestamp}`;
+  const testPlacementCode = `TEST-FA-PR-PLACEMENT-${timestamp}`;
 
   const creatorPassword = "Financial_Partial_Refund_Creator@123";
   const financePassword = "Financial_Partial_Refund_Finance@123";
@@ -609,6 +611,83 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
 
     /*
      * ------------------------------------------------------------------------
+     * Create temporary active advertisement placement.
+     * ------------------------------------------------------------------------
+     *
+     * Advertisement creation now requires a persisted runtime placement.
+     * This fixture is intentionally isolated to this integration suite.
+     */
+
+    const placementResult = await pool.query<{ id: number | string }>(
+      `
+      INSERT INTO advertisement_placements
+      (
+        code,
+        display_name,
+        description,
+        page_type,
+        placement_type,
+        insertion_type,
+        display_order,
+        is_enabled,
+        collapse_when_empty,
+        fallback_behavior,
+        display_frequency,
+        frequency_value,
+        auto_close_enabled,
+        auto_close_seconds,
+        close_button_enabled,
+        close_on_overlay_click,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        'HOME',
+        'HOME_TOP',
+        'FIXED',
+        999,
+        TRUE,
+        TRUE,
+        'HIDE',
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        TRUE,
+        TRUE,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `Financial Partial Refund Integration Test Placement ${timestamp}`,
+        "Temporary placement for financial partial refund integration tests.",
+        creatorUserId
+      ]
+    );
+
+    const placement = placementResult.rows[0];
+
+    if (placement === undefined) {
+      throw new Error(
+        "Failed to create the temporary advertisement placement fixture."
+      );
+    }
+
+    testPlacementId = Number(placement.id);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * ------------------------------------------------------------------------
      * Login as Ad Creator.
      * ------------------------------------------------------------------------
      */
@@ -855,7 +934,23 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
       }
     }
 
+    /*
+     * Runtime placement rules are created automatically with the
+     * advertisement. They must be removed before deleting the advertisement.
+     */
     if (testAdvertisementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
       try {
         await pool.query(
           `
@@ -863,6 +958,36 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
           WHERE id = $1
           `,
           [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+    }
+
+    /*
+     * Remove any remaining rules referencing the temporary placement before
+     * deleting the placement itself.
+     */
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE placement_id = $1
+          `,
+          [testPlacementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+          `,
+          [testPlacementId]
         );
       } catch {
         // Cleanup should not fail the suite.
@@ -1047,6 +1172,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
       .set("Authorization", `Bearer ${creatorAccessToken}`)
       .send({
         clientId: testClientId,
+        placementId: testPlacementId,
         name: `Financial Partial Refund Advertisement ${timestamp}`,
         internalName: `financial-partial-refund-ad-${timestamp}`,
         advertisementType: "DISPLAY",
@@ -1060,7 +1186,6 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         currencyCode: "INR"
       });
 
-    //expect(response.status).toBe(201);
     expect(response.status, JSON.stringify(response.body, null, 2)).toBe(201);
     expect(response.body.success).toBe(true);
 

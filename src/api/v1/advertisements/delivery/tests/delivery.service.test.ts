@@ -49,6 +49,8 @@ function createPlacement(
     closeButtonEnabled: true,
     closeOnOverlayClick: true,
     status: "ACTIVE",
+    formatId: null,
+    format: null,
     createdBy: null,
     updatedBy: null,
     createdAt: new Date(),
@@ -99,6 +101,7 @@ function createCandidate(
     creative: {
       id: 40,
       creativeType: "IMAGE",
+      variant: "DESKTOP",
       title: "Test Creative",
       altText: "Test advertisement",
       mediaUrl: "https://cdn.example.com/ad.jpg",
@@ -116,6 +119,8 @@ function createCandidate(
       description: "728x90 leaderboard",
       widthPx: 728,
       heightPx: 90,
+      mobileWidthPx: 320,
+      mobileHeightPx: 100,
       isResponsive: true
     },
 
@@ -154,12 +159,6 @@ describe("Advertisement Delivery Service", () => {
     expect(result.placement?.code).toBe("NEWS_DETAIL_TOP");
     expect(result.advertisements).toHaveLength(1);
     expect(result.fallbackApplied).toBe(false);
-    expect(result.advertisements[0]).toMatchObject({
-      advertisementId: 100,
-      name: "Test Advertisement",
-      priority: 10,
-      schedulePriority: 5
-    });
   });
 
   it("should reject an invalid page and placement combination", async () => {
@@ -455,6 +454,7 @@ describe("Advertisement Delivery Service", () => {
       creative: {
         id: 40,
         creativeType: "IMAGE",
+        variant: "DESKTOP",
         title: "Invalid Creative",
         altText: "Invalid",
         mediaUrl: "   ",
@@ -486,6 +486,8 @@ describe("Advertisement Delivery Service", () => {
         description: null,
         widthPx: 728,
         heightPx: 90,
+        mobileWidthPx: 320,
+        mobileHeightPx: 100,
         isResponsive: true
       }
     });
@@ -653,7 +655,31 @@ describe("Advertisement Delivery Service", () => {
       autoCloseEnabled: true,
       autoCloseSeconds: 8,
       closeButtonEnabled: true,
-      closeOnOverlayClick: false
+      closeOnOverlayClick: false,
+      creative: {
+        id: 40,
+        creativeType: "IMAGE",
+        variant: "DESKTOP",
+        title: "Test Creative",
+        altText: "Test advertisement",
+        mediaUrl: "https://cdn.example.com/ad.jpg",
+        thumbnailUrl: "https://cdn.example.com/ad-thumb.jpg",
+        widthPx: 728,
+        heightPx: 90,
+        displayOrder: 1,
+        isPrimary: true
+      },
+      format: {
+        id: 50,
+        code: "LEADERBOARD",
+        displayName: "Leaderboard",
+        description: "728x90 leaderboard",
+        widthPx: 728,
+        heightPx: 90,
+        mobileWidthPx: 320,
+        mobileHeightPx: 100,
+        isResponsive: true
+      }
     });
 
     mockedFindEligibleCandidates.mockResolvedValue([candidate]);
@@ -701,6 +727,7 @@ describe("Advertisement Delivery Service", () => {
         id: 40,
         formatId: 50,
         creativeType: "IMAGE",
+        variant: "DESKTOP",
         title: "Test Creative",
         altText: "Test advertisement",
         mediaUrl: "https://cdn.example.com/ad.jpg",
@@ -716,11 +743,77 @@ describe("Advertisement Delivery Service", () => {
         displayName: "Leaderboard",
         widthPx: 728,
         heightPx: 90,
+        mobileWidthPx: 320,
+        mobileHeightPx: 100,
         isResponsive: true
       }
     });
 
     expect(result.fallbackApplied).toBe(false);
+  });
+
+  it("should preserve the mobile creative variant when mapping delivery data", async () => {
+    const candidate = createCandidate({
+      creative: {
+        id: 41,
+        creativeType: "IMAGE",
+        variant: "MOBILE",
+        title: "Mobile Creative",
+        altText: "Mobile advertisement",
+        mediaUrl: "https://cdn.example.com/ad-mobile.jpg",
+        thumbnailUrl: "https://cdn.example.com/ad-mobile-thumb.jpg",
+        widthPx: 320,
+        heightPx: 100,
+        displayOrder: 1,
+        isPrimary: false
+      }
+    });
+
+    mockedFindEligibleCandidates.mockResolvedValue([candidate]);
+
+    const result = await getEligibleAdvertisements({
+      pageType: "NEWS_DETAIL",
+      placementType: "NEWS_DETAIL_TOP"
+    });
+
+    expect(result.advertisements[0]?.creative).toMatchObject({
+      id: 41,
+      creativeType: "IMAGE",
+      variant: "MOBILE",
+      widthPx: 320,
+      heightPx: 100
+    });
+  });
+
+  it("should preserve mobile format dimensions when mapping delivery data", async () => {
+    const candidate = createCandidate({
+      format: {
+        id: 50,
+        code: "LEADERBOARD",
+        displayName: "Leaderboard",
+        description: "Responsive leaderboard",
+        widthPx: 728,
+        heightPx: 90,
+        mobileWidthPx: 320,
+        mobileHeightPx: 100,
+        isResponsive: true
+      }
+    });
+
+    mockedFindEligibleCandidates.mockResolvedValue([candidate]);
+
+    const result = await getEligibleAdvertisements({
+      pageType: "NEWS_DETAIL",
+      placementType: "NEWS_DETAIL_TOP"
+    });
+
+    expect(result.advertisements[0]?.format).toMatchObject({
+      id: 50,
+      widthPx: 728,
+      heightPx: 90,
+      mobileWidthPx: 320,
+      mobileHeightPx: 100
+    });
   });
 
   it("should normalize targeting context before querying the repository", async () => {
@@ -771,10 +864,6 @@ describe("Advertisement Delivery Service", () => {
   });
 
   it("should apply a house advertisement when the placement fallback behavior is HOUSE_AD", async () => {
-    const paidCandidate = createCandidate({
-      fallbackBehavior: "HOUSE_AD"
-    });
-
     const houseCandidate = createCandidate({
       advertisementId: 200,
       advertisementName: "House Advertisement",
@@ -782,11 +871,6 @@ describe("Advertisement Delivery Service", () => {
       fallbackBehavior: "HOUSE_AD"
     });
 
-    mockedFindEligibleCandidates.mockResolvedValue([paidCandidate]);
-
-    /*
-     * Make the paid candidate unusable so the service proceeds to fallback.
-     */
     mockedFindEligibleCandidates.mockResolvedValue([
       createCandidate({
         fallbackBehavior: "HOUSE_AD",

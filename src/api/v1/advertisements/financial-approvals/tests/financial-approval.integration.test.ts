@@ -11,6 +11,7 @@ describe("Advertisement Financial Approval API Integration", () => {
   let testUserId = 0;
   let testRoleId = 0;
   let testClientId = 0;
+  let testPlacementId = 0;
   let testAdvertisementId = 0;
   let testPaymentId = 0;
 
@@ -28,6 +29,8 @@ describe("Advertisement Financial Approval API Integration", () => {
   const roleName = `financial_approval_test_role_${timestamp}`;
 
   const clientCode = `FA-CLIENT-${timestamp}`;
+
+  const testPlacementCode = `TEST-FA-PLACEMENT-${timestamp}`;
 
   const password = "Test@12345";
 
@@ -502,6 +505,88 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     /*
      * ======================================================================
+     * TEST PLACEMENT
+     * ======================================================================
+     *
+     * Advertisements now require a persisted runtime placement.
+     *
+     * This fixture deliberately creates a valid ACTIVE and enabled
+     * advertisement placement so the advertisement API can persist the
+     * corresponding advertisement_placement_rules record during creation.
+     */
+
+    const placementResult = await pool.query<{
+      id: number | string;
+    }>(
+      `
+          INSERT INTO advertisement_placements
+          (
+            code,
+            display_name,
+            description,
+            page_type,
+            placement_type,
+            insertion_type,
+            display_order,
+            is_enabled,
+            collapse_when_empty,
+            fallback_behavior,
+            display_frequency,
+            frequency_value,
+            auto_close_enabled,
+            auto_close_seconds,
+            close_button_enabled,
+            close_on_overlay_click,
+            status,
+            created_by,
+            updated_by
+          )
+          VALUES
+          (
+            $1,
+            $2,
+            $3,
+            'HOME',
+            'HOME_TOP',
+            'FIXED',
+            999,
+            TRUE,
+            TRUE,
+            'HIDE',
+            NULL,
+            NULL,
+            FALSE,
+            NULL,
+            TRUE,
+            TRUE,
+            'ACTIVE',
+            $4,
+            $4
+          )
+          RETURNING id
+          `,
+      [
+        testPlacementCode,
+        `Financial Approval Test Placement ${timestamp}`,
+        "Temporary placement for financial approval integration tests.",
+        testUserId
+      ]
+    );
+
+    const placement = placementResult.rows[0];
+
+    if (placement === undefined) {
+      throw new Error(
+        "Failed to create financial approval test placement."
+      );
+    }
+
+    testPlacementId = Number(placement.id);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * ======================================================================
      * LOGIN
      * ======================================================================
      */
@@ -569,6 +654,30 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     /*
      * ======================================================================
+     * ADVERTISEMENT PLACEMENT RULE CLEANUP
+     * ======================================================================
+     *
+     * Advertisement creation now persists the selected runtime placement
+     * in advertisement_placement_rules. Those child rows must be removed
+     * before the parent advertisement is deleted.
+     */
+
+    if (testAdvertisementId > 0) {
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placement_rules
+            WHERE advertisement_id = $1
+            `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+    }
+
+    /*
+     * ======================================================================
      * ADVERTISEMENT CLEANUP
      * ======================================================================
      */
@@ -581,6 +690,41 @@ describe("Advertisement Financial Approval API Integration", () => {
             WHERE id = $1
             `,
           [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+    }
+
+    /*
+     * ======================================================================
+     * PLACEMENT CLEANUP
+     * ======================================================================
+     *
+     * Remove any remaining placement-rule rows referencing the temporary
+     * placement before deleting the placement itself.
+     */
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placement_rules
+            WHERE placement_id = $1
+            `,
+          [testPlacementId]
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placements
+            WHERE id = $1
+            `,
+          [testPlacementId]
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -722,6 +866,7 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
+        placementId: testPlacementId,
         name: "Financial Approval Integration Test Advertisement",
         internalName: `financial-approval-test-ad-${timestamp}`,
         advertisementType: "DISPLAY",

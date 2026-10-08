@@ -304,26 +304,25 @@ export const mapAdvertisementRow = (row: AdvertisementRow): Advertisement => {
     onHoldReason: row.on_hold_reason,
 
     /*
-     * Single database source of truth:
+     * Commercial amount.
+     *
+     * Database source:
      *
      *   advertisements.advertisement_amount
      *
-     * API compatibility/domain representations:
+     * API/domain representation:
      *
      *   advertisementAmount
-     *   agreedAmount
      *
-     * These two API values intentionally contain the same
-     * persisted commercial amount.
+     * standardAmount remains completely separate and represents
+     * the system-calculated pricing amount.
      */
     advertisementAmount,
-
-    agreedAmount: advertisementAmount,
 
     /*
      * System-calculated standard pricing amount.
      *
-     * This is independent from the negotiated commercial amount.
+     * This is independent from the commercial advertisement amount.
      */
     standardAmount:
       row.standard_amount === null ? null : Number(row.standard_amount),
@@ -410,8 +409,7 @@ export const mapAdvertisementListRow = (
     advertisementAmount,
 
     /*
-     * Keep the negotiated/agreed amount represented by the
-     * existing advertisementAmount property in list responses.
+     * System-calculated standard pricing amount.
      */
     standardAmount:
       row.standard_amount === null ? null : Number(row.standard_amount),

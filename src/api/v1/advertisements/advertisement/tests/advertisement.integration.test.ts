@@ -13,6 +13,8 @@ describe("Advertisement API Integration", () => {
   let testRoleId = 0;
   let testClientId = 0;
   let testAdvertisementId = 0;
+  let testPlacementId = 0;
+  let testRateCardId = 0;
 
   let readPermissionId = 0;
   let createPermissionId = 0;
@@ -268,6 +270,133 @@ describe("Advertisement API Integration", () => {
 
     testClientId = Number(clientResult.rows[0]!.id);
 
+    /*
+     * Advertisement creation with pricing requires:
+     *
+     * 1. An ACTIVE placement.
+     * 2. The placement must be enabled.
+     * 3. An ACTIVE DAY rate card must exist for that placement.
+     * 4. The rate card must currently be effective.
+     *
+     * The integration test must not depend on a pre-existing seed rate
+     * card because the test database may not contain an effective DAY
+     * rate card.
+     *
+     * Therefore, select an ACTIVE/enabled placement that does not already
+     * have an ACTIVE DAY rate card and create a temporary rate card for it.
+     *
+     * Selecting a placement without any ACTIVE DAY rate card also avoids
+     * the advertisement_rate_cards active-overlap constraint.
+     */
+    const placementResult = await pool.query<{
+      id: number;
+    }>(
+      `
+        SELECT
+          p.id
+        FROM advertisement_placements p
+        WHERE
+          p.status = 'ACTIVE'
+          AND p.is_enabled = TRUE
+          AND NOT EXISTS
+          (
+            SELECT 1
+            FROM advertisement_rate_cards rc
+            WHERE
+              rc.placement_id = p.id
+              AND rc.pricing_unit = 'DAY'
+              AND rc.status = 'ACTIVE'
+          )
+        ORDER BY
+          p.id ASC
+        LIMIT 1
+      `
+    );
+
+    expect(placementResult.rows.length).toBe(1);
+
+    testPlacementId = Number(placementResult.rows[0]!.id);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * Create a deterministic temporary DAY rate card for the selected
+     * placement.
+     *
+     * The rate amount is intentionally aligned with the project's
+     * standard DAY rate-card test value of INR 5,000.
+     *
+     * The effective period starts slightly before the current timestamp
+     * and ends one day later so the advertisement service can resolve
+     * this rate card as the currently effective rate.
+     */
+    const rateCardResult = await pool.query<{
+      id: number;
+    }>(
+      `
+        INSERT INTO advertisement_rate_cards
+        (
+          placement_id,
+          pricing_unit,
+          rate_amount,
+          currency_code,
+          effective_from,
+          effective_to,
+          status,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          'DAY',
+          5000,
+          'INR',
+          CURRENT_TIMESTAMP - INTERVAL '1 minute',
+          CURRENT_TIMESTAMP + INTERVAL '1 day',
+          'ACTIVE',
+          $2
+        )
+        RETURNING id
+      `,
+      [testPlacementId, testUserId]
+    );
+
+    expect(rateCardResult.rows.length).toBe(1);
+
+    testRateCardId = Number(rateCardResult.rows[0]!.id);
+
+    expect(testRateCardId).toBeGreaterThan(0);
+
+    const rateCardVerificationResult = await pool.query<{
+      placement_id: number;
+      pricing_unit: string;
+      rate_amount: string;
+      currency_code: string;
+      status: string;
+    }>(
+      `
+        SELECT
+          placement_id,
+          pricing_unit,
+          rate_amount,
+          currency_code,
+          status
+        FROM advertisement_rate_cards
+        WHERE id = $1
+      `,
+      [testRateCardId]
+    );
+
+    expect(rateCardVerificationResult.rows.length).toBe(1);
+
+    const rateCard = rateCardVerificationResult.rows[0]!;
+
+    expect(Number(rateCard.placement_id)).toBe(testPlacementId);
+    expect(rateCard.pricing_unit).toBe("DAY");
+    expect(Number(rateCard.rate_amount)).toBe(5000);
+    expect(rateCard.currency_code).toBe("INR");
+    expect(rateCard.status).toBe("ACTIVE");
+
     const loginResponse = await request(app).post("/api/v1/auth/login").send({
       username: testUsername,
       password: testPassword
@@ -286,6 +415,22 @@ describe("Advertisement API Integration", () => {
 
   afterAll(async () => {
     if (testAdvertisementId > 0) {
+      /*
+       * Placement rules reference advertisements, so they must be removed
+       * before deleting the advertisement.
+       */
+      await pool.query(
+        `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+        `,
+        [testAdvertisementId]
+      );
+
+      /*
+       * Payment records reference the advertisement and therefore must be
+       * removed before deleting the advertisement.
+       */
       await pool.query(
         `
           DELETE FROM advertisement_payments
@@ -294,6 +439,10 @@ describe("Advertisement API Integration", () => {
         [testAdvertisementId]
       );
 
+      /*
+       * Workflow history references the advertisement and must be removed
+       * before deleting the advertisement.
+       */
       await pool.query(
         `
           DELETE FROM advertisement_workflow_history
@@ -302,12 +451,46 @@ describe("Advertisement API Integration", () => {
         [testAdvertisementId]
       );
 
+      /*
+       * Pricing snapshots have a RESTRICT foreign key to advertisements:
+       *
+       * advertisement_pricing_snapshots_advertisement_fk
+       *
+       * Therefore pricing snapshots must be removed before the
+       * advertisement itself can be deleted.
+       */
+      await pool.query(
+        `
+          DELETE FROM advertisement_pricing_snapshots
+          WHERE advertisement_id = $1
+        `,
+        [testAdvertisementId]
+      );
+
+      /*
+       * The advertisement can now be deleted safely because all known
+       * child records referencing it have already been removed.
+       */
       await pool.query(
         `
           DELETE FROM advertisements
           WHERE id = $1
         `,
         [testAdvertisementId]
+      );
+    }
+
+    /*
+     * The rate card was created by the temporary test user, so it must be
+     * removed before the temporary user is deleted.
+     */
+    if (testRateCardId > 0) {
+      await pool.query(
+        `
+          DELETE FROM advertisement_rate_cards
+          WHERE id = $1
+        `,
+        [testRateCardId]
       );
     }
 
@@ -380,7 +563,6 @@ describe("Advertisement API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
-        advertiserId: testClientId,
         name: `Integration Test Advertisement ${timestamp}`,
         advertisementType: "DISPLAY",
         currencyCode: "INR",
@@ -388,8 +570,19 @@ describe("Advertisement API Integration", () => {
         destinationUrl: "https://example.com",
         isClickable: true,
         openInNewTab: true,
-        priority: 10
+        priority: 10,
+        pricing: {
+          placementId: testPlacementId,
+          pricingUnit: "DAY",
+          quantity: 1
+        }
       });
+
+    console.log(
+      "Advertisement create response:",
+      response.status,
+      response.body
+    );
 
     expect(response.status).toBe(201);
     expect(response.body.success).toBe(true);
@@ -460,7 +653,7 @@ describe("Advertisement API Integration", () => {
     expect(Number(response.body.data.priority)).toBe(20);
   });
 
-  it("PATCH /api/v1/advertisements/:id - should allow agreed amount update while the advertisement is a draft", async () => {
+  it("PATCH /api/v1/advertisements/:id - should allow advertisement amount update while the advertisement is a draft", async () => {
     const response = await request(app)
       .patch(`/api/v1/advertisements/${testAdvertisementId}`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -473,7 +666,7 @@ describe("Advertisement API Integration", () => {
     expect(Number(response.body.data.advertisementAmount)).toBe(12000);
   });
 
-  it("PATCH /api/v1/advertisements/:id - should restore the agreed amount to the integration-test value", async () => {
+  it("PATCH /api/v1/advertisements/:id - should restore the advertisement amount to the integration-test value", async () => {
     const response = await request(app)
       .patch(`/api/v1/advertisements/${testAdvertisementId}`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -504,15 +697,19 @@ describe("Advertisement API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: 999999999,
-        advertiserId: testClientId,
         name: `Unknown Client Advertisement ${timestamp}`,
         advertisementType: "DISPLAY",
-        currency: "INR",
+        currencyCode: "INR",
         advertisementAmount: 10000,
         destinationUrl: "https://example.com/unknown-client-test",
-        clickable: true,
+        isClickable: true,
         openInNewTab: true,
-        priority: 1
+        priority: 1,
+        pricing: {
+          placementId: testPlacementId,
+          pricingUnit: "DAY",
+          quantity: 1
+        }
       });
 
     expect(response.status).toBe(404);
@@ -525,30 +722,38 @@ describe("Advertisement API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
-        advertiserId: testClientId,
         name: `Invalid Currency Advertisement ${timestamp}`,
         advertisementType: "DISPLAY",
         currencyCode: "INVALID",
         advertisementAmount,
-        priority: 10
+        priority: 10,
+        pricing: {
+          placementId: testPlacementId,
+          pricingUnit: "DAY",
+          quantity: 1
+        }
       });
 
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
   });
 
-  it("POST /api/v1/advertisements - should reject a negative agreed amount", async () => {
+  it("POST /api/v1/advertisements - should reject a negative advertisement amount", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
-        advertiserId: testClientId,
         name: `Negative Amount Advertisement ${timestamp}`,
         advertisementType: "DISPLAY",
         currencyCode: "INR",
         advertisementAmount: -1,
-        priority: 10
+        priority: 10,
+        pricing: {
+          placementId: testPlacementId,
+          pricingUnit: "DAY",
+          quantity: 1
+        }
       });
 
     expect(response.status).toBe(400);
@@ -573,15 +778,19 @@ describe("Advertisement API Integration", () => {
         .set("Authorization", `Bearer ${accessToken}`)
         .send({
           clientId: testClientId,
-          advertiserId: testClientId,
           name: `Held Client Advertisement ${timestamp}`,
           advertisementType: "DISPLAY",
-          currency: "INR",
+          currencyCode: "INR",
           advertisementAmount: 10000,
           destinationUrl: "https://example.com/hold-test",
-          clickable: true,
+          isClickable: true,
           openInNewTab: true,
-          priority: 1
+          priority: 1,
+          pricing: {
+            placementId: testPlacementId,
+            pricingUnit: "DAY",
+            quantity: 1
+          }
         });
 
       expect(response.status).toBe(409);
@@ -1130,7 +1339,7 @@ describe("Advertisement API Integration", () => {
     );
   });
 
-  it("should calculate zero pending amount when the agreed amount is fully paid", async () => {
+  it("should calculate zero pending amount when the advertisement amount is fully paid", async () => {
     await pool.query(
       `
         INSERT INTO advertisement_payments
@@ -1357,12 +1566,16 @@ describe("Advertisement API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
-        advertiserId: testClientId,
         name: `Permission Denied Advertisement ${timestamp}`,
         advertisementType: "DISPLAY",
         currencyCode: "INR",
         advertisementAmount,
-        priority: 10
+        priority: 10,
+        pricing: {
+          placementId: testPlacementId,
+          pricingUnit: "DAY",
+          quantity: 1
+        }
       });
 
     expect(response.status).toBe(403);

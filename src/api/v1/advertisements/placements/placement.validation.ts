@@ -7,11 +7,13 @@ const placementTypeSchema = z.enum([
   "HOME_TOP",
   "HOME_BETWEEN_SECTIONS",
   "HOME_SIDEBAR",
+
   "NEWS_LIST_TOP",
   "NEWS_LIST_BETWEEN",
-  "NEWS_LIST_SIDEBAR",
   "NEWS_LIST_BOTTOM",
+  "NEWS_LIST_SIDEBAR",
   "NEWS_LIST_MODAL",
+
   "NEWS_DETAIL_TOP",
   "NEWS_DETAIL_BETWEEN",
   "NEWS_DETAIL_SIDEBAR",
@@ -38,17 +40,35 @@ const statusSchema = z.enum(["ACTIVE", "INACTIVE"]);
 
 const positiveInt = z.coerce.number().int().positive();
 
+const nullablePositiveInt = positiveInt.nullable();
+
 const commonConfigurationSchema = {
   displayOrder: z.coerce.number().int().min(0).optional(),
+
   isEnabled: z.boolean().optional(),
+
+  /**
+   * null = placement intentionally has no format.
+   * number = format must subsequently resolve to an ACTIVE format.
+   */
+  formatId: nullablePositiveInt.optional(),
+
   collapseWhenEmpty: z.boolean().optional(),
+
   fallbackBehavior: fallbackBehaviorSchema.optional(),
+
   displayFrequency: displayFrequencySchema.nullable().optional(),
+
   frequencyValue: positiveInt.nullable().optional(),
+
   autoCloseEnabled: z.boolean().optional(),
+
   autoCloseSeconds: positiveInt.nullable().optional(),
+
   closeButtonEnabled: z.boolean().optional(),
+
   closeOnOverlayClick: z.boolean().optional(),
+
   status: statusSchema.optional()
 };
 
@@ -60,11 +80,17 @@ export const createPlacementSchema = z
       .min(2)
       .max(100)
       .regex(/^[A-Za-z0-9_.:-]+$/),
+
     displayName: z.string().trim().min(2).max(150),
+
     description: z.string().trim().max(1000).optional(),
+
     pageType: pageTypeSchema,
+
     placementType: placementTypeSchema,
+
     insertionType: insertionTypeSchema.optional(),
+
     ...commonConfigurationSchema
   })
   .superRefine((value, ctx) => {
@@ -107,10 +133,15 @@ export const createPlacementSchema = z
 export const updatePlacementSchema = z
   .object({
     displayName: z.string().trim().min(2).max(150).optional(),
+
     description: z.string().trim().max(1000).optional(),
+
     pageType: pageTypeSchema.optional(),
+
     placementType: placementTypeSchema.optional(),
+
     insertionType: insertionTypeSchema.optional(),
+
     ...commonConfigurationSchema
   })
   .superRefine((value, ctx) => {

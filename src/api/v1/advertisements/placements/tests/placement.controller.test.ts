@@ -50,6 +50,8 @@ describe("Advertisement Placement Controller", () => {
     closeButtonEnabled: true,
     closeOnOverlayClick: true,
     status: "ACTIVE",
+    formatId: null,
+    format: null,
     createdBy: 10,
     updatedBy: 10,
     createdAt: new Date(),

@@ -31,19 +31,20 @@ import {
 } from "./advertisement.validation.js";
 
 import { calculateAdvertisementAgreedAmount } from "../agreed-amount/agreed-amount.controller.js";
-
 import { calculateAdvertisementAgreedAmountSchema } from "../agreed-amount/agreed-amount.validation.js";
 
+import clientRoutes from "../clients/client.routes.js";
+import creativeRoutes from "../creatives/creative.routes.js";
 import deliveryRoutes from "../delivery/delivery.routes.js";
-import financialApprovalRoutes from "../financial-approvals/financial-approval.routes.js";
 import financialApprovalThresholdRoutes from "../financial-approval-thresholds/financial-approval-threshold.routes.js";
+import financialApprovalRoutes from "../financial-approvals/financial-approval.routes.js";
 import paymentRoutes from "../payments/payment.routes.js";
 import placementRuleRoutes from "../placement-rules/placement-rule.routes.js";
-import scheduleRoutes from "../schedules/schedule.routes.js";
-import pricingRoutes from "../pricing/pricing.routes.js";
 import pricingSnapshotRoutes from "../pricing-snapshots/pricing-snapshot.routes.js";
+import pricingRoutes from "../pricing/pricing.routes.js";
 import rateCardRoutes from "../rate-cards/rate-card.routes.js";
-import clientRoutes from "../clients/client.routes.js";
+import rotationRoutes from "../rotation/rotation.routes.js";
+import scheduleRoutes from "../schedules/schedule.routes.js";
 
 const router = Router();
 
@@ -52,8 +53,8 @@ const router = Router();
  * Public Advertisement Delivery API
  * --------------------------------------------------------------------------
  *
- * Must be registered before the authentication middleware because delivery
- * APIs are public.
+ * Delivery APIs are intentionally registered before authentication because
+ * advertisement delivery is public.
  */
 router.use("/delivery", deliveryRoutes);
 
@@ -66,18 +67,31 @@ router.use("/delivery", deliveryRoutes);
  */
 router.use(authenticate);
 
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Pricing
+ * --------------------------------------------------------------------------
+ */
 router.use("/pricing", pricingRoutes);
 
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Pricing Snapshots
+ * --------------------------------------------------------------------------
+ */
 router.use("/pricing-snapshots", pricingSnapshotRoutes);
 
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Rate Cards
+ * --------------------------------------------------------------------------
+ */
 router.use("/rate-cards", rateCardRoutes);
 
 /**
  * --------------------------------------------------------------------------
  * Advertisement Financial Approval Threshold Configuration
  * --------------------------------------------------------------------------
- *
- * Threshold configuration is a protected advertisement sub-module.
  *
  * Final API paths:
  *
@@ -88,7 +102,7 @@ router.use("/rate-cards", rateCardRoutes);
  * POST   /api/v1/advertisements/financial-approval-thresholds/:id/activate
  * POST   /api/v1/advertisements/financial-approval-thresholds/:id/deactivate
  *
- * These routes are registered before generic advertisement routes.
+ * Registered before generic advertisement routes.
  */
 router.use("/financial-approval-thresholds", financialApprovalThresholdRoutes);
 
@@ -97,14 +111,12 @@ router.use("/financial-approval-thresholds", financialApprovalThresholdRoutes);
  * Advertisement Financial Approval
  * --------------------------------------------------------------------------
  *
- * Must be registered before the generic /payments router.
+ * Registered before /payments so that:
  *
- * Otherwise a request such as:
+ * GET /api/v1/advertisements/payments/financial-approval
  *
- * GET /payments/financial-approval
- *
- * could be captured by paymentRoutes first and authorized against
- * advertisements.payments instead of the financial-approval module.
+ * is handled by the financial approval module rather than the generic
+ * payment module.
  */
 router.use("/payments/financial-approval", financialApprovalRoutes);
 
@@ -112,8 +124,6 @@ router.use("/payments/financial-approval", financialApprovalRoutes);
  * --------------------------------------------------------------------------
  * Advertisement Payments
  * --------------------------------------------------------------------------
- *
- * Registered after the more-specific financial approval route.
  */
 router.use("/payments", paymentRoutes);
 
@@ -123,6 +133,52 @@ router.use("/payments", paymentRoutes);
  * --------------------------------------------------------------------------
  */
 router.use("/placement-rules", placementRuleRoutes);
+
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Rotation
+ * --------------------------------------------------------------------------
+ *
+ * Rotation is a placement-level Advertisement sub-module.
+ *
+ * Final API paths:
+ *
+ * GET
+ * /api/v1/advertisements/rotation/placements/:placementId
+ *
+ * PATCH
+ * /api/v1/advertisements/rotation/placements/:placementId
+ *
+ * GET
+ * /api/v1/advertisements/rotation/placements/:placementId/members
+ *
+ * POST
+ * /api/v1/advertisements/rotation/placements/:placementId/members
+ *
+ * PATCH
+ * /api/v1/advertisements/rotation/placements/:placementId/members/:memberId
+ *
+ * DELETE
+ * /api/v1/advertisements/rotation/placements/:placementId/members/:memberId
+ *
+ * IMPORTANT:
+ *
+ * This route must be registered before the generic "/:id" routes below.
+ * Otherwise "rotation" could potentially be interpreted as an
+ * advertisement identifier.
+ *
+ * RBAC resource:
+ *
+ *   advertisements.rotation
+ *
+ * Actions:
+ *
+ *   read
+ *   create
+ *   update
+ *   delete
+ */
+router.use("/rotation", rotationRoutes);
 
 /**
  * --------------------------------------------------------------------------
@@ -138,21 +194,12 @@ router.use("/schedules", scheduleRoutes);
  *
  * POST /api/v1/advertisements/agreed-amount/calculate
  *
- * Compares the system-calculated standard amount with the negotiated
- * advertisement agreed amount.
+ * Calculates the agreed amount without persisting it.
  *
  * RBAC:
  *
  *   Resource : advertisements
  *   Action   : read
- *
- * This endpoint is registered before /:id routes so that "agreed-amount"
- * can never be interpreted as an advertisement ID.
- *
- * IMPORTANT:
- *
- * This endpoint performs calculation only.
- * It does not persist or modify advertisements.agreed_amount.
  */
 router.post(
   "/agreed-amount/calculate",
@@ -163,7 +210,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * List advertisements
+ * List Advertisements
  * --------------------------------------------------------------------------
  *
  * GET /api/v1/advertisements
@@ -177,7 +224,7 @@ router.get(
 
 /**
  * --------------------------------------------------------------------------
- * Get advertisement workflow history
+ * Get Advertisement Workflow History
  * --------------------------------------------------------------------------
  *
  * GET /api/v1/advertisements/:id/workflow-history
@@ -189,11 +236,45 @@ router.get(
   getAdvertisementWorkflowHistory
 );
 
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Clients
+ * --------------------------------------------------------------------------
+ *
+ * Final API paths:
+ *
+ * GET    /api/v1/advertisements/clients
+ * GET    /api/v1/advertisements/clients/:id
+ * POST   /api/v1/advertisements/clients
+ * PATCH  /api/v1/advertisements/clients/:id
+ *
+ * Registered before generic "/:id" routes.
+ */
 router.use("/clients", clientRoutes);
 
 /**
  * --------------------------------------------------------------------------
- * Get advertisement by ID
+ * Advertisement Creatives
+ * --------------------------------------------------------------------------
+ *
+ * Final API paths:
+ *
+ * GET    /api/v1/advertisements/:advertisementId/creatives
+ * GET    /api/v1/advertisements/:advertisementId/creatives/preview
+ * POST   /api/v1/advertisements/:advertisementId/creatives
+ * GET    /api/v1/advertisements/:advertisementId/creatives/:creativeId
+ * GET    /api/v1/advertisements/:advertisementId/creatives/:creativeId/preview
+ * PATCH  /api/v1/advertisements/:advertisementId/creatives/:creativeId
+ * DELETE /api/v1/advertisements/:advertisementId/creatives/:creativeId
+ *
+ * The creative router uses mergeParams so advertisementId is available
+ * inside the creative module.
+ */
+router.use("/:advertisementId/creatives", creativeRoutes);
+
+/**
+ * --------------------------------------------------------------------------
+ * Get Advertisement By ID
  * --------------------------------------------------------------------------
  *
  * GET /api/v1/advertisements/:id
@@ -207,7 +288,7 @@ router.get(
 
 /**
  * --------------------------------------------------------------------------
- * Create advertisement
+ * Create Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements
@@ -221,7 +302,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * Update advertisement
+ * Update Advertisement
  * --------------------------------------------------------------------------
  *
  * PATCH /api/v1/advertisements/:id
@@ -236,7 +317,7 @@ router.patch(
 
 /**
  * --------------------------------------------------------------------------
- * Submit advertisement
+ * Submit Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements/:id/submit
@@ -251,7 +332,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * Approve advertisement
+ * Approve Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements/:id/approve
@@ -266,7 +347,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * Reject advertisement
+ * Reject Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements/:id/reject
@@ -281,7 +362,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * Hold advertisement
+ * Hold Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements/:id/hold
@@ -296,7 +377,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * Resume advertisement
+ * Resume Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements/:id/resume
@@ -311,7 +392,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * Activate advertisement
+ * Activate Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements/:id/activate
@@ -326,7 +407,7 @@ router.post(
 
 /**
  * --------------------------------------------------------------------------
- * Archive advertisement
+ * Archive Advertisement
  * --------------------------------------------------------------------------
  *
  * POST /api/v1/advertisements/:id/archive
@@ -340,3 +421,23 @@ router.post(
 );
 
 export default router;
+
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Creatives
+ * --------------------------------------------------------------------------
+ *
+ * Final API paths:
+ *
+ * GET    /api/v1/advertisements/:advertisementId/creatives
+ * GET    /api/v1/advertisements/:advertisementId/creatives/preview
+ * GET    /api/v1/advertisements/:advertisementId/creatives/:creativeId
+ * GET    /api/v1/advertisements/:advertisementId/creatives/:creativeId/preview
+ * POST   /api/v1/advertisements/:advertisementId/creatives
+ * PATCH  /api/v1/advertisements/:advertisementId/creatives/:creativeId
+ * DELETE /api/v1/advertisements/:advertisementId/creatives/:creativeId
+ *
+ * IMPORTANT:
+ * This must be registered before /:id so that the advertisement ID
+ * hierarchy remains explicit and no generic advertisement route interferes.
+ */

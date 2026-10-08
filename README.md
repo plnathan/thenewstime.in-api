@@ -102,6 +102,10 @@ npm install @scalar/api-reference
 To run the specific file test
 ------------------------------
 
+Get-ChildItem -Path src -Recurse -Include *.ts | Select-String -Pattern 'export type AuthRole|export enum AuthRole|type AuthRole'
+
+Get-ChildItem -Path src -Recurse -Include *.ts | Select-String -Pattern 'AuthRole'
+
 npm test -- advertisements/advertisement
 
 npm test -- advertisements/placements

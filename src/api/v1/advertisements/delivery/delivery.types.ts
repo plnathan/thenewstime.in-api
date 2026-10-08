@@ -60,7 +60,8 @@ export interface AdvertisementDeliveryPlacement {
 export interface AdvertisementDeliveryCreative {
   id: number;
   formatId: number | null;
-  creativeType: "IMAGE" | "HTML" | "TEXT";
+  creativeType: "IMAGE" | "VIDEO" | "HTML" | "TEXT";
+  variant: "DESKTOP" | "MOBILE";
   title: string | null;
   altText: string | null;
   mediaUrl: string;
@@ -77,6 +78,8 @@ export interface AdvertisementDeliveryFormat {
   displayName: string;
   widthPx: number | null;
   heightPx: number | null;
+  mobileWidthPx: number | null;
+  mobileHeightPx: number | null;
   isResponsive: boolean;
 }
 

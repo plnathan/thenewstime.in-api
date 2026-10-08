@@ -129,3 +129,57 @@ WHERE table_schema = 'public'
 ORDER BY ordinal_position;
 
 -----------------------------------
+SELECT
+    kcu.constraint_name,
+    kcu.table_name,
+    kcu.column_name,
+    ccu.table_name AS foreign_table_name,
+    ccu.column_name AS foreign_column_name
+FROM information_schema.key_column_usage AS kcu
+JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = kcu.constraint_name
+    AND ccu.constraint_schema = kcu.constraint_schema
+WHERE kcu.table_name = 'advertisement_placements'
+  AND kcu.column_name = 'format_id';
+----------------------------------------
+SELECT
+    column_name,
+    data_type,
+    is_nullable
+FROM information_schema.columns
+WHERE table_name = 'advertisement_placements'
+  AND column_name = 'format_id';
+-----------------------------------------
+SELECT
+    indexname,
+    indexdef
+FROM pg_indexes
+WHERE tablename = 'advertisement_placements'
+  AND indexname = 'idx_advertisement_placements_format_id';  
+-------------------------------------
+SELECT
+    table_name,
+    column_name,
+    data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+      column_name ILIKE '%rate%'
+      OR column_name ILIKE '%pricing%'
+      OR column_name IN (
+          'pricing_unit',
+          'pricing_quantity',
+          'pricing_placement_id',
+          'standard_amount'
+      )
+  )
+ORDER BY
+    table_name,
+    ordinal_position;
+-----------------------------
+SELECT
+    conname,
+    pg_get_constraintdef(oid) AS constraint_definition
+FROM pg_constraint
+WHERE conname = 'chk_advertisements_pricing_fields';	
+----------------------------------      

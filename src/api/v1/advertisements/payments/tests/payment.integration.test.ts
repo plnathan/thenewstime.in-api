@@ -13,6 +13,7 @@ describe("Advertisement Payment API Integration", () => {
   let testRoleId = 0;
 
   let testClientId = 0;
+  let testPlacementId = 0;
   let testAdvertisementId = 0;
 
   let createdPaymentId = 0;
@@ -26,6 +27,7 @@ describe("Advertisement Payment API Integration", () => {
   const testEmail = `payment-test-user-${timestamp}@example.com`;
   const testRoleCode = `TEST_AD_PAYMENT_ROLE_${timestamp}`;
   const testClientCode = `TEST-PAY-${timestamp}`;
+  const testPlacementCode = `TEST_PAYMENT_PLACEMENT_${timestamp}`;
 
   const password = "Payment_Test@123";
 
@@ -449,6 +451,79 @@ describe("Advertisement Payment API Integration", () => {
 
     /*
      * ------------------------------------------------------------------------
+     * Create a dedicated active Advertisement Placement.
+     *
+     * The current Advertisement API requires every newly-created
+     * advertisement to have a persisted runtime placement.
+     *
+     * This is intentionally created directly in the database because this
+     * payment integration suite is testing the Payment API, not the Placement
+     * API. The placement is therefore test infrastructure only.
+     * ------------------------------------------------------------------------
+     */
+
+    const placementResult = await pool.query(
+      `
+      INSERT INTO advertisement_placements
+      (
+        code,
+        display_name,
+        description,
+        page_type,
+        placement_type,
+        insertion_type,
+        display_order,
+        is_enabled,
+        collapse_when_empty,
+        fallback_behavior,
+        display_frequency,
+        frequency_value,
+        auto_close_enabled,
+        auto_close_seconds,
+        close_button_enabled,
+        close_on_overlay_click,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        'HOME',
+        'HOME_TOP',
+        'FIXED',
+        999,
+        TRUE,
+        TRUE,
+        'HIDE',
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        TRUE,
+        TRUE,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `Payment Integration Placement ${timestamp}`,
+        "Temporary placement for Advertisement Payment API integration tests.",
+        testUserId
+      ]
+    );
+
+    testPlacementId = Number(placementResult.rows[0].id);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * ------------------------------------------------------------------------
      * Login through the real Authentication API.
      * ------------------------------------------------------------------------
      */
@@ -521,6 +596,53 @@ describe("Advertisement Payment API Integration", () => {
 
     /*
      * ------------------------------------------------------------------------
+     * Remove pricing snapshots created for the test advertisement.
+     *
+     * The current Advertisement creation flow may create a pricing snapshot
+     * when pricing information is available. Remove it explicitly before the
+     * advertisement itself so cleanup remains safe across schema revisions.
+     * ------------------------------------------------------------------------
+     */
+
+    if (testAdvertisementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_pricing_snapshots
+          WHERE advertisement_id = $1
+          `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not make the test suite fail.
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------------------
+     * Remove runtime placement rules created for the test advertisement.
+     *
+     * Advertisement creation now automatically persists the selected
+     * placement as an ACTIVE runtime placement rule.
+     * ------------------------------------------------------------------------
+     */
+
+    if (testAdvertisementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not make the test suite fail.
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------------------
      * Remove test advertisement.
      * ------------------------------------------------------------------------
      */
@@ -533,6 +655,26 @@ describe("Advertisement Payment API Integration", () => {
           WHERE id = $1
           `,
           [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not make the test suite fail.
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------------------
+     * Remove temporary Advertisement Placement.
+     * ------------------------------------------------------------------------
+     */
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+          `,
+          [testPlacementId]
         );
       } catch {
         // Cleanup should not make the test suite fail.
@@ -702,6 +844,7 @@ describe("Advertisement Payment API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
+        placementId: testPlacementId,
         name: `Payment Integration Advertisement ${timestamp}`,
         internalName: `payment-integration-ad-${timestamp}`,
         advertisementType: "DISPLAY",
@@ -1018,7 +1161,9 @@ describe("Advertisement Payment API Integration", () => {
 
     expect(Number(response.body.data.paymentId)).toBe(createdPaymentId);
     expect(Number(response.body.data.amount)).toBe(5000);
-    expect(response.body.data.refundReference).toBe(`REF-PARTIAL-${timestamp}`);
+    expect(response.body.data.refundReference).toBe(
+      `REF-PARTIAL-${timestamp}`
+    );
     expect(response.body.data.refundReason).toBe(
       "Partial refund for integration test."
     );

@@ -16,6 +16,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   let financeRoleId = 0;
 
   let testClientId = 0;
+  let testPlacementId = 0;
   let testAdvertisementId = 0;
   let testPaymentId = 0;
 
@@ -37,6 +38,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   const financeRoleName = `financial_adjustment_finance_role_${timestamp}`;
 
   const clientCode = `FADJ-CLIENT-${timestamp}`;
+  const placementCode = `FADJ-PLACEMENT-${timestamp}`;
 
   const creatorPassword = "Test@12345";
   const financePassword = "Test@12345";
@@ -46,19 +48,19 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   const FINANCIAL_APPROVAL_RESOURCE =
     "advertisements.financial_approvals";
 
-    const creatorPermissionCodes = {
-      read: `${ADVERTISEMENT_RESOURCE}.read`,
-      create: `${ADVERTISEMENT_RESOURCE}.create`,
-      update: `${ADVERTISEMENT_RESOURCE}.update`,
-      submit: `${ADVERTISEMENT_RESOURCE}.submit`,
-      financialApprovalRead: `${FINANCIAL_APPROVAL_RESOURCE}.read`
-    } as const;
+  const creatorPermissionCodes = {
+    read: `${ADVERTISEMENT_RESOURCE}.read`,
+    create: `${ADVERTISEMENT_RESOURCE}.create`,
+    update: `${ADVERTISEMENT_RESOURCE}.update`,
+    submit: `${ADVERTISEMENT_RESOURCE}.submit`,
+    financialApprovalRead: `${FINANCIAL_APPROVAL_RESOURCE}.read`,
+  } as const;
 
   const financePermissionCodes = {
     read: `${FINANCIAL_APPROVAL_RESOURCE}.read`,
     hold: `${FINANCIAL_APPROVAL_RESOURCE}.hold`,
     reject: `${FINANCIAL_APPROVAL_RESOURCE}.reject`,
-    approve: `${FINANCIAL_APPROVAL_RESOURCE}.approve`
+    approve: `${FINANCIAL_APPROVAL_RESOURCE}.approve`,
   } as const;
 
   const permissionIds = new Map<string, number>();
@@ -66,7 +68,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   const insertRolePermission = async (
     roleId: number,
     permissionId: number,
-    createdBy: number
+    createdBy: number,
   ): Promise<void> => {
     await pool.query(
       `
@@ -84,12 +86,12 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         )
         ON CONFLICT DO NOTHING
       `,
-      [roleId, permissionId, createdBy]
+      [roleId, permissionId, createdBy],
     );
   };
 
   const deleteApproval = async (
-    approvalId: number
+    approvalId: number,
   ): Promise<void> => {
     if (approvalId <= 0) {
       return;
@@ -100,7 +102,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         DELETE FROM advertisement_financial_approval_history
         WHERE approval_id = $1
       `,
-      [approvalId]
+      [approvalId],
     );
 
     await pool.query(
@@ -108,12 +110,12 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         DELETE FROM advertisement_financial_approvals
         WHERE id = $1
       `,
-      [approvalId]
+      [approvalId],
     );
   };
 
   const createTemporaryAdvertisement = async (
-    nameSuffix: string
+    nameSuffix: string,
   ): Promise<number> => {
     const uniqueSuffix = `${timestamp}-${Date.now()}-${nameSuffix}`;
 
@@ -121,7 +123,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
       .post("/api/v1/advertisements")
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         clientId: testClientId,
@@ -136,30 +138,31 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         notes:
           "Temporary advertisement for isolated financial adjustment integration tests.",
         advertisementAmount: 50000,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        placementId: testPlacementId,
       });
 
     expect(
       response.status,
       `Temporary advertisement creation failed: ${JSON.stringify(
-        response.body
-      )}`
+        response.body,
+      )}`,
     ).toBe(201);
 
     expect(response.body.success).toBe(true);
 
     const advertisementId = Number(
-      response.body.data.id
+      response.body.data.id,
     );
 
     expect(advertisementId).toBeGreaterThan(0);
 
     expect(
-      response.body.data.workflowStatus
+      response.body.data.workflowStatus,
     ).toBe("DRAFT");
 
     temporaryAdvertisementIds.push(
-      advertisementId
+      advertisementId,
     );
 
     return advertisementId;
@@ -169,12 +172,12 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
     advertisementId: number,
     requestedAmount?: number,
     requestedPercentage?: number,
-    approvalRemarks?: string
+    approvalRemarks?: string,
   ): Promise<number> => {
     const payload: Record<string, unknown> = {
       advertisementId,
       clientId: testClientId,
-      approvalType: "ADJUSTMENT"
+      approvalType: "ADJUSTMENT",
     };
 
     if (requestedAmount !== undefined) {
@@ -192,25 +195,25 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send(payload);
 
     expect(
       response.status,
       `Adjustment approval creation failed: ${JSON.stringify(
-        response.body
-      )}`
+        response.body,
+      )}`,
     ).toBe(201);
 
     expect(response.body.success).toBe(true);
 
     const approvalId = Number(
-      response.body.data.id
+      response.body.data.id,
     );
 
     expect(approvalId).toBeGreaterThan(0);
@@ -237,7 +240,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           WHERE code = 'SUPER_ADMIN'
             AND status = 'ACTIVE'
           LIMIT 1
-        `
+        `,
       );
 
     const superAdminRole =
@@ -245,7 +248,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     if (superAdminRole === undefined) {
       throw new Error(
-        "SUPER_ADMIN role was not found."
+        "SUPER_ADMIN role was not found.",
       );
     }
 
@@ -263,7 +266,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
     const creatorPasswordHash =
       await bcrypt.hash(
         creatorPassword,
-        12
+        12,
       );
 
     const creatorUserResult =
@@ -301,8 +304,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           creatorPasswordHash,
           "Financial Adjustment Integration Creator",
           "Financial Adjustment Creator",
-          superAdminRoleId
-        ]
+          superAdminRoleId,
+        ],
       );
 
     const creatorUser =
@@ -310,12 +313,12 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     if (creatorUser === undefined) {
       throw new Error(
-        "Failed to create financial adjustment creator user."
+        "Failed to create financial adjustment creator user.",
       );
     }
 
     creatorUserId = Number(
-      creatorUser.id
+      creatorUser.id,
     );
 
     expect(creatorUserId).toBeGreaterThan(0);
@@ -329,7 +332,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
     const financePasswordHash =
       await bcrypt.hash(
         financePassword,
-        12
+        12,
       );
 
     const financeUserResult =
@@ -367,8 +370,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           financePasswordHash,
           "Financial Adjustment Integration Finance",
           "Financial Adjustment Finance",
-          superAdminRoleId
-        ]
+          superAdminRoleId,
+        ],
       );
 
     const financeUser =
@@ -376,12 +379,12 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     if (financeUser === undefined) {
       throw new Error(
-        "Failed to create financial adjustment finance user."
+        "Failed to create financial adjustment finance user.",
       );
     }
 
     financeUserId = Number(
-      financeUser.id
+      financeUser.id,
     );
 
     expect(financeUserId).toBeGreaterThan(0);
@@ -425,8 +428,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           creatorRoleName,
           "Financial Adjustment Creator Test Role",
           "Temporary role for financial adjustment creator integration tests.",
-          creatorUserId
-        ]
+          creatorUserId,
+        ],
       );
 
     const creatorRole =
@@ -434,12 +437,12 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     if (creatorRole === undefined) {
       throw new Error(
-        "Failed to create financial adjustment creator role."
+        "Failed to create financial adjustment creator role.",
       );
     }
 
     creatorRoleId = Number(
-      creatorRole.id
+      creatorRole.id,
     );
 
     expect(creatorRoleId).toBeGreaterThan(0);
@@ -483,8 +486,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           financeRoleName,
           "Financial Adjustment Finance Test Role",
           "Temporary role for financial adjustment finance integration tests.",
-          financeUserId
-        ]
+          financeUserId,
+        ],
       );
 
     const financeRole =
@@ -492,12 +495,12 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     if (financeRole === undefined) {
       throw new Error(
-        "Failed to create financial adjustment finance role."
+        "Failed to create financial adjustment finance role.",
       );
     }
 
     financeRoleId = Number(
-      financeRole.id
+      financeRole.id,
     );
 
     expect(financeRoleId).toBeGreaterThan(0);
@@ -517,8 +520,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
       `,
       [
         creatorUserId,
-        creatorRoleId
-      ]
+        creatorRoleId,
+      ],
     );
 
     await pool.query(
@@ -530,8 +533,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
       `,
       [
         financeUserId,
-        financeRoleId
-      ]
+        financeRoleId,
+      ],
     );
 
     await pool.query(
@@ -539,7 +542,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         DELETE FROM user_roles
         WHERE user_id = ANY($1::bigint[])
       `,
-      [[creatorUserId, financeUserId]]
+      [[creatorUserId, financeUserId]],
     );
 
     await pool.query(
@@ -559,8 +562,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         creatorUserId,
         creatorRoleId,
         financeUserId,
-        financeRoleId
-      ]
+        financeRoleId,
+      ],
     );
 
     /*
@@ -571,17 +574,17 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     const requiredCreatorPermissionCodes =
       Object.values(
-        creatorPermissionCodes
+        creatorPermissionCodes,
       );
 
     const requiredFinancePermissionCodes =
       Object.values(
-        financePermissionCodes
+        financePermissionCodes,
       );
 
     const requiredPermissionCodes = [
       ...requiredCreatorPermissionCodes,
-      ...requiredFinancePermissionCodes
+      ...requiredFinancePermissionCodes,
     ];
 
     for (const permissionCode of requiredPermissionCodes) {
@@ -606,7 +609,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             WHERE code = $1
             LIMIT 1
           `,
-          [permissionCode]
+          [permissionCode],
         );
 
       const permission =
@@ -614,17 +617,17 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
       if (permission === undefined) {
         throw new Error(
-          `Required production permission '${permissionCode}' was not found.`
+          `Required production permission '${permissionCode}' was not found.`,
         );
       }
 
       expect(
         permission.status,
-        `Permission '${permissionCode}' must be ACTIVE.`
+        `Permission '${permissionCode}' must be ACTIVE.`,
       ).toBe("ACTIVE");
 
       expect(
-        permission.module
+        permission.module,
       ).toBe("ADVERTISEMENT");
 
       const parts =
@@ -637,23 +640,23 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         parts.slice(0, -1).join(".");
 
       expect(permission.action).toBe(
-        action
+        action,
       );
 
       expect(permission.resource).toBe(
-        resource
+        resource,
       );
 
       const permissionId =
         Number(permission.id);
 
       expect(permissionId).toBeGreaterThan(
-        0
+        0,
       );
 
       permissionIds.set(
         permissionCode,
-        permissionId
+        permissionId,
       );
     }
 
@@ -669,14 +672,14 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
       if (permissionId === undefined) {
         throw new Error(
-          `Creator permission ID was not resolved for '${permissionCode}'.`
+          `Creator permission ID was not resolved for '${permissionCode}'.`,
         );
       }
 
       await insertRolePermission(
         creatorRoleId,
         permissionId,
-        creatorUserId
+        creatorUserId,
       );
     }
 
@@ -692,14 +695,14 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
       if (permissionId === undefined) {
         throw new Error(
-          `Finance permission ID was not resolved for '${permissionCode}'.`
+          `Finance permission ID was not resolved for '${permissionCode}'.`,
         );
       }
 
       await insertRolePermission(
         financeRoleId,
         permissionId,
-        financeUserId
+        financeUserId,
       );
     }
 
@@ -725,28 +728,28 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         `,
         [
           creatorRoleId,
-          requiredCreatorPermissionCodes
-        ]
+          requiredCreatorPermissionCodes,
+        ],
       );
 
     const creatorAttachedCodes =
       new Set(
         creatorVerificationResult.rows.map(
-          (row) => row.code
-        )
+          (row) => row.code,
+        ),
       );
 
     expect(
-      creatorAttachedCodes.size
+      creatorAttachedCodes.size,
     ).toBe(
-      requiredCreatorPermissionCodes.length
+      requiredCreatorPermissionCodes.length,
     );
 
     for (const permissionCode of requiredCreatorPermissionCodes) {
       expect(
         creatorAttachedCodes.has(
-          permissionCode
-        )
+          permissionCode,
+        ),
       ).toBe(true);
     }
 
@@ -772,28 +775,28 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         `,
         [
           financeRoleId,
-          requiredFinancePermissionCodes
-        ]
+          requiredFinancePermissionCodes,
+        ],
       );
 
     const financeAttachedCodes =
       new Set(
         financeVerificationResult.rows.map(
-          (row) => row.code
-        )
+          (row) => row.code,
+        ),
       );
 
     expect(
-      financeAttachedCodes.size
+      financeAttachedCodes.size,
     ).toBe(
-      requiredFinancePermissionCodes.length
+      requiredFinancePermissionCodes.length,
     );
 
     for (const permissionCode of requiredFinancePermissionCodes) {
       expect(
         financeAttachedCodes.has(
-          permissionCode
-        )
+          permissionCode,
+        ),
       ).toBe(true);
     }
 
@@ -836,8 +839,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           clientCode,
           "Financial Adjustment Test Client",
           "Financial Adjustment Test Client",
-          creatorUserId
-        ]
+          creatorUserId,
+        ],
       );
 
     const client =
@@ -845,16 +848,100 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     if (client === undefined) {
       throw new Error(
-        "Failed to create financial adjustment test client."
+        "Failed to create financial adjustment test client.",
       );
     }
 
     testClientId = Number(
-      client.id
+      client.id,
     );
 
     expect(testClientId).toBeGreaterThan(
-      0
+      0,
+    );
+
+    /*
+     * ======================================================================
+     * TEST RUNTIME PLACEMENT
+     *
+     * Advertisement creation now requires a valid runtime placement.
+     * The placement is deliberately created as a temporary fixture for
+     * this integration suite and is reused by all temporary advertisements.
+     * ======================================================================
+     */
+
+    const placementResult =
+      await pool.query<{
+        id: number | string;
+      }>(
+        `
+          INSERT INTO advertisement_placements (
+            code,
+            display_name,
+            description,
+            page_type,
+            placement_type,
+            insertion_type,
+            display_order,
+            is_enabled,
+            collapse_when_empty,
+            fallback_behavior,
+            display_frequency,
+            frequency_value,
+            auto_close_enabled,
+            auto_close_seconds,
+            close_button_enabled,
+            close_on_overlay_click,
+            status,
+            created_by,
+            updated_by
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            'HOME',
+            'HOME_TOP',
+            'FIXED',
+            999,
+            TRUE,
+            TRUE,
+            'HIDE',
+            NULL,
+            NULL,
+            FALSE,
+            NULL,
+            TRUE,
+            TRUE,
+            'ACTIVE',
+            $4,
+            $4
+          )
+          RETURNING id
+        `,
+        [
+          placementCode,
+          "Financial Adjustment Test Placement",
+          "Temporary runtime placement for financial adjustment integration tests.",
+          creatorUserId,
+        ],
+      );
+
+    const placement =
+      placementResult.rows[0];
+
+    if (placement === undefined) {
+      throw new Error(
+        "Failed to create financial adjustment test placement.",
+      );
+    }
+
+    testPlacementId = Number(
+      placement.id,
+    );
+
+    expect(testPlacementId).toBeGreaterThan(
+      0,
     );
 
     /*
@@ -868,14 +955,14 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         .post("/api/v1/auth/login")
         .send({
           username: creatorUsername,
-          password: creatorPassword
+          password: creatorPassword,
         });
 
     expect(
       creatorLoginResponse.status,
       `Creator login failed: ${JSON.stringify(
-        creatorLoginResponse.body
-      )}`
+        creatorLoginResponse.body,
+      )}`,
     ).toBe(200);
 
     creatorAccessToken =
@@ -885,8 +972,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
     expect(
       creatorAccessToken,
       `Creator login response does not contain an access token: ${JSON.stringify(
-        creatorLoginResponse.body
-      )}`
+        creatorLoginResponse.body,
+      )}`,
     ).toBeTruthy();
 
     /*
@@ -900,14 +987,14 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         .post("/api/v1/auth/login")
         .send({
           username: financeUsername,
-          password: financePassword
+          password: financePassword,
         });
 
     expect(
       financeLoginResponse.status,
       `Finance login failed: ${JSON.stringify(
-        financeLoginResponse.body
-      )}`
+        financeLoginResponse.body,
+      )}`,
     ).toBe(200);
 
     financeAccessToken =
@@ -917,8 +1004,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
     expect(
       financeAccessToken,
       `Finance login response does not contain an access token: ${JSON.stringify(
-        financeLoginResponse.body
-      )}`
+        financeLoginResponse.body,
+      )}`,
     ).toBeTruthy();
   });
 
@@ -932,17 +1019,17 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
     const approvalIds = [
       createdApprovalId,
       resubmitApprovalId,
-      ...validationApprovalIds
+      ...validationApprovalIds,
     ].filter(
       (id, index, array) =>
         id > 0 &&
-        array.indexOf(id) === index
+        array.indexOf(id) === index,
     );
 
     for (const approvalId of approvalIds) {
       try {
         await deleteApproval(
-          approvalId
+          approvalId,
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -962,7 +1049,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM advertisement_payments
             WHERE advertisement_id = $1
           `,
-          [advertisementId]
+          [advertisementId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -982,7 +1069,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM advertisement_payments
             WHERE id = $1
           `,
-          [testPaymentId]
+          [testPaymentId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1002,7 +1089,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM advertisements
             WHERE id = $1
           `,
-          [advertisementId]
+          [advertisementId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1022,7 +1109,44 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM advertisements
             WHERE id = $1
           `,
-          [testAdvertisementId]
+          [testAdvertisementId],
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+    }
+
+    /*
+     * ======================================================================
+     * RUNTIME PLACEMENT CLEANUP
+     *
+     * Placement rules are normally removed by advertisement ON DELETE
+     * CASCADE. Delete any remaining rules explicitly before deleting the
+     * temporary placement so the fixture remains safe even if a test
+     * stopped midway.
+     * ======================================================================
+     */
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placement_rules
+            WHERE placement_id = $1
+          `,
+          [testPlacementId],
+        );
+      } catch {
+        // Cleanup must not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+            DELETE FROM advertisement_placements
+            WHERE id = $1
+          `,
+          [testPlacementId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1042,7 +1166,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM advertisement_clients
             WHERE id = $1
           `,
-          [testClientId]
+          [testClientId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1062,7 +1186,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM role_permissions
             WHERE role_id = $1
           `,
-          [creatorRoleId]
+          [creatorRoleId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1074,7 +1198,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM user_roles
             WHERE role_id = $1
           `,
-          [creatorRoleId]
+          [creatorRoleId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1086,7 +1210,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM roles
             WHERE id = $1
           `,
-          [creatorRoleId]
+          [creatorRoleId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1106,7 +1230,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM role_permissions
             WHERE role_id = $1
           `,
-          [financeRoleId]
+          [financeRoleId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1118,7 +1242,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM user_roles
             WHERE role_id = $1
           `,
-          [financeRoleId]
+          [financeRoleId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1130,7 +1254,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM roles
             WHERE id = $1
           `,
-          [financeRoleId]
+          [financeRoleId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1150,7 +1274,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM users
             WHERE id = $1
           `,
-          [creatorUserId]
+          [creatorUserId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1164,7 +1288,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
             DELETE FROM users
             WHERE id = $1
           `,
-          [financeUserId]
+          [financeUserId],
         );
       } catch {
         // Cleanup must not fail the suite.
@@ -1205,7 +1329,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
       .post("/api/v1/advertisements")
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         clientId: testClientId,
@@ -1222,30 +1346,31 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         notes:
           "Advertisement fixture for financial adjustment integration tests.",
         advertisementAmount: 10000,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        placementId: testPlacementId,
       });
 
     expect(
       response.status,
       `Advertisement creation failed: ${JSON.stringify(
-        response.body
-      )}`
+        response.body,
+      )}`,
     ).toBe(201);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     testAdvertisementId = Number(
-      response.body.data.id
+      response.body.data.id,
     );
 
     expect(
-      testAdvertisementId
+      testAdvertisementId,
     ).toBeGreaterThan(0);
 
     expect(
-      response.body.data.workflowStatus
+      response.body.data.workflowStatus,
     ).toBe("DRAFT");
   });
 
@@ -1257,7 +1382,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
   it("should create a payment fixture", async () => {
     expect(
-      testAdvertisementId
+      testAdvertisementId,
     ).toBeGreaterThan(0);
 
     const paymentResult =
@@ -1301,8 +1426,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           `FADJ-PAY-${timestamp}`,
           "Financial adjustment integration test payment.",
           creatorUserId,
-          "REGULAR"
-        ]
+          "REGULAR",
+        ],
       );
 
     const payment =
@@ -1310,16 +1435,16 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
     if (payment === undefined) {
       throw new Error(
-        "Failed to create financial adjustment payment fixture."
+        "Failed to create financial adjustment payment fixture.",
       );
     }
 
     testPaymentId = Number(
-      payment.id
+      payment.id,
     );
 
     expect(testPaymentId).toBeGreaterThan(
-      0
+      0,
     );
   });
 
@@ -1332,11 +1457,11 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should create an ADJUSTMENT approval using requested amount", async () => {
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         advertisementId: testAdvertisementId,
@@ -1345,56 +1470,56 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         approvalType: "ADJUSTMENT",
         requestedAmount: 2500,
         approvalRemarks:
-          "Initial adjustment approval request."
+          "Initial adjustment approval request.",
       });
 
     expect(
       response.status,
       `Adjustment approval creation failed: ${JSON.stringify(
-        response.body
-      )}`
+        response.body,
+      )}`,
     ).toBe(201);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     createdApprovalId = Number(
-      response.body.data.id
+      response.body.data.id,
     );
 
     expect(
-      createdApprovalId
+      createdApprovalId,
     ).toBeGreaterThan(0);
 
     expect(
-      response.body.data.approvalType
+      response.body.data.approvalType,
     ).toBe("ADJUSTMENT");
 
     expect(
       Number(
-        response.body.data.requestedAmount
-      )
+        response.body.data.requestedAmount,
+      ),
     ).toBe(2500);
 
     expect(
-      response.body.data.requestedPercentage
+      response.body.data.requestedPercentage,
     ).toBeNull();
 
     expect(
-      response.body.data.status
+      response.body.data.status,
     ).toBe("SUBMITTED");
 
     expect(
       Number(
-        response.body.data.requestedBy
-      )
+        response.body.data.requestedBy,
+      ),
     ).toBe(creatorUserId);
 
     expect(
-      response.body.data.approvalRemarks
+      response.body.data.approvalRemarks,
     ).toBe(
-      "Initial adjustment approval request."
+      "Initial adjustment approval request.",
     );
   });
 
@@ -1407,7 +1532,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should create an ADJUSTMENT approval using requested percentage", async () => {
     const advertisementId =
       await createTemporaryAdvertisement(
-        "percentage"
+        "percentage",
       );
 
     const approvalId =
@@ -1415,40 +1540,40 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         advertisementId,
         undefined,
         12.5,
-        "Percentage adjustment request."
+        "Percentage adjustment request.",
       );
 
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}`
+        `/api/v1/advertisements/payments/financial-approval/${approvalId}`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      response.body.data.approvalType
+      response.body.data.approvalType,
     ).toBe("ADJUSTMENT");
 
     expect(
-      response.body.data.requestedAmount
+      response.body.data.requestedAmount,
     ).toBeNull();
 
     expect(
       Number(
-        response.body.data.requestedPercentage
-      )
+        response.body.data.requestedPercentage,
+      ),
     ).toBe(12.5);
 
     await deleteApproval(
-      approvalId
+      approvalId,
     );
   });
 
@@ -1461,25 +1586,25 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should get the ADJUSTMENT approval by id", async () => {
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}`
+        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      Number(response.body.data.id)
+      Number(response.body.data.id),
     ).toBe(createdApprovalId);
 
     expect(
-      response.body.data.approvalType
+      response.body.data.approvalType,
     ).toBe("ADJUSTMENT");
   });
 
@@ -1492,41 +1617,41 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should place the ADJUSTMENT approval on hold", async () => {
     const response = await request(app)
       .post(
-        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}/hold`
+        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}/hold`,
       )
       .set(
         "Authorization",
-        `Bearer ${financeAccessToken}`
+        `Bearer ${financeAccessToken}`,
       )
       .send({
         holdReason:
-          "Adjustment requires additional financial verification."
+          "Adjustment requires additional financial verification.",
       });
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      response.body.data.status
+      response.body.data.status,
     ).toBe("HOLD");
 
     expect(
-      Number(response.body.data.id)
+      Number(response.body.data.id),
     ).toBe(createdApprovalId);
 
     expect(
-      response.body.data.holdReason
+      response.body.data.holdReason,
     ).toBe(
-      "Adjustment requires additional financial verification."
+      "Adjustment requires additional financial verification.",
     );
 
     expect(
       Number(
-        response.body.data.reviewedBy
-      )
+        response.body.data.reviewedBy,
+      ),
     ).toBe(financeUserId);
   });
 
@@ -1539,41 +1664,41 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should approve the ADJUSTMENT approval from HOLD", async () => {
     const response = await request(app)
       .post(
-        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}/approve`
+        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}/approve`,
       )
       .set(
         "Authorization",
-        `Bearer ${financeAccessToken}`
+        `Bearer ${financeAccessToken}`,
       )
       .send({
         approvalRemarks:
-          "Adjustment financially approved after verification."
+          "Adjustment financially approved after verification.",
       });
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      response.body.data.status
+      response.body.data.status,
     ).toBe("APPROVED");
 
     expect(
-      Number(response.body.data.id)
+      Number(response.body.data.id),
     ).toBe(createdApprovalId);
 
     expect(
-      response.body.data.approvalRemarks
+      response.body.data.approvalRemarks,
     ).toBe(
-      "Adjustment financially approved after verification."
+      "Adjustment financially approved after verification.",
     );
 
     expect(
       Number(
-        response.body.data.reviewedBy
-      )
+        response.body.data.reviewedBy,
+      ),
     ).toBe(financeUserId);
   });
 
@@ -1586,33 +1711,33 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should return the approved ADJUSTMENT as the latest approval", async () => {
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/advertisements/${testAdvertisementId}/latest`
+        `/api/v1/advertisements/payments/financial-approval/advertisements/${testAdvertisementId}/latest`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      response.body.data
+      response.body.data,
     ).not.toBeNull();
 
     expect(
-      Number(response.body.data.id)
+      Number(response.body.data.id),
     ).toBe(createdApprovalId);
 
     expect(
-      response.body.data.approvalType
+      response.body.data.approvalType,
     ).toBe("ADJUSTMENT");
 
     expect(
-      response.body.data.status
+      response.body.data.status,
     ).toBe("APPROVED");
   });
 
@@ -1625,17 +1750,17 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should return no pending ADJUSTMENT after approval", async () => {
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/advertisements/${testAdvertisementId}/pending`
+        `/api/v1/advertisements/payments/financial-approval/advertisements/${testAdvertisementId}/pending`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(response.body.data).toBeNull();
@@ -1650,25 +1775,25 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should preserve ADJUSTMENT approval history", async () => {
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}/history`
+        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}/history`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      Array.isArray(response.body.data)
+      Array.isArray(response.body.data),
     ).toBe(true);
 
     expect(
-      response.body.data.length
+      response.body.data.length,
     ).toBeGreaterThanOrEqual(3);
 
     const statuses =
@@ -1678,8 +1803,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           toStatus: string;
         }) => ({
           fromStatus: item.fromStatus,
-          toStatus: item.toStatus
-        })
+          toStatus: item.toStatus,
+        }),
       );
 
     expect(
@@ -1689,8 +1814,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           toStatus: string;
         }) =>
           item.fromStatus === null &&
-          item.toStatus === "SUBMITTED"
-      )
+          item.toStatus === "SUBMITTED",
+      ),
     ).toBe(true);
 
     expect(
@@ -1700,8 +1825,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           toStatus: string;
         }) =>
           item.fromStatus === "SUBMITTED" &&
-          item.toStatus === "HOLD"
-      )
+          item.toStatus === "HOLD",
+      ),
     ).toBe(true);
 
     expect(
@@ -1711,8 +1836,8 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           toStatus: string;
         }) =>
           item.fromStatus === "HOLD" &&
-          item.toStatus === "APPROVED"
-      )
+          item.toStatus === "APPROVED",
+      ),
     ).toBe(true);
   });
 
@@ -1725,7 +1850,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should reject a duplicate pending ADJUSTMENT approval", async () => {
     const advertisementId =
       await createTemporaryAdvertisement(
-        "duplicate"
+        "duplicate",
       );
 
     const firstApprovalId =
@@ -1733,16 +1858,16 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         advertisementId,
         1000,
         undefined,
-        "First adjustment request."
+        "First adjustment request.",
       );
 
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         advertisementId,
@@ -1750,22 +1875,22 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         approvalType: "ADJUSTMENT",
         requestedPercentage: 10,
         approvalRemarks:
-          "Duplicate adjustment request."
+          "Duplicate adjustment request.",
       });
 
     expect(
       response.status,
       `Unexpected duplicate response: ${JSON.stringify(
-        response.body
-      )}`
+        response.body,
+      )}`,
     ).toBe(409);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
 
     await deleteApproval(
-      firstApprovalId
+      firstApprovalId,
     );
   });
 
@@ -1778,7 +1903,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should allow an ADJUSTMENT requested percentage of zero", async () => {
     const advertisementId =
       await createTemporaryAdvertisement(
-        "zero-percentage"
+        "zero-percentage",
       );
 
     const approvalId =
@@ -1786,36 +1911,36 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         advertisementId,
         undefined,
         0,
-        "Zero percentage adjustment request."
+        "Zero percentage adjustment request.",
       );
 
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}`
+        `/api/v1/advertisements/payments/financial-approval/${approvalId}`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      response.body.data.approvalType
+      response.body.data.approvalType,
     ).toBe("ADJUSTMENT");
 
     expect(
       Number(
-        response.body.data.requestedPercentage
-      )
+        response.body.data.requestedPercentage,
+      ),
     ).toBe(0);
 
     await deleteApproval(
-      approvalId
+      approvalId,
     );
   });
 
@@ -1828,7 +1953,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should allow an ADJUSTMENT requested percentage of 100", async () => {
     const advertisementId =
       await createTemporaryAdvertisement(
-        "full-percentage"
+        "full-percentage",
       );
 
     const approvalId =
@@ -1836,32 +1961,32 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         advertisementId,
         undefined,
         100,
-        "Full percentage adjustment request."
+        "Full percentage adjustment request.",
       );
 
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}`
+        `/api/v1/advertisements/payments/financial-approval/${approvalId}`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
       Number(
-        response.body.data.requestedPercentage
-      )
+        response.body.data.requestedPercentage,
+      ),
     ).toBe(100);
 
     await deleteApproval(
-      approvalId
+      approvalId,
     );
   });
 
@@ -1874,11 +1999,11 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should reject an ADJUSTMENT containing both amount and percentage", async () => {
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         advertisementId: testAdvertisementId,
@@ -1888,13 +2013,13 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         requestedAmount: 1000,
         requestedPercentage: 10,
         approvalRemarks:
-          "Invalid adjustment request."
+          "Invalid adjustment request.",
       });
 
     expect(response.status).toBe(400);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
   });
 
@@ -1907,11 +2032,11 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should reject an ADJUSTMENT without amount or percentage", async () => {
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         advertisementId: testAdvertisementId,
@@ -1919,13 +2044,13 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         paymentId: testPaymentId,
         approvalType: "ADJUSTMENT",
         approvalRemarks:
-          "Incomplete adjustment request."
+          "Incomplete adjustment request.",
       });
 
     expect(response.status).toBe(400);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
   });
 
@@ -1938,24 +2063,24 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should reject an ADJUSTMENT requested amount of zero", async () => {
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         advertisementId: testAdvertisementId,
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "ADJUSTMENT",
-        requestedAmount: 0
+        requestedAmount: 0,
       });
 
     expect(response.status).toBe(400);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
   });
 
@@ -1968,24 +2093,24 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should reject an ADJUSTMENT requested percentage above 100", async () => {
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         advertisementId: testAdvertisementId,
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "ADJUSTMENT",
-        requestedPercentage: 100.01
+        requestedPercentage: 100.01,
       });
 
     expect(response.status).toBe(400);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
   });
 
@@ -1998,24 +2123,24 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should reject an ADJUSTMENT requested amount with more than two decimal places", async () => {
     const response = await request(app)
       .post(
-        "/api/v1/advertisements/payments/financial-approval"
+        "/api/v1/advertisements/payments/financial-approval",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         advertisementId: testAdvertisementId,
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "ADJUSTMENT",
-        requestedAmount: 1000.123
+        requestedAmount: 1000.123,
       });
 
     expect(response.status).toBe(400);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
   });
 
@@ -2028,7 +2153,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should reject an ADJUSTMENT approval by Ad Creator", async () => {
     const advertisementId =
       await createTemporaryAdvertisement(
-        "creator-approve"
+        "creator-approve",
       );
 
     const approvalId =
@@ -2036,30 +2161,30 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         advertisementId,
         1250,
         undefined,
-        "Creator authorization test."
+        "Creator authorization test.",
       );
 
     const response = await request(app)
       .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
+        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       )
       .send({
         approvalRemarks:
-          "Creator must not approve."
+          "Creator must not approve.",
       });
 
     expect(response.status).toBe(403);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
 
     await deleteApproval(
-      approvalId
+      approvalId,
     );
   });
 
@@ -2072,7 +2197,7 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should allow Finance to reject an ADJUSTMENT approval", async () => {
     const advertisementId =
       await createTemporaryAdvertisement(
-        "finance-reject"
+        "finance-reject",
       );
 
     const approvalId =
@@ -2080,50 +2205,50 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
         advertisementId,
         1500,
         undefined,
-        "Adjustment rejection workflow test."
+        "Adjustment rejection workflow test.",
       );
 
     const response = await request(app)
       .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/reject`
+        `/api/v1/advertisements/payments/financial-approval/${approvalId}/reject`,
       )
       .set(
         "Authorization",
-        `Bearer ${financeAccessToken}`
+        `Bearer ${financeAccessToken}`,
       )
       .send({
         rejectionReason:
-          "Adjustment requires a revised financial basis."
+          "Adjustment requires a revised financial basis.",
       });
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      response.body.data.status
+      response.body.data.status,
     ).toBe("REJECTED");
 
     expect(
-      Number(response.body.data.id)
+      Number(response.body.data.id),
     ).toBe(approvalId);
 
     expect(
-      response.body.data.rejectionReason
+      response.body.data.rejectionReason,
     ).toBe(
-      "Adjustment requires a revised financial basis."
+      "Adjustment requires a revised financial basis.",
     );
 
     expect(
       Number(
-        response.body.data.reviewedBy
-      )
+        response.body.data.reviewedBy,
+      ),
     ).toBe(financeUserId);
 
     await deleteApproval(
-      approvalId
+      approvalId,
     );
   });
 
@@ -2136,17 +2261,17 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should allow Ad Creator to resubmit a rejected ADJUSTMENT approval", async () => {
     const advertisementId =
       await createTemporaryAdvertisement(
-        "resubmit"
+        "resubmit",
       );
 
     const createResponse =
       await request(app)
         .post(
-          "/api/v1/advertisements/payments/financial-approval"
+          "/api/v1/advertisements/payments/financial-approval",
         )
         .set(
           "Authorization",
-          `Bearer ${creatorAccessToken}`
+          `Bearer ${creatorAccessToken}`,
         )
         .send({
           advertisementId,
@@ -2154,99 +2279,99 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
           approvalType: "ADJUSTMENT",
           requestedAmount: 1750,
           approvalRemarks:
-            "Original adjustment submission."
+            "Original adjustment submission.",
         });
 
     expect(
       createResponse.status,
       `Adjustment approval creation failed: ${JSON.stringify(
-        createResponse.body
-      )}`
+        createResponse.body,
+      )}`,
     ).toBe(201);
 
     expect(
-      createResponse.body.success
+      createResponse.body.success,
     ).toBe(true);
 
     const approvalId = Number(
-      createResponse.body.data.id
+      createResponse.body.data.id,
     );
 
     expect(approvalId).toBeGreaterThan(
-      0
+      0,
     );
 
     validationApprovalIds.push(
-      approvalId
+      approvalId,
     );
 
     const rejectResponse =
       await request(app)
         .post(
-          `/api/v1/advertisements/payments/financial-approval/${approvalId}/reject`
+          `/api/v1/advertisements/payments/financial-approval/${approvalId}/reject`,
         )
         .set(
           "Authorization",
-          `Bearer ${financeAccessToken}`
+          `Bearer ${financeAccessToken}`,
         )
         .send({
           rejectionReason:
-            "Please revise the adjustment request."
+            "Please revise the adjustment request.",
         });
 
     expect(
-      rejectResponse.status
+      rejectResponse.status,
     ).toBe(200);
 
     expect(
-      rejectResponse.body.data.status
+      rejectResponse.body.data.status,
     ).toBe("REJECTED");
 
     const resubmitResponse =
       await request(app)
         .post(
-          `/api/v1/advertisements/payments/financial-approval/${approvalId}/resubmit`
+          `/api/v1/advertisements/payments/financial-approval/${approvalId}/resubmit`,
         )
         .set(
           "Authorization",
-          `Bearer ${creatorAccessToken}`
+          `Bearer ${creatorAccessToken}`,
         )
         .send({
           approvalRemarks:
-            "Revised adjustment request submitted for review."
+            "Revised adjustment request submitted for review.",
         });
 
     expect(
       resubmitResponse.status,
       `Adjustment resubmission failed: ${JSON.stringify(
-        resubmitResponse.body
-      )}`
+        resubmitResponse.body,
+      )}`,
     ).toBe(200);
 
     expect(
-      resubmitResponse.body.success
+      resubmitResponse.body.success,
     ).toBe(true);
 
     expect(
-      resubmitResponse.body.data.status
+      resubmitResponse.body.data.status,
     ).toBe("SUBMITTED");
 
     expect(
       Number(
-        resubmitResponse.body.data.id
-      )
+        resubmitResponse.body.data.id,
+      ),
     ).toBe(approvalId);
 
     expect(
-      resubmitResponse.body.data.approvalRemarks
+      resubmitResponse.body.data.approvalRemarks,
     ).toBe(
-      "Revised adjustment request submitted for review."
+      "Revised adjustment request submitted for review.",
     );
 
     expect(
       Number(
-        resubmitResponse.body.data.requestedBy
-      )
+        resubmitResponse.body.data.requestedBy,
+      ),
     ).toBe(creatorUserId);
 
     resubmitApprovalId = approvalId;
@@ -2260,46 +2385,46 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
   it("should allow Finance to approve a resubmitted ADJUSTMENT approval", async () => {
     expect(
-      resubmitApprovalId
+      resubmitApprovalId,
     ).toBeGreaterThan(0);
 
     const response = await request(app)
       .post(
-        `/api/v1/advertisements/payments/financial-approval/${resubmitApprovalId}/approve`
+        `/api/v1/advertisements/payments/financial-approval/${resubmitApprovalId}/approve`,
       )
       .set(
         "Authorization",
-        `Bearer ${financeAccessToken}`
+        `Bearer ${financeAccessToken}`,
       )
       .send({
         approvalRemarks:
-          "Revised adjustment approved by Finance."
+          "Revised adjustment approved by Finance.",
       });
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      response.body.data.status
+      response.body.data.status,
     ).toBe("APPROVED");
 
     expect(
-      Number(response.body.data.id)
+      Number(response.body.data.id),
     ).toBe(resubmitApprovalId);
 
     expect(
-      response.body.data.approvalRemarks
+      response.body.data.approvalRemarks,
     ).toBe(
-      "Revised adjustment approved by Finance."
+      "Revised adjustment approved by Finance.",
     );
 
     expect(
       Number(
-        response.body.data.reviewedBy
-      )
+        response.body.data.reviewedBy,
+      ),
     ).toBe(financeUserId);
   });
 
@@ -2311,30 +2436,30 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
   it("should preserve ADJUSTMENT history through rejection and resubmission", async () => {
     expect(
-      resubmitApprovalId
+      resubmitApprovalId,
     ).toBeGreaterThan(0);
 
     const response = await request(app)
       .get(
-        `/api/v1/advertisements/payments/financial-approval/${resubmitApprovalId}/history`
+        `/api/v1/advertisements/payments/financial-approval/${resubmitApprovalId}/history`,
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(
-      true
+      true,
     );
 
     expect(
-      Array.isArray(response.body.data)
+      Array.isArray(response.body.data),
     ).toBe(true);
 
     expect(
-      response.body.data.length
+      response.body.data.length,
     ).toBeGreaterThanOrEqual(4);
 
     const history =
@@ -2347,32 +2472,32 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
       history.some(
         (item) =>
           item.fromStatus === null &&
-          item.toStatus === "SUBMITTED"
-      )
+          item.toStatus === "SUBMITTED",
+      ),
     ).toBe(true);
 
     expect(
       history.some(
         (item) =>
           item.fromStatus === "SUBMITTED" &&
-          item.toStatus === "REJECTED"
-      )
+          item.toStatus === "REJECTED",
+      ),
     ).toBe(true);
 
     expect(
       history.some(
         (item) =>
           item.fromStatus === "REJECTED" &&
-          item.toStatus === "SUBMITTED"
-      )
+          item.toStatus === "SUBMITTED",
+      ),
     ).toBe(true);
 
     expect(
       history.some(
         (item) =>
           item.fromStatus === "SUBMITTED" &&
-          item.toStatus === "APPROVED"
-      )
+          item.toStatus === "APPROVED",
+      ),
     ).toBe(true);
   });
 
@@ -2384,13 +2509,13 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
 
   it("should reject an unauthenticated ADJUSTMENT approval request", async () => {
     const response = await request(app).get(
-      `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}`
+      `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}`,
     );
 
     expect(response.status).toBe(401);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
   });
 
@@ -2403,17 +2528,17 @@ describe("Advertisement Financial Approval ADJUSTMENT API Integration", () => {
   it("should return 404 for a missing financial approval", async () => {
     const response = await request(app)
       .get(
-        "/api/v1/advertisements/payments/financial-approval/999999999"
+        "/api/v1/advertisements/payments/financial-approval/999999999",
       )
       .set(
         "Authorization",
-        `Bearer ${creatorAccessToken}`
+        `Bearer ${creatorAccessToken}`,
       );
 
     expect(response.status).toBe(404);
 
     expect(response.body.success).toBe(
-      false
+      false,
     );
   });
 });

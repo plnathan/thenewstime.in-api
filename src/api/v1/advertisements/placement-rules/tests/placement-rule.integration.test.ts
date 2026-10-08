@@ -14,7 +14,27 @@ describe("Advertisement Placement Rule API Integration", () => {
 
   let testClientId = 0;
   let advertisementId = 0;
+
+  /*
+   * Primary placement:
+   *
+   * This placement is supplied during advertisement creation.
+   * Advertisement creation automatically persists the runtime
+   * placement rule for this placement.
+   */
   let placementId = 0;
+
+  /*
+   * Secondary placement:
+   *
+   * This placement is intentionally different from the primary
+   * placement so the placement-rule CRUD API can explicitly
+   * create a rule without violating:
+   *
+   * UNIQUE (advertisement_id, placement_id)
+   */
+  let placementRuleCrudPlacementId = 0;
+
   let testPlacementRuleId = 0;
 
   const timestamp = Date.now();
@@ -25,21 +45,6 @@ describe("Advertisement Placement Rule API Integration", () => {
 
   const password = "Placement_Rule_Test@123";
 
-  /*
-
-* Placement Rule routes use the dedicated Placement Rule
-* authorization resource:
-*
-* module   = ADVERTISEMENT
-* resource = advertisements.placement_rules
-*
-* The Advertisement Placement Management module separately
-* uses advertisements.placements.* permissions.
-*
-* advertisements.create is also required because this
-* integration test creates a prerequisite advertisement
-* through POST /api/v1/advertisements.
-  */
   const permissionCodes = {
     advertisementCreate: "advertisements.create",
     read: "advertisements.placement_rules.read",
@@ -63,7 +68,8 @@ describe("Advertisement Placement Rule API Integration", () => {
      * --------------------------------------------------
      */
     const superAdminResult = await pool.query(
-      `         SELECT id
+      `
+        SELECT id
         FROM roles
         WHERE code = 'SUPER_ADMIN'
         LIMIT 1
@@ -83,30 +89,28 @@ describe("Advertisement Placement Rule API Integration", () => {
 
     const userResult = await pool.query(
       `
-INSERT INTO users
-(
-  username,
-  email,
-  password_hash,
-  full_name,
-  display_name,
-  status,
-  role_id
-)
-VALUES
-(
-  $1,
-  $2,
-  $3,
-  $4,
-  $5,
-  'ACTIVE',
-  $6
-)
-RETURNING id
-
-
-`,
+        INSERT INTO users
+        (
+          username,
+          email,
+          password_hash,
+          full_name,
+          display_name,
+          status,
+          role_id
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          'ACTIVE',
+          $6
+        )
+        RETURNING id
+      `,
       [
         testUsername,
         testEmail,
@@ -128,30 +132,28 @@ RETURNING id
      */
     const roleResult = await pool.query(
       `
-INSERT INTO roles
-(
-  code,
-  display_name,
-  description,
-  display_order,
-  status,
-  created_by,
-  updated_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $3,
-  999,
-  'ACTIVE',
-  $4,
-  $4
-)
-RETURNING id
-
-
-`,
+        INSERT INTO roles
+        (
+          code,
+          display_name,
+          description,
+          display_order,
+          status,
+          created_by,
+          updated_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          999,
+          'ACTIVE',
+          $4,
+          $4
+        )
+        RETURNING id
+      `,
       [
         testRoleCode,
         `Advertisement Placement Rule Test Role ${timestamp}`,
@@ -168,48 +170,40 @@ RETURNING id
      * --------------------------------------------------
      * ASSIGN TEST ROLE TO USER
      * --------------------------------------------------
-     *
-     * Keep users.role_id and user_roles synchronized.
      */
     await pool.query(
       `
-UPDATE users
-SET role_id = $2
-WHERE id = $1
-
-
-`,
+        UPDATE users
+        SET role_id = $2
+        WHERE id = $1
+      `,
       [testUserId, testRoleId]
     );
 
     await pool.query(
       `
-DELETE FROM user_roles
-WHERE user_id = $1
-
-
-`,
+        DELETE FROM user_roles
+        WHERE user_id = $1
+      `,
       [testUserId]
     );
 
     await pool.query(
       `
-INSERT INTO user_roles
-(
-  user_id,
-  role_id,
-  created_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $1
-)
-ON CONFLICT (user_id, role_id) DO NOTHING
-
-
-`,
+        INSERT INTO user_roles
+        (
+          user_id,
+          role_id,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $1
+        )
+        ON CONFLICT (user_id, role_id) DO NOTHING
+      `,
       [testUserId, testRoleId]
     );
 
@@ -217,25 +211,23 @@ ON CONFLICT (user_id, role_id) DO NOTHING
      * --------------------------------------------------
      * RESOLVE EXISTING PERMISSIONS
      * --------------------------------------------------
-     *
-     * Do not create duplicate system permissions.
      */
     for (const [key, code] of Object.entries(permissionCodes) as Array<
       [keyof typeof permissionCodes, string]
     >) {
       const permissionResult = await pool.query(
         `
-  SELECT
-    id,
-    module,
-    resource,
-    action,
-    code,
-    status
-  FROM permissions
-  WHERE code = $1
-  LIMIT 1
-`,
+          SELECT
+            id,
+            module,
+            resource,
+            action,
+            code,
+            status
+          FROM permissions
+          WHERE code = $1
+          LIMIT 1
+        `,
         [code]
       );
 
@@ -274,20 +266,20 @@ ON CONFLICT (user_id, role_id) DO NOTHING
     >) {
       await pool.query(
         `
-  INSERT INTO role_permissions
-  (
-    role_id,
-    permission_id,
-    created_by
-  )
-  VALUES
-  (
-    $1,
-    $2,
-    $3
-  )
-  ON CONFLICT (role_id, permission_id) DO NOTHING
-`,
+          INSERT INTO role_permissions
+          (
+            role_id,
+            permission_id,
+            created_by
+          )
+          VALUES
+          (
+            $1,
+            $2,
+            $3
+          )
+          ON CONFLICT (role_id, permission_id) DO NOTHING
+        `,
         [testRoleId, permissionIds[key], testUserId]
       );
     }
@@ -299,21 +291,19 @@ ON CONFLICT (user_id, role_id) DO NOTHING
      */
     const assignedPermissionsResult = await pool.query(
       `
-SELECT
-  p.code
-FROM role_permissions rp
-INNER JOIN permissions p
-  ON p.id = rp.permission_id
-INNER JOIN roles r
-  ON r.id = rp.role_id
-WHERE rp.role_id = $1
-  AND r.status = 'ACTIVE'
-  AND p.status = 'ACTIVE'
-  AND p.code = ANY($2::text[])
-ORDER BY p.code
-
-
-`,
+        SELECT
+          p.code
+        FROM role_permissions rp
+        INNER JOIN permissions p
+          ON p.id = rp.permission_id
+        INNER JOIN roles r
+          ON r.id = rp.role_id
+        WHERE rp.role_id = $1
+          AND r.status = 'ACTIVE'
+          AND p.status = 'ACTIVE'
+          AND p.code = ANY($2::text[])
+        ORDER BY p.code
+      `,
       [testRoleId, Object.values(permissionCodes)]
     );
 
@@ -333,42 +323,35 @@ ORDER BY p.code
      * --------------------------------------------------
      * TEST ADVERTISEMENT CLIENT
      * --------------------------------------------------
-     *
-     * The current Advertisement API requires clientId.
-     * The advertisement repository also resolves the
-     * advertiser_id from advertisement_clients using this
-     * clientId.
      */
     const clientResult = await pool.query(
       `
-INSERT INTO advertisement_clients
-(
-  name,
-  display_name,
-  contact_person,
-  email,
-  mobile,
-  client_code,
-  ad_creation_hold,
-  ad_creation_hold_reason,
-  status
-)
-VALUES
-(
-  $1,
-  $2,
-  $3,
-  $4,
-  $5,
-  $6,
-  false,
-  NULL,
-  'ACTIVE'
-)
-RETURNING id
-
-
-`,
+        INSERT INTO advertisement_clients
+        (
+          name,
+          display_name,
+          contact_person,
+          email,
+          mobile,
+          client_code,
+          ad_creation_hold,
+          ad_creation_hold_reason,
+          status
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          false,
+          NULL,
+          'ACTIVE'
+        )
+        RETURNING id
+      `,
       [
         `Placement Rule Test Client ${timestamp}`,
         `Placement Rule Test Client ${timestamp}`,
@@ -385,81 +368,154 @@ RETURNING id
 
     /*
      * --------------------------------------------------
-     * TEST ADVERTISEMENT PLACEMENT
+     * PRIMARY ADVERTISEMENT PLACEMENT
      * --------------------------------------------------
      *
-     * advertisement_placements is the placement master
-     * table. Placement Rule tests must own their fixture
-     * instead of depending on another integration test or
-     * on a pre-existing active placement.
+     * This placement is supplied to POST /advertisements.
      *
-     * This direct insert is intentionally used here because
-     * this integration test is for Placement Rules, not for
-     * Placement Management API authorization or validation.
+     * The advertisement repository automatically creates
+     * the corresponding active placement rule.
      */
-    const placementResult = await pool.query(
+    const primaryPlacementResult = await pool.query(
       `
-INSERT INTO advertisement_placements
-(
-  code,
-  display_name,
-  description,
-  page_type,
-  placement_type,
-  insertion_type,
-  display_order,
-  is_enabled,
-  collapse_when_empty,
-  fallback_behavior,
-  display_frequency,
-  frequency_value,
-  auto_close_enabled,
-  auto_close_seconds,
-  close_button_enabled,
-  close_on_overlay_click,
-  status,
-  created_by,
-  updated_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $3,
-  'HOME',
-  'HOME_TOP',
-  'FIXED',
-  10,
-  TRUE,
-  TRUE,
-  'HIDE',
-  'ONCE_PER_DAY',
-  NULL,
-  FALSE,
-  NULL,
-  TRUE,
-  TRUE,
-  'ACTIVE',
-  $4,
-  $4
-)
-RETURNING id
-
-
-`,
+        INSERT INTO advertisement_placements
+        (
+          code,
+          display_name,
+          description,
+          page_type,
+          placement_type,
+          insertion_type,
+          display_order,
+          is_enabled,
+          collapse_when_empty,
+          fallback_behavior,
+          display_frequency,
+          frequency_value,
+          auto_close_enabled,
+          auto_close_seconds,
+          close_button_enabled,
+          close_on_overlay_click,
+          status,
+          created_by,
+          updated_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          'HOME',
+          'HOME_TOP',
+          'FIXED',
+          10,
+          TRUE,
+          TRUE,
+          'HIDE',
+          'ONCE_PER_DAY',
+          NULL,
+          FALSE,
+          NULL,
+          TRUE,
+          TRUE,
+          'ACTIVE',
+          $4,
+          $4
+        )
+        RETURNING id
+      `,
       [
         `PLACEMENT_RULE_HOME_TOP_${timestamp}`,
-        `Placement Rule Test Home Top Placement`,
-        "Temporary placement fixture for Advertisement Placement Rule API integration tests.",
+        "Placement Rule Test Home Top Placement",
+        "Primary placement fixture for Advertisement Placement Rule API integration tests.",
         testUserId
       ]
     );
 
-    expect(placementResult.rows.length).toBe(1);
+    expect(primaryPlacementResult.rows.length).toBe(1);
 
-    placementId = Number(placementResult.rows[0].id);
+    placementId = Number(primaryPlacementResult.rows[0].id);
 
     expect(placementId).toBeGreaterThan(0);
+
+    /*
+     * --------------------------------------------------
+     * SECONDARY PLACEMENT FOR CRUD TESTS
+     * --------------------------------------------------
+     *
+     * The advertisement already receives an automatic
+     * placement rule for placementId.
+     *
+     * Therefore the explicit placement-rule POST must use
+     * another placement. Otherwise the database's unique
+     * constraint:
+     *
+     * UNIQUE (advertisement_id, placement_id)
+     *
+     * correctly returns HTTP 409.
+     */
+    const crudPlacementResult = await pool.query(
+      `
+        INSERT INTO advertisement_placements
+        (
+          code,
+          display_name,
+          description,
+          page_type,
+          placement_type,
+          insertion_type,
+          display_order,
+          is_enabled,
+          collapse_when_empty,
+          fallback_behavior,
+          display_frequency,
+          frequency_value,
+          auto_close_enabled,
+          auto_close_seconds,
+          close_button_enabled,
+          close_on_overlay_click,
+          status,
+          created_by,
+          updated_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          'NEWS_LIST',
+          'NEWS_LIST_TOP',
+          'FIXED',
+          20,
+          TRUE,
+          TRUE,
+          'HIDE',
+          'EVERY_VISIT',
+          NULL,
+          FALSE,
+          NULL,
+          TRUE,
+          TRUE,
+          'ACTIVE',
+          $4,
+          $4
+        )
+        RETURNING id
+      `,
+      [
+        `PLACEMENT_RULE_NEWS_LIST_TOP_${timestamp}`,
+        "Placement Rule CRUD Test News List Placement",
+        "Secondary placement fixture used for explicit placement-rule CRUD tests.",
+        testUserId
+      ]
+    );
+
+    expect(crudPlacementResult.rows.length).toBe(1);
+
+    placementRuleCrudPlacementId = Number(crudPlacementResult.rows[0].id);
+
+    expect(placementRuleCrudPlacementId).toBeGreaterThan(0);
+    expect(placementRuleCrudPlacementId).not.toBe(placementId);
 
     /*
      * --------------------------------------------------
@@ -480,10 +536,8 @@ RETURNING id
 
     /*
      * --------------------------------------------------
-     * VERIFY AUTHORIZATION DIRECTLY IN DATABASE
+     * VERIFY AUTHORIZATION
      * --------------------------------------------------
-     *
-     * This mirrors the logic used by userHasPermission().
      */
     for (const key of Object.keys(permissionCodes) as Array<
       keyof typeof permissionCodes
@@ -497,24 +551,24 @@ RETURNING id
 
       const authorizationResult = await pool.query(
         `
-  SELECT EXISTS
-  (
-    SELECT 1
-    FROM user_roles ur
-    INNER JOIN roles r
-      ON r.id = ur.role_id
-    INNER JOIN role_permissions rp
-      ON rp.role_id = r.id
-    INNER JOIN permissions p
-      ON p.id = rp.permission_id
-    WHERE ur.user_id = $1
-      AND r.status = 'ACTIVE'
-      AND p.status = 'ACTIVE'
-      AND UPPER(COALESCE(p.module, '')) = UPPER($2)
-      AND UPPER(COALESCE(p.resource, '')) = UPPER($3)
-      AND UPPER(COALESCE(p.action, '')) = UPPER($4)
-  ) AS exists
-`,
+          SELECT EXISTS
+          (
+            SELECT 1
+            FROM user_roles ur
+            INNER JOIN roles r
+              ON r.id = ur.role_id
+            INNER JOIN role_permissions rp
+              ON rp.role_id = r.id
+            INNER JOIN permissions p
+              ON p.id = rp.permission_id
+            WHERE ur.user_id = $1
+              AND r.status = 'ACTIVE'
+              AND p.status = 'ACTIVE'
+              AND UPPER(COALESCE(p.module, '')) = UPPER($2)
+              AND UPPER(COALESCE(p.resource, '')) = UPPER($3)
+              AND UPPER(COALESCE(p.action, '')) = UPPER($4)
+          ) AS exists
+        `,
         [testUserId, "ADVERTISEMENT", resource, action]
       );
 
@@ -528,12 +582,13 @@ RETURNING id
   afterAll(async () => {
     /*
      * --------------------------------------------------
-     * DELETE PLACEMENT RULE
+     * DELETE EXPLICIT TEST PLACEMENT RULE
      * --------------------------------------------------
      */
     if (testPlacementRuleId > 0) {
       await pool.query(
-        `           DELETE FROM advertisement_placement_rules
+        `
+          DELETE FROM advertisement_placement_rules
           WHERE id = $1
         `,
         [testPlacementRuleId]
@@ -542,46 +597,83 @@ RETURNING id
 
     /*
      * --------------------------------------------------
-     * DELETE ADVERTISEMENT
+     * DELETE ANY REMAINING PLACEMENT RULES FOR TEST AD
      * --------------------------------------------------
+     *
+     * Advertisement creation automatically creates a
+     * placement rule for the primary placement.
+     *
+     * Delete any remaining rules before deleting the
+     * advertisement so the cleanup is explicit and does
+     * not depend solely on ON DELETE CASCADE.
      */
     if (advertisementId > 0) {
       await pool.query(
         `
-  DELETE FROM advertisement_payments
-  WHERE advertisement_id = $1
-`,
-        [advertisementId]
-      );
-
-      await pool.query(
-        `
-  DELETE FROM advertisement_workflow_history
-  WHERE advertisement_id = $1
-`,
-        [advertisementId]
-      );
-
-      await pool.query(
-        `
-  DELETE FROM advertisements
-  WHERE id = $1
-`,
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+        `,
         [advertisementId]
       );
     }
 
     /*
      * --------------------------------------------------
-     * DELETE PLACEMENT
+     * DELETE ADVERTISEMENT DEPENDENCIES
+     * --------------------------------------------------
+     */
+    if (advertisementId > 0) {
+      await pool.query(
+        `
+          DELETE FROM advertisement_payments
+          WHERE advertisement_id = $1
+        `,
+        [advertisementId]
+      );
+
+      await pool.query(
+        `
+          DELETE FROM advertisement_workflow_history
+          WHERE advertisement_id = $1
+        `,
+        [advertisementId]
+      );
+
+      await pool.query(
+        `
+          DELETE FROM advertisements
+          WHERE id = $1
+        `,
+        [advertisementId]
+      );
+    }
+
+    /*
+     * --------------------------------------------------
+     * DELETE SECONDARY PLACEMENT
+     * --------------------------------------------------
+     */
+    if (placementRuleCrudPlacementId > 0) {
+      await pool.query(
+        `
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+        `,
+        [placementRuleCrudPlacementId]
+      );
+    }
+
+    /*
+     * --------------------------------------------------
+     * DELETE PRIMARY PLACEMENT
      * --------------------------------------------------
      */
     if (placementId > 0) {
       await pool.query(
         `
-  DELETE FROM advertisement_placements
-  WHERE id = $1
-`,
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+        `,
         [placementId]
       );
     }
@@ -594,9 +686,9 @@ RETURNING id
     if (testClientId > 0) {
       await pool.query(
         `
-  DELETE FROM advertisement_clients
-  WHERE id = $1
-`,
+          DELETE FROM advertisement_clients
+          WHERE id = $1
+        `,
         [testClientId]
       );
     }
@@ -609,9 +701,9 @@ RETURNING id
     if (testRoleId > 0) {
       await pool.query(
         `
-  DELETE FROM role_permissions
-  WHERE role_id = $1
-`,
+          DELETE FROM role_permissions
+          WHERE role_id = $1
+        `,
         [testRoleId]
       );
     }
@@ -624,9 +716,9 @@ RETURNING id
     if (testUserId > 0) {
       await pool.query(
         `
-  DELETE FROM user_roles
-  WHERE user_id = $1
-`,
+          DELETE FROM user_roles
+          WHERE user_id = $1
+        `,
         [testUserId]
       );
     }
@@ -639,9 +731,9 @@ RETURNING id
     if (testUserId > 0) {
       await pool.query(
         `
-  DELETE FROM user_sessions
-  WHERE user_id = $1
-`,
+          DELETE FROM user_sessions
+          WHERE user_id = $1
+        `,
         [testUserId]
       );
     }
@@ -654,10 +746,10 @@ RETURNING id
     if (testUserId > 0) {
       await pool.query(
         `
-  UPDATE users
-  SET role_id = NULL
-  WHERE id = $1
-`,
+          UPDATE users
+          SET role_id = NULL
+          WHERE id = $1
+        `,
         [testUserId]
       );
     }
@@ -670,9 +762,9 @@ RETURNING id
     if (testRoleId > 0) {
       await pool.query(
         `
-  DELETE FROM roles
-  WHERE id = $1
-`,
+          DELETE FROM roles
+          WHERE id = $1
+        `,
         [testRoleId]
       );
     }
@@ -685,9 +777,9 @@ RETURNING id
     if (testUserId > 0) {
       await pool.query(
         `
-  DELETE FROM users
-  WHERE id = $1
-`,
+          DELETE FROM users
+          WHERE id = $1
+        `,
         [testUserId]
       );
     }
@@ -699,7 +791,8 @@ RETURNING id
 
   it("should have an active advertisement placement", async () => {
     const placementResult = await pool.query(
-      `         SELECT
+      `
+        SELECT
           id,
           code,
           status,
@@ -723,23 +816,52 @@ RETURNING id
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         clientId: testClientId,
+
+        /*
+         * Runtime placement is explicitly supplied because
+         * placement is mandatory for advertisement creation.
+         *
+         * The advertisement repository persists this placement
+         * through advertisement_placement_rules.
+         */
+        placementId,
+
         name: `Placement Rule Test Advertisement ${timestamp}`,
+        internalName: `placement-rule-test-ad-${timestamp}`,
         advertisementType: "DISPLAY",
         currencyCode: "INR",
-        agreedAmount: 1000,
+        advertisementAmount: 1000,
         destinationUrl: "https://example.com/placement-rule-test",
         isClickable: true,
         openInNewTab: true,
         priority: 10
       });
 
-    expect(response.status).toBe(201);
+    expect(
+      response.status,
+      `Advertisement creation failed: ${JSON.stringify(
+        response.body,
+        null,
+        2
+      )}`
+    ).toBe(201);
+
     expect(response.body.success).toBe(true);
     expect(response.body.data).toBeDefined();
 
     advertisementId = Number(response.body.data.id);
 
     expect(advertisementId).toBeGreaterThan(0);
+
+    /*
+     * The advertisement creation flow automatically creates
+     * an active runtime placement rule for placementId.
+     *
+     * Therefore the response should contain the selected
+     * runtime placement.
+     */
+    expect(response.body.data.placement).toBeDefined();
+    expect(Number(response.body.data.placement.id)).toBe(placementId);
   });
 
   it("POST /api/v1/advertisements/placement-rules - should create a FIXED placement rule", async () => {
@@ -748,7 +870,7 @@ RETURNING id
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         advertisementId,
-        placementId,
+        placementId: placementRuleCrudPlacementId,
         displayOrder: 1,
         insertionType: "FIXED",
         insertionPosition: null,
@@ -756,7 +878,15 @@ RETURNING id
         status: "ACTIVE"
       });
 
-    expect(response.status).toBe(201);
+    expect(
+      response.status,
+      `Placement rule creation failed: ${JSON.stringify(
+        response.body,
+        null,
+        2
+      )}`
+    ).toBe(201);
+
     expect(response.body.success).toBe(true);
     expect(response.body.data).toBeDefined();
 
@@ -764,7 +894,9 @@ RETURNING id
 
     expect(testPlacementRuleId).toBeGreaterThan(0);
     expect(Number(response.body.data.advertisementId)).toBe(advertisementId);
-    expect(Number(response.body.data.placementId)).toBe(placementId);
+    expect(Number(response.body.data.placementId)).toBe(
+      placementRuleCrudPlacementId
+    );
     expect(response.body.data.displayOrder).toBe(1);
     expect(response.body.data.insertionType).toBe("FIXED");
     expect(response.body.data.insertionPosition).toBeNull();
@@ -782,7 +914,9 @@ RETURNING id
     expect(response.body.data).toBeDefined();
     expect(Number(response.body.data.id)).toBe(testPlacementRuleId);
     expect(Number(response.body.data.advertisementId)).toBe(advertisementId);
-    expect(Number(response.body.data.placementId)).toBe(placementId);
+    expect(Number(response.body.data.placementId)).toBe(
+      placementRuleCrudPlacementId
+    );
   });
 
   it("GET /api/v1/advertisements/placement-rules - should list placement rules", async () => {
@@ -795,7 +929,8 @@ RETURNING id
     expect(Array.isArray(response.body.data)).toBe(true);
 
     const createdRule = response.body.data.find(
-      (item: { id: number | string }) => Number(item.id) === testPlacementRuleId
+      (item: { id: number | string }) =>
+        Number(item.id) === testPlacementRuleId
     );
 
     expect(createdRule).toBeDefined();
@@ -812,28 +947,52 @@ RETURNING id
     expect(response.body.success).toBe(true);
     expect(Array.isArray(response.body.data)).toBe(true);
 
+    expect(response.body.data.length).toBeGreaterThan(0);
+
     for (const item of response.body.data) {
       expect(Number(item.advertisementId)).toBe(advertisementId);
     }
+
+    const createdRule = response.body.data.find(
+      (item: { id: number | string }) =>
+        Number(item.id) === testPlacementRuleId
+    );
+
+    expect(createdRule).toBeDefined();
   });
 
   it("GET /api/v1/advertisements/placement-rules - should filter by placementId", async () => {
     const response = await request(app)
-      .get(`/api/v1/advertisements/placement-rules?placementId=${placementId}`)
+      .get(
+        `/api/v1/advertisements/placement-rules?placementId=${placementRuleCrudPlacementId}`
+      )
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
     expect(Array.isArray(response.body.data)).toBe(true);
 
+    expect(response.body.data.length).toBeGreaterThan(0);
+
     for (const item of response.body.data) {
-      expect(Number(item.placementId)).toBe(placementId);
+      expect(Number(item.placementId)).toBe(
+        placementRuleCrudPlacementId
+      );
     }
+
+    const createdRule = response.body.data.find(
+      (item: { id: number | string }) =>
+        Number(item.id) === testPlacementRuleId
+    );
+
+    expect(createdRule).toBeDefined();
   });
 
   it("GET /api/v1/advertisements/placement-rules - should filter by status", async () => {
     const response = await request(app)
-      .get("/api/v1/advertisements/placement-rules?status=ACTIVE")
+      .get(
+        "/api/v1/advertisements/placement-rules?status=ACTIVE"
+      )
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
@@ -841,7 +1000,8 @@ RETURNING id
     expect(Array.isArray(response.body.data)).toBe(true);
 
     const createdRule = response.body.data.find(
-      (item: { id: number | string }) => Number(item.id) === testPlacementRuleId
+      (item: { id: number | string }) =>
+        Number(item.id) === testPlacementRuleId
     );
 
     expect(createdRule).toBeDefined();
@@ -889,7 +1049,7 @@ RETURNING id
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         advertisementId,
-        placementId,
+        placementId: placementRuleCrudPlacementId,
         displayOrder: 10,
         insertionType: "FIXED",
         insertionPosition: null,
@@ -906,7 +1066,7 @@ RETURNING id
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         advertisementId,
-        placementId: placementId + 1,
+        placementId: placementRuleCrudPlacementId,
         displayOrder: 10,
         insertionType: "AFTER_N_ITEMS",
         status: "ACTIVE"
@@ -922,7 +1082,7 @@ RETURNING id
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         advertisementId,
-        placementId: placementId + 1,
+        placementId: placementRuleCrudPlacementId,
         displayOrder: 10,
         insertionType: "FIXED",
         insertionPosition: null,
@@ -945,7 +1105,9 @@ RETURNING id
 
   it("DELETE /api/v1/advertisements/placement-rules/:id - should deactivate the placement rule", async () => {
     const response = await request(app)
-      .delete(`/api/v1/advertisements/placement-rules/${testPlacementRuleId}`)
+      .delete(
+        `/api/v1/advertisements/placement-rules/${testPlacementRuleId}`
+      )
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
@@ -956,7 +1118,8 @@ RETURNING id
 
   it("should verify the placement rule is inactive in the database", async () => {
     const result = await pool.query(
-      `         SELECT
+      `
+        SELECT
           id,
           status
         FROM advertisement_placement_rules
@@ -972,7 +1135,9 @@ RETURNING id
 
   it("DELETE /api/v1/advertisements/placement-rules/:id - should reject a second deactivation", async () => {
     const response = await request(app)
-      .delete(`/api/v1/advertisements/placement-rules/${testPlacementRuleId}`)
+      .delete(
+        `/api/v1/advertisements/placement-rules/${testPlacementRuleId}`
+      )
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(409);
@@ -981,7 +1146,9 @@ RETURNING id
 
   it("GET /api/v1/advertisements/placement-rules/:id - should still return the inactive rule", async () => {
     const response = await request(app)
-      .get(`/api/v1/advertisements/placement-rules/${testPlacementRuleId}`)
+      .get(
+        `/api/v1/advertisements/placement-rules/${testPlacementRuleId}`
+      )
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
@@ -999,7 +1166,8 @@ RETURNING id
 
   it("GET /api/v1/advertisements/placement-rules/:id - should deny access without READ permission", async () => {
     await pool.query(
-      `         DELETE FROM role_permissions
+      `
+        DELETE FROM role_permissions
         WHERE role_id = $1
           AND permission_id = $2
       `,
@@ -1007,36 +1175,37 @@ RETURNING id
     );
 
     const response = await request(app)
-      .get(`/api/v1/advertisements/placement-rules/${testPlacementRuleId}`)
+      .get(
+        `/api/v1/advertisements/placement-rules/${testPlacementRuleId}`
+      )
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(403);
 
     await pool.query(
       `
-INSERT INTO role_permissions
-(
-  role_id,
-  permission_id,
-  created_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $3
-)
-ON CONFLICT (role_id, permission_id) DO NOTHING
-
-
-`,
+        INSERT INTO role_permissions
+        (
+          role_id,
+          permission_id,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3
+        )
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+      `,
       [testRoleId, permissionIds.read, testUserId]
     );
   });
 
   it("GET /api/v1/advertisements/placement-rules - should deny access without READ permission", async () => {
     await pool.query(
-      `         DELETE FROM role_permissions
+      `
+        DELETE FROM role_permissions
         WHERE role_id = $1
           AND permission_id = $2
       `,
@@ -1051,29 +1220,28 @@ ON CONFLICT (role_id, permission_id) DO NOTHING
 
     await pool.query(
       `
-INSERT INTO role_permissions
-(
-  role_id,
-  permission_id,
-  created_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $3
-)
-ON CONFLICT (role_id, permission_id) DO NOTHING
-
-
-`,
+        INSERT INTO role_permissions
+        (
+          role_id,
+          permission_id,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3
+        )
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+      `,
       [testRoleId, permissionIds.read, testUserId]
     );
   });
 
   it("POST /api/v1/advertisements/placement-rules - should deny access without CREATE permission", async () => {
     await pool.query(
-      `         DELETE FROM role_permissions
+      `
+        DELETE FROM role_permissions
         WHERE role_id = $1
           AND permission_id = $2
       `,
@@ -1085,7 +1253,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         advertisementId,
-        placementId: placementId + 1,
+        placementId: placementRuleCrudPlacementId,
         displayOrder: 10,
         insertionType: "FIXED",
         insertionPosition: null,
@@ -1096,29 +1264,28 @@ ON CONFLICT (role_id, permission_id) DO NOTHING
 
     await pool.query(
       `
-INSERT INTO role_permissions
-(
-  role_id,
-  permission_id,
-  created_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $3
-)
-ON CONFLICT (role_id, permission_id) DO NOTHING
-
-
-`,
+        INSERT INTO role_permissions
+        (
+          role_id,
+          permission_id,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3
+        )
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+      `,
       [testRoleId, permissionIds.create, testUserId]
     );
   });
 
   it("PATCH /api/v1/advertisements/placement-rules/:id - should deny access without UPDATE permission", async () => {
     await pool.query(
-      `         DELETE FROM role_permissions
+      `
+        DELETE FROM role_permissions
         WHERE role_id = $1
           AND permission_id = $2
       `,
@@ -1126,7 +1293,9 @@ ON CONFLICT (role_id, permission_id) DO NOTHING
     );
 
     const response = await request(app)
-      .patch(`/api/v1/advertisements/placement-rules/${testPlacementRuleId}`)
+      .patch(
+        `/api/v1/advertisements/placement-rules/${testPlacementRuleId}`
+      )
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         displayOrder: 10
@@ -1136,29 +1305,28 @@ ON CONFLICT (role_id, permission_id) DO NOTHING
 
     await pool.query(
       `
-INSERT INTO role_permissions
-(
-  role_id,
-  permission_id,
-  created_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $3
-)
-ON CONFLICT (role_id, permission_id) DO NOTHING
-
-
-`,
+        INSERT INTO role_permissions
+        (
+          role_id,
+          permission_id,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3
+        )
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+      `,
       [testRoleId, permissionIds.update, testUserId]
     );
   });
 
   it("DELETE /api/v1/advertisements/placement-rules/:id - should deny access without DELETE permission", async () => {
     await pool.query(
-      `         DELETE FROM role_permissions
+      `
+        DELETE FROM role_permissions
         WHERE role_id = $1
           AND permission_id = $2
       `,
@@ -1166,29 +1334,29 @@ ON CONFLICT (role_id, permission_id) DO NOTHING
     );
 
     const response = await request(app)
-      .delete(`/api/v1/advertisements/placement-rules/${testPlacementRuleId}`)
+      .delete(
+        `/api/v1/advertisements/placement-rules/${testPlacementRuleId}`
+      )
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(403);
 
     await pool.query(
       `
-INSERT INTO role_permissions
-(
-  role_id,
-  permission_id,
-  created_by
-)
-VALUES
-(
-  $1,
-  $2,
-  $3
-)
-ON CONFLICT (role_id, permission_id) DO NOTHING
-
-
-`,
+        INSERT INTO role_permissions
+        (
+          role_id,
+          permission_id,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3
+        )
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+      `,
       [testRoleId, permissionIds.delete, testUserId]
     );
   });

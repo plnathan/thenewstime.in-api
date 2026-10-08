@@ -7,26 +7,56 @@ import {
 
 import * as service from "./placement-rule.service.js";
 
+type PlacementRuleStatus = "ACTIVE" | "INACTIVE";
+
+interface PlacementRuleQueryRequest {
+  advertisementId?: unknown;
+  placementId?: unknown;
+  status?: unknown;
+}
+
+const parseOptionalPositiveInteger = (
+  value: unknown
+): number | undefined => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const parseOptionalStatus = (
+  value: unknown
+): PlacementRuleStatus | undefined => {
+  if (value === "ACTIVE" || value === "INACTIVE") {
+    return value;
+  }
+
+  return undefined;
+};
+
 export const getAll = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const query = req.query as {
-      advertisementId?: number;
-      placementId?: number;
-      status?: "ACTIVE" | "INACTIVE";
-    };
+    const query = req.query as PlacementRuleQueryRequest;
+
+    const advertisementId = parseOptionalPositiveInteger(
+      query.advertisementId
+    );
+
+    const placementId = parseOptionalPositiveInteger(query.placementId);
+
+    const status = parseOptionalStatus(query.status);
 
     const rules = await service.getAll({
-      ...(query.advertisementId !== undefined
-        ? { advertisementId: query.advertisementId }
-        : {}),
-      ...(query.placementId !== undefined
-        ? { placementId: query.placementId }
-        : {}),
-      ...(query.status !== undefined ? { status: query.status } : {})
+      ...(advertisementId !== undefined ? { advertisementId } : {}),
+      ...(placementId !== undefined ? { placementId } : {}),
+      ...(status !== undefined ? { status } : {})
     });
 
     sendPaginated(
@@ -99,7 +129,11 @@ export const update = async (
 
     const rule = await service.update(id, req.body, updatedBy);
 
-    sendSuccess(res, "Advertisement placement rule updated successfully", rule);
+    sendSuccess(
+      res,
+      "Advertisement placement rule updated successfully",
+      rule
+    );
   } catch (error) {
     next(error);
   }

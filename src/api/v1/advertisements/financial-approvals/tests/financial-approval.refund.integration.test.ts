@@ -17,6 +17,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
   let financeRoleId = 0;
 
   let testClientId = 0;
+  let testPlacementId = 0;
   let testAdvertisementId = 0;
   let testPaymentId = 0;
 
@@ -37,6 +38,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
   const financeRoleCode = `TEST_AD_FA_REFUND_FINANCE_${timestamp}`;
 
   const testClientCode = `TEST-FA-REFUND-${timestamp}`;
+  const testPlacementCode = `TFA-REFUND-PLACEMENT-${timestamp}`;
 
   const creatorPassword = "Financial_Refund_Creator@123";
   const financePassword = "Financial_Refund_Finance@123";
@@ -380,6 +382,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
       .set("Authorization", `Bearer ${creatorAccessToken}`)
       .send({
         clientId: testClientId,
+        placementId: testPlacementId,
         name: `Financial Refund Temporary Advertisement ${uniqueSuffix}`,
         internalName: `financial-refund-temp-ad-${uniqueSuffix}`,
         advertisementType: "DISPLAY",
@@ -719,6 +722,72 @@ describe("Advertisement Financial Approval Refund Integration", () => {
 
     expect(testClientId).toBeGreaterThan(0);
 
+    const placementResult = await pool.query<{ id: number | string }>(
+      `
+      INSERT INTO advertisement_placements (
+        code,
+        display_name,
+        description,
+        page_type,
+        placement_type,
+        insertion_type,
+        display_order,
+        is_enabled,
+        collapse_when_empty,
+        fallback_behavior,
+        display_frequency,
+        frequency_value,
+        auto_close_enabled,
+        auto_close_seconds,
+        close_button_enabled,
+        close_on_overlay_click,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        'HOME',
+        'HOME_TOP',
+        'FIXED',
+        999,
+        TRUE,
+        TRUE,
+        'HIDE',
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        TRUE,
+        TRUE,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `Financial Refund Integration Test Placement ${timestamp}`,
+        "Temporary placement for financial refund integration tests.",
+        creatorUserId
+      ]
+    );
+
+    const placement = placementResult.rows[0];
+
+    if (placement === undefined) {
+      throw new Error(
+        "Failed to create financial refund integration test placement."
+      );
+    }
+
+    testPlacementId = Number(placement.id);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
     const creatorLoginResponse = await request(app)
       .post("/api/v1/auth/login")
       .send({
@@ -815,6 +884,18 @@ describe("Advertisement Financial Approval Refund Integration", () => {
       try {
         await pool.query(
           `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+          [advertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
           DELETE FROM advertisements
           WHERE id = $1
           `,
@@ -829,10 +910,48 @@ describe("Advertisement Financial Approval Refund Integration", () => {
       try {
         await pool.query(
           `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
           DELETE FROM advertisements
           WHERE id = $1
           `,
           [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+    }
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE placement_id = $1
+          `,
+          [testPlacementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+          `,
+          [testPlacementId]
         );
       } catch {
         // Cleanup should not fail the suite.
@@ -1005,6 +1124,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
       .set("Authorization", `Bearer ${creatorAccessToken}`)
       .send({
         clientId: testClientId,
+        placementId: testPlacementId,
         name: `Financial Refund Advertisement ${timestamp}`,
         internalName: `financial-refund-ad-${timestamp}`,
         advertisementType: "DISPLAY",

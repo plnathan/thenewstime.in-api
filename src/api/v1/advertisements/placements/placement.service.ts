@@ -75,6 +75,20 @@ const validateUpdateConfiguration = (
   }
 };
 
+const validateFormat = async (
+  formatId: number | null | undefined
+): Promise<void> => {
+  if (formatId === undefined || formatId === null) {
+    return;
+  }
+
+  const format = await repository.findActiveFormatById(formatId);
+
+  if (!format) {
+    throw new ApiError(400, "Advertisement format not found or is inactive.");
+  }
+};
+
 export const getAll = async (): Promise<AdvertisementPlacement[]> => {
   return repository.findAll();
 };
@@ -94,6 +108,8 @@ export const create = async (
   userId: number
 ): Promise<AdvertisementPlacement> => {
   validateCreateConfiguration(input);
+
+  await validateFormat(input.formatId);
 
   const existing = await repository.findByCode(input.code.trim());
 
@@ -116,6 +132,8 @@ export const update = async (
   }
 
   validateUpdateConfiguration(existing, input);
+
+  await validateFormat(input.formatId);
 
   const updated = await repository.update(id, input, userId);
 

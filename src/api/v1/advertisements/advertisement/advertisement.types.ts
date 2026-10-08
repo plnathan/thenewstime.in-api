@@ -62,15 +62,21 @@ export interface AdvertisementClient {
   businessName: string | null;
   businessTypeId: number | null;
   businessType: AdvertisementBusinessType | null;
+
   website: string | null;
+
   primaryAddress: string | null;
   communicationAddress: string | null;
+
   contactPerson: string | null;
   contactNo: string | null;
   alternateMobile: string | null;
+
   email: string | null;
   alternateEmail: string | null;
+
   websiteUrl: string | null;
+
   status: AdvertisementClientStatus;
   notes: string | null;
 
@@ -80,6 +86,7 @@ export interface AdvertisementClient {
   adCreationHoldRemarks: string | null;
   adCreationHoldAt: Date | null;
   adCreationHoldBy: number | null;
+
   adCreationUnholdAt: Date | null;
   adCreationUnholdBy: number | null;
   adCreationUnholdReason: string | null;
@@ -88,6 +95,7 @@ export interface AdvertisementClient {
 
   createdBy: number | null;
   updatedBy: number | null;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,8 +104,7 @@ export interface Advertisement extends AdvertisementPricingFields {
   id: number;
 
   /*
-   * advertiserId is retained as a compatibility field for the
-   * existing API/domain model.
+   * Compatibility field retained for the existing API/domain model.
    *
    * The database relationship is represented by client_id.
    * Repository mappers derive advertiserId from clientId.
@@ -142,23 +149,17 @@ export interface Advertisement extends AdvertisementPricingFields {
   onHoldReason: string | null;
 
   /*
-   * Negotiated / agreed commercial amount.
+   * Final commercial advertisement amount.
    *
-   * This is the persisted/source-of-truth financial amount.
+   * This is the persisted/source-of-truth commercial amount.
+   *
+   * It is intentionally separate from standardAmount.
    */
   advertisementAmount: number | null;
 
   /*
-   * API/domain compatibility alias for advertisementAmount.
-   *
-   * This is intentionally optional so existing domain/test fixtures
-   * that only provide advertisementAmount remain type-compatible.
-   *
-   * When returned by the mapper, it should contain the same value
-   * as advertisementAmount.
+   * Financial values persisted on advertisements.
    */
-  agreedAmount?: number | null;
-
   discountPercentage: number;
   discountAmount: number;
 
@@ -187,7 +188,8 @@ export interface AdvertisementListItem extends AdvertisementPricingFields {
   id: number;
 
   /*
-   * Compatibility field. Derived from clientId by the mapper.
+   * Compatibility field.
+   * Derived from clientId by the mapper.
    */
   advertiserId: number;
 
@@ -207,17 +209,9 @@ export interface AdvertisementListItem extends AdvertisementPricingFields {
   endAt: Date | null;
 
   /*
-   * Persisted/source-of-truth negotiated/agreed amount.
+   * Final commercial advertisement amount.
    */
   advertisementAmount: number | null;
-
-  /*
-   * API/domain compatibility alias for advertisementAmount.
-   *
-   * Optional to preserve compatibility with existing list-item
-   * repository/service test fixtures.
-   */
-  agreedAmount?: number | null;
 
   discountPercentage: number;
   discountAmount: number;
@@ -235,10 +229,12 @@ export interface AdvertisementListItem extends AdvertisementPricingFields {
 
 export interface CreateAdvertisementInput {
   clientId?: number | null;
+
   name: string;
 
   internalName?: string;
   advertisementType?: AdvertisementType;
+
   destinationUrl?: string;
 
   priority?: number;
@@ -252,9 +248,9 @@ export interface CreateAdvertisementInput {
   notes?: string;
 
   /*
-   * advertisementAmount is the negotiated/agreed amount.
+   * Final commercial advertisement amount.
    *
-   * It must not be replaced by standardAmount.
+   * This is separate from system-calculated standardAmount.
    */
   advertisementAmount?: number;
 
@@ -270,12 +266,11 @@ export interface CreateAdvertisementInput {
   /*
    * System pricing input.
    *
-   * placementId identifies the placement whose rate card is used.
-   * pricingUnit identifies the applicable system-defined rate-card unit.
-   * quantity is the explicit billable quantity.
+   * The caller supplies only the placement, pricing unit,
+   * and quantity.
    *
-   * Rate amount and standard amount are intentionally not accepted
-   * from the API caller.
+   * Rate amount and standard amount are resolved by the
+   * advertisement service from the effective rate card.
    */
   pricing?: AdvertisementPricingInput;
 }
@@ -285,6 +280,7 @@ export interface UpdateAdvertisementInput {
 
   internalName?: string;
   advertisementType?: AdvertisementType;
+
   destinationUrl?: string;
 
   priority?: number;
@@ -298,20 +294,18 @@ export interface UpdateAdvertisementInput {
   notes?: string;
 
   /*
-   * API/domain name for the negotiated/agreed commercial amount.
+   * Final commercial advertisement amount.
    *
-   * The repository persists this into advertisement_amount.
-   */
-  agreedAmount?: number;
-
-  /*
-   * Compatibility field for existing direct repository callers.
-   *
-   * When both agreedAmount and advertisementAmount are supplied,
-   * agreedAmount is authoritative.
+   * This maps directly to advertisements.advertisement_amount.
    */
   advertisementAmount?: number;
 
+  /*
+   * Discount and advance values are editable financial fields.
+   *
+   * Their calculated monetary values are generated by the
+   * advertisement service and persisted by the repository.
+   */
   discountPercentage?: number;
   advancePercentage?: number;
 
@@ -322,11 +316,14 @@ export interface UpdateAdvertisementInput {
   isHouseAd?: boolean;
 
   /*
-   * Pricing is deliberately not exposed here.
+   * Pricing fields are deliberately not exposed here.
    *
-   * Once an advertisement has been priced/snapshotted, its pricing
-   * history must remain immutable. A future pricing change should
-   * create a new pricing snapshot through a dedicated pricing flow.
+   * standardAmount,
+   * pricingPlacementId,
+   * pricingUnit,
+   * pricingQuantity
+   *
+   * remain immutable after pricing has been created/snapshotted.
    */
 }
 

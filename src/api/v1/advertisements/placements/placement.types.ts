@@ -7,8 +7,8 @@ export type AdvertisementPlacementType =
   | "HOME_SIDEBAR"
   | "NEWS_LIST_TOP"
   | "NEWS_LIST_BETWEEN"
-  | "NEWS_LIST_SIDEBAR"
   | "NEWS_LIST_BOTTOM"
+  | "NEWS_LIST_SIDEBAR"
   | "NEWS_LIST_MODAL"
   | "NEWS_DETAIL_TOP"
   | "NEWS_DETAIL_BETWEEN"
@@ -26,6 +26,16 @@ export type PlacementDisplayFrequency =
 
 export type PlacementStatus = "ACTIVE" | "INACTIVE";
 
+export interface AdvertisementPlacementFormat {
+  id: number;
+  code: string;
+  displayName: string;
+  description: string | null;
+  widthPx: number | null;
+  heightPx: number | null;
+  isResponsive: boolean;
+}
+
 export interface AdvertisementPlacement {
   id: number;
   code: string;
@@ -36,6 +46,17 @@ export interface AdvertisementPlacement {
   insertionType: PlacementInsertionType;
   displayOrder: number;
   isEnabled: boolean;
+
+  /**
+   * System-defined advertisement format assigned to this placement.
+   *
+   * The ID is stored on advertisement_placements.
+   * Dimensions and responsive information are resolved from
+   * advertisement_formats.
+   */
+  formatId: number | null;
+  format: AdvertisementPlacementFormat | null;
+
   collapseWhenEmpty: boolean;
   fallbackBehavior: PlacementFallbackBehavior;
   displayFrequency: PlacementDisplayFrequency | null;
@@ -60,12 +81,19 @@ export interface CreateAdvertisementPlacementInput {
   insertionType?: PlacementInsertionType | undefined;
   displayOrder?: number | undefined;
   isEnabled?: boolean | undefined;
+
+  /**
+   * null = placement intentionally has no assigned format.
+   * number = assign the supplied advertisement format.
+   */
+  formatId?: number | null | undefined;
+
   collapseWhenEmpty?: boolean | undefined;
   fallbackBehavior?: PlacementFallbackBehavior | undefined;
-  displayFrequency?: PlacementDisplayFrequency | undefined;
-  frequencyValue?: number | undefined;
+  displayFrequency?: PlacementDisplayFrequency | null | undefined;
+  frequencyValue?: number | null | undefined;
   autoCloseEnabled?: boolean | undefined;
-  autoCloseSeconds?: number | undefined;
+  autoCloseSeconds?: number | null | undefined;
   closeButtonEnabled?: boolean | undefined;
   closeOnOverlayClick?: boolean | undefined;
   status?: PlacementStatus | undefined;
@@ -79,12 +107,20 @@ export interface UpdateAdvertisementPlacementInput {
   insertionType?: PlacementInsertionType | undefined;
   displayOrder?: number | undefined;
   isEnabled?: boolean | undefined;
+
+  /**
+   * undefined = do not change.
+   * null = explicitly remove the assigned format.
+   * number = assign the supplied format.
+   */
+  formatId?: number | null | undefined;
+
   collapseWhenEmpty?: boolean | undefined;
   fallbackBehavior?: PlacementFallbackBehavior | undefined;
-  displayFrequency?: PlacementDisplayFrequency | undefined;
-  frequencyValue?: number | undefined;
+  displayFrequency?: PlacementDisplayFrequency | null | undefined;
+  frequencyValue?: number | null | undefined;
   autoCloseEnabled?: boolean | undefined;
-  autoCloseSeconds?: number | undefined;
+  autoCloseSeconds?: number | null | undefined;
   closeButtonEnabled?: boolean | undefined;
   closeOnOverlayClick?: boolean | undefined;
   status?: PlacementStatus | undefined;

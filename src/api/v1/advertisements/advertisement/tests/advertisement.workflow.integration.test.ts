@@ -13,6 +13,9 @@ describe("Advertisement Workflow API Integration", () => {
   let testRoleId = 0;
   let testClientId = 0;
 
+  let testPlacementId = 0;
+  let testRateCardId = 0;
+
   let workflowAdvertisementId = 0;
   let rejectionAdvertisementId = 0;
 
@@ -25,6 +28,7 @@ describe("Advertisement Workflow API Integration", () => {
   const testRoleCode = `TEST_AD_WORKFLOW_ROLE_${timestamp}`;
   const testRoleDisplayName = `Advertisement Workflow Integration Test Role ${timestamp}`;
   const testClientCode = `TEST-AD-WORKFLOW-${timestamp}`;
+  const testPlacementCode = `TEST-AD-WORKFLOW-PLACEMENT-${timestamp}`;
 
   const password = "Advertisement_Workflow_Test@123";
 
@@ -57,7 +61,7 @@ describe("Advertisement Workflow API Integration", () => {
 
     expect(superAdminResult.rows.length).toBe(1);
 
-    superAdminRoleId = Number(superAdminResult.rows[0].id);
+    superAdminRoleId = Number(superAdminResult.rows[0]?.id ?? 0);
 
     expect(superAdminRoleId).toBeGreaterThan(0);
 
@@ -103,7 +107,7 @@ describe("Advertisement Workflow API Integration", () => {
       ]
     );
 
-    testUserId = Number(userResult.rows[0].id);
+    testUserId = Number(userResult.rows[0]?.id ?? 0);
 
     expect(testUserId).toBeGreaterThan(0);
 
@@ -145,7 +149,7 @@ describe("Advertisement Workflow API Integration", () => {
       ]
     );
 
-    testRoleId = Number(roleResult.rows[0].id);
+    testRoleId = Number(roleResult.rows[0]?.id ?? 0);
 
     expect(testRoleId).toBeGreaterThan(0);
 
@@ -202,19 +206,6 @@ describe("Advertisement Workflow API Integration", () => {
      * ==========================================================================
      * FIND WORKFLOW PERMISSIONS
      * ==========================================================================
-     *
-     * Phase 2A introduces:
-     *
-     * advertisements.submit
-     * advertisements.approve
-     * advertisements.reject
-     * advertisements.hold
-     * advertisements.resume
-     * advertisements.archive
-     *
-     * Permission creation belongs to the application's permission
-     * management / seed layer, so the test only looks up existing
-     * permissions and assigns them to the temporary role.
      */
 
     const permissionsResult = await pool.query(
@@ -243,7 +234,7 @@ describe("Advertisement Workflow API Integration", () => {
         `Active ADVERTISEMENT/advertisements/${action} permission must exist.`
       ).toBeDefined();
 
-      permissionIds[action] = Number(permission.id);
+      permissionIds[action] = Number(permission?.id ?? 0);
 
       expect(permissionIds[action]).toBeGreaterThan(0);
 
@@ -310,9 +301,134 @@ describe("Advertisement Workflow API Integration", () => {
       ]
     );
 
-    testClientId = Number(clientResult.rows[0].id);
+    testClientId = Number(clientResult.rows[0]?.id ?? 0);
 
     expect(testClientId).toBeGreaterThan(0);
+
+    /*
+     * ==========================================================================
+     * CREATE TEMPORARY ADVERTISEMENT PLACEMENT
+     * ==========================================================================
+     *
+     * The advertisement service now requires every advertisement to have a
+     * valid active placement.
+     *
+     * The workflow tests deliberately create their own placement instead of
+     * relying on unrelated production/master-data records.
+     */
+
+    const placementResult = await pool.query(
+      `
+      INSERT INTO advertisement_placements
+      (
+        code,
+        display_name,
+        description,
+        page_type,
+        placement_type,
+        insertion_type,
+        display_order,
+        is_enabled,
+        collapse_when_empty,
+        fallback_behavior,
+        display_frequency,
+        frequency_value,
+        auto_close_enabled,
+        auto_close_seconds,
+        close_button_enabled,
+        close_on_overlay_click,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        'HOME',
+        'HOME_TOP',
+        'FIXED',
+        999,
+        TRUE,
+        TRUE,
+        'HIDE',
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        TRUE,
+        TRUE,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `Workflow Test Placement ${timestamp}`,
+        "Temporary placement for Advertisement Workflow API integration tests.",
+        testUserId
+      ]
+    );
+
+    testPlacementId = Number(placementResult.rows[0]?.id ?? 0);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * ==========================================================================
+     * CREATE TEMPORARY RATE CARD
+     * ==========================================================================
+     *
+     * The advertisement workflow test does not need to test rate-card
+     * calculation itself. The rate card exists only because the current
+     * advertisement create contract accepts placement through the nested
+     * pricing object and therefore requires an applicable rate card.
+     *
+     * FIXED / 15000 / quantity 1 produces a standard amount of 15000.
+     */
+
+    const rateCardResult = await pool.query(
+      `
+      INSERT INTO advertisement_rate_cards
+      (
+        placement_id,
+        pricing_unit,
+        rate_amount,
+        currency_code,
+        effective_from,
+        effective_to,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES
+      (
+        $1,
+        'FIXED',
+        15000,
+        'INR',
+        $2,
+        $3,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementId,
+        new Date(Date.now() - 24 * 60 * 60 * 1000),
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        testUserId
+      ]
+    );
+
+    testRateCardId = Number(rateCardResult.rows[0]?.id ?? 0);
+
+    expect(testRateCardId).toBeGreaterThan(0);
 
     /*
      * ==========================================================================
@@ -338,7 +454,9 @@ describe("Advertisement Workflow API Integration", () => {
      * DELETE TEST ADVERTISEMENTS
      * ==========================================================================
      *
-     * Workflow history is deleted explicitly before deleting advertisements.
+     * Placement rules are explicitly removed first because the workflow
+     * advertisements created by this suite are linked to the temporary
+     * placement through advertisement_placement_rules.
      */
 
     const advertisementIds = [
@@ -349,18 +467,66 @@ describe("Advertisement Workflow API Integration", () => {
     for (const advertisementId of advertisementIds) {
       await pool.query(
         `
-        DELETE FROM advertisement_workflow_history
-        WHERE advertisement_id = $1
-        `,
+    DELETE FROM advertisement_workflow_history
+    WHERE advertisement_id = $1
+    `,
         [advertisementId]
       );
 
       await pool.query(
         `
-        DELETE FROM advertisements
+    DELETE FROM advertisement_placement_rules
+    WHERE advertisement_id = $1
+    `,
+        [advertisementId]
+      );
+
+      await pool.query(
+        `
+    DELETE FROM advertisement_pricing_snapshots
+    WHERE advertisement_id = $1
+    `,
+        [advertisementId]
+      );
+
+      await pool.query(
+        `
+    DELETE FROM advertisements
+    WHERE id = $1
+    `,
+        [advertisementId]
+      );
+    }
+
+    /*
+     * ==========================================================================
+     * DELETE TEST RATE CARD
+     * ==========================================================================
+     */
+
+    if (testRateCardId > 0) {
+      await pool.query(
+        `
+        DELETE FROM advertisement_rate_cards
         WHERE id = $1
         `,
-        [advertisementId]
+        [testRateCardId]
+      );
+    }
+
+    /*
+     * ==========================================================================
+     * DELETE TEST PLACEMENT
+     * ==========================================================================
+     */
+
+    if (testPlacementId > 0) {
+      await pool.query(
+        `
+        DELETE FROM advertisement_placements
+        WHERE id = $1
+        `,
+        [testPlacementId]
       );
     }
 
@@ -491,7 +657,12 @@ describe("Advertisement Workflow API Integration", () => {
         advertisementAmount: 15000,
         discountPercentage: 0,
         advancePercentage: 0,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        pricing: {
+          placementId: testPlacementId,
+          pricingUnit: "FIXED",
+          quantity: 1
+        }
       });
 
     expect(response.status).toBe(201);
@@ -863,8 +1034,22 @@ describe("Advertisement Workflow API Integration", () => {
         advertisementAmount: 12000,
         discountPercentage: 0,
         advancePercentage: 0,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        pricing: {
+          placementId: testPlacementId,
+          pricingUnit: "FIXED",
+          quantity: 1
+        }
       });
+
+    /*
+     * The temporary rate card used by this test is intentionally 15000.
+     * The second advertisement therefore must not rely on the rate-card
+     * standard amount for its negotiated advertisement amount.
+     *
+     * The current pricing implementation keeps advertisementAmount as the
+     * negotiated/agreed amount while standardAmount is calculated separately.
+     */
 
     expect(response.status).toBe(201);
     expect(response.body.success).toBe(true);
@@ -1208,7 +1393,7 @@ describe("Advertisement Workflow API Integration", () => {
       [workflowAdvertisementId]
     );
 
-    const beforeCount = Number(beforeResult.rows[0].count);
+    const beforeCount = Number(beforeResult.rows[0]?.count ?? 0);
 
     expect(beforeCount).toBe(5);
 
@@ -1230,7 +1415,7 @@ describe("Advertisement Workflow API Integration", () => {
       [workflowAdvertisementId]
     );
 
-    const afterCount = Number(afterResult.rows[0].count);
+    const afterCount = Number(afterResult.rows[0]?.count ?? 0);
 
     expect(afterCount).toBe(beforeCount);
   });

@@ -62,6 +62,7 @@ describe("Advertisement Validation", () => {
     it("should accept a valid advertisement", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Homepage Banner",
         advertisementType: "BANNER",
         destinationUrl: "https://example.com",
@@ -80,6 +81,7 @@ describe("Advertisement Validation", () => {
 
       if (result.success) {
         expect(result.data.clientId).toBe(1);
+        expect(result.data.placementId).toBe(100);
         expect(result.data.name).toBe("Homepage Banner");
         expect(result.data.advertisementType).toBe("BANNER");
         expect(result.data.currencyCode).toBe("INR");
@@ -89,6 +91,7 @@ describe("Advertisement Validation", () => {
     it("should apply the default values", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Display Advertisement",
         destinationUrl: "https://example.com"
       });
@@ -96,6 +99,7 @@ describe("Advertisement Validation", () => {
       expect(result.success).toBe(true);
 
       if (result.success) {
+        expect(result.data.placementId).toBe(100);
         expect(result.data.advertisementType).toBe("DISPLAY");
         expect(result.data.priority).toBe(0);
         expect(result.data.isClickable).toBe(true);
@@ -106,6 +110,7 @@ describe("Advertisement Validation", () => {
 
     it("should reject a missing client ID", () => {
       const result = createAdvertisementSchema.safeParse({
+        placementId: 100,
         name: "Advertisement",
         destinationUrl: "https://example.com"
       });
@@ -116,6 +121,7 @@ describe("Advertisement Validation", () => {
     it("should reject an empty advertisement name", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "",
         destinationUrl: "https://example.com"
       });
@@ -126,6 +132,7 @@ describe("Advertisement Validation", () => {
     it("should trim the advertisement name", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "  Homepage Advertisement  ",
         destinationUrl: "https://example.com"
       });
@@ -133,6 +140,7 @@ describe("Advertisement Validation", () => {
       expect(result.success).toBe(true);
 
       if (result.success) {
+        expect(result.data.placementId).toBe(100);
         expect(result.data.name).toBe("Homepage Advertisement");
       }
     });
@@ -140,6 +148,7 @@ describe("Advertisement Validation", () => {
     it("should reject an invalid advertisement type", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Advertisement",
         advertisementType: "INVALID",
         destinationUrl: "https://example.com"
@@ -151,6 +160,7 @@ describe("Advertisement Validation", () => {
     it("should reject an invalid destination URL", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Advertisement",
         destinationUrl: "not-a-url"
       });
@@ -161,6 +171,7 @@ describe("Advertisement Validation", () => {
     it("should require destination URL for clickable advertisements", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Clickable Advertisement",
         isClickable: true
       });
@@ -182,16 +193,22 @@ describe("Advertisement Validation", () => {
     it("should allow a non-clickable advertisement without a destination URL", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Non-clickable Advertisement",
         isClickable: false
       });
 
       expect(result.success).toBe(true);
+
+      if (result.success) {
+        expect(result.data.placementId).toBe(100);
+      }
     });
 
     it("should reject a negative priority", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Advertisement",
         priority: -1,
         destinationUrl: "https://example.com"
@@ -203,6 +220,7 @@ describe("Advertisement Validation", () => {
     it("should coerce numeric string values", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: "10",
+        placementId: "100",
         name: "Advertisement",
         priority: "5",
         advertisementAmount: "25000",
@@ -213,6 +231,7 @@ describe("Advertisement Validation", () => {
 
       if (result.success) {
         expect(result.data.clientId).toBe(10);
+        expect(result.data.placementId).toBe(100);
         expect(result.data.priority).toBe(5);
         expect(result.data.advertisementAmount).toBe(25000);
       }
@@ -221,6 +240,7 @@ describe("Advertisement Validation", () => {
     it("should reject a negative advertisement amount", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Advertisement",
         advertisementAmount: -100,
         destinationUrl: "https://example.com"
@@ -232,6 +252,7 @@ describe("Advertisement Validation", () => {
     it("should uppercase the currency code", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Advertisement",
         currencyCode: "usd",
         destinationUrl: "https://example.com"
@@ -240,6 +261,7 @@ describe("Advertisement Validation", () => {
       expect(result.success).toBe(true);
 
       if (result.success) {
+        expect(result.data.placementId).toBe(100);
         expect(result.data.currencyCode).toBe("USD");
       }
     });
@@ -247,6 +269,7 @@ describe("Advertisement Validation", () => {
     it("should reject a currency code that is not three characters", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Advertisement",
         currencyCode: "US",
         destinationUrl: "https://example.com"
@@ -258,6 +281,7 @@ describe("Advertisement Validation", () => {
     it("should accept a valid date range", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Scheduled Advertisement",
         destinationUrl: "https://example.com",
         startAt: "2026-10-01T09:00:00+05:30",
@@ -270,6 +294,7 @@ describe("Advertisement Validation", () => {
     it("should reject an end date before the start date", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Invalid Schedule",
         destinationUrl: "https://example.com",
         startAt: "2026-10-10T18:00:00+05:30",
@@ -292,6 +317,7 @@ describe("Advertisement Validation", () => {
     it("should reject an end date equal to the start date", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Invalid Schedule",
         destinationUrl: "https://example.com",
         startAt: "2026-10-01T18:00:00+05:30",
@@ -304,11 +330,16 @@ describe("Advertisement Validation", () => {
     it("should accept an advertisement without a schedule", () => {
       const result = createAdvertisementSchema.safeParse({
         clientId: 1,
+        placementId: 100,
         name: "Unscheduled Advertisement",
         destinationUrl: "https://example.com"
       });
 
       expect(result.success).toBe(true);
+
+      if (result.success) {
+        expect(result.data.placementId).toBe(100);
+      }
     });
   });
 

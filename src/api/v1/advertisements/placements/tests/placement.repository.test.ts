@@ -78,7 +78,7 @@ describe("Advertisement Placement Repository", () => {
 
       expect(String(sql)).toContain("FROM advertisement_placements");
       expect(String(sql)).toContain(
-        "ORDER BY page_type ASC, display_order ASC, id ASC"
+        "ORDER BY p.page_type ASC, p.display_order ASC, p.id ASC"
       );
     });
 
@@ -127,7 +127,7 @@ describe("Advertisement Placement Repository", () => {
       expect(result?.code).toBe("HOME_TOP");
 
       expect(mockedPool.query).toHaveBeenCalledWith(
-        expect.stringContaining("WHERE id = $1"),
+        expect.stringContaining("WHERE p.id = $1"),
         [1]
       );
     });
@@ -155,7 +155,7 @@ describe("Advertisement Placement Repository", () => {
 
       expect(result?.id).toBe(1);
       expect(client.query).toHaveBeenCalledWith(
-        expect.stringContaining("WHERE id = $1"),
+        expect.stringContaining("WHERE p.id = $1"),
         [1]
       );
       expect(mockedPool.query).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe("Advertisement Placement Repository", () => {
       expect(result?.code).toBe("HOME_TOP");
 
       expect(mockedPool.query).toHaveBeenCalledWith(
-        expect.stringContaining("LOWER(code) = LOWER($1)"),
+        expect.stringContaining("LOWER(p.code) = LOWER($1)"),
         ["home_top"]
       );
     });
@@ -305,7 +305,7 @@ describe("Advertisement Placement Repository", () => {
       expect(result?.id).toBe(1);
       expect(mockedPool.query).toHaveBeenCalledTimes(1);
       expect(mockedPool.query).toHaveBeenCalledWith(
-        expect.stringContaining("WHERE id = $1"),
+        expect.stringContaining("WHERE p.id = $1"),
         [1]
       );
     });

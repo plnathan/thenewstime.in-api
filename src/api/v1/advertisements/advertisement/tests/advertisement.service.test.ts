@@ -24,6 +24,8 @@ import type {
   UpdateAdvertisementInput
 } from "../advertisement.types.js";
 
+import type { AdvertisementRuntimePlacement } from "../advertisement.repository.js";
+
 vi.mock("../advertisement.repository.js", () => ({
   findClientById: vi.fn(),
   findById: vi.fn(),
@@ -80,9 +82,73 @@ const createClient = (
   ...overrides
 });
 
+/*
+ * ============================================================================
+ * DEFAULT TEST PLACEMENT
+ * ============================================================================
+ *
+ * The production advertisement service requires a valid placement during
+ * advertisement creation and requires an existing persisted placement during
+ * updates when no new placementId is supplied.
+ *
+ * Keep one reusable runtime placement fixture so tests that are not explicitly
+ * testing placement validation can operate with a valid advertisement.
+ */
+const createRuntimePlacement = (
+  overrides: Partial<AdvertisementRuntimePlacement> = {}
+): AdvertisementRuntimePlacement =>
+  ({
+    id: 10,
+    placementId: 10,
+    placementCode: "TEST_HOME_TOP",
+    pageType: "HOME",
+    placementType: "HOME_TOP",
+    insertionType: "FIXED",
+    formatId: null,
+    format: null,
+    ...overrides
+  }) as AdvertisementRuntimePlacement;
+
+/*
+ * ============================================================================
+ * DATABASE PLACEMENT ROW
+ * ============================================================================
+ *
+ * validatePlacementSelection() now performs a direct pool.query() and expects
+ * a PostgreSQL result containing rows.
+ *
+ * The service-level tests mock the database, so provide a valid placement row
+ * as the default query result. Individual transaction tests can still override
+ * this using mockResolvedValueOnce(), which takes precedence over the default
+ * implementation.
+ *
+ * Both the database-style snake_case fields and the runtime-style fields are
+ * supplied intentionally because the placement validation/repository layer
+ * may consume the database row directly.
+ */
+const createPlacementQueryResult = () => ({
+  rows: [
+    {
+      id: 10,
+      placement_id: 10,
+      placement_code: "TEST_HOME_TOP",
+      placement_name: "Test Home Top",
+      page_type: "HOME",
+      placement_type: "HOME_TOP",
+      insertion_type: "FIXED",
+      format_id: null,
+      format: null,
+      is_enabled: true,
+      status: "ACTIVE"
+    }
+  ]
+});
+
 const createAdvertisement = (
   overrides: Partial<Advertisement> = {}
-): Advertisement => ({
+): Advertisement & {
+  placement: AdvertisementRuntimePlacement | null;
+} => ({
   id: 100,
   advertiserId: 1,
   clientId: 1,
@@ -127,7 +193,7 @@ const createAdvertisement = (
   advertisementAmount: 10000,
 
   standardAmount: null,
-  pricingPlacementId: null,
+  pricingPlacementId: 10,
   pricingUnit: null,
   pricingQuantity: null,
 
@@ -153,6 +219,12 @@ const createAdvertisement = (
   updatedAt: new Date("2026-09-01T10:00:00Z"),
 
   client: createClient(),
+
+  /*
+   * The service requires the advertisement to have a persisted placement
+   * when an update does not explicitly provide a new placement.
+   */
+  placement: createRuntimePlacement(),
 
   ...overrides
 });
@@ -226,7 +298,12 @@ const baseCreateInput = {
   destinationUrl: "https://example.com",
   advertisementType: "DISPLAY" as const,
   isClickable: true,
-  priority: 0
+  priority: 0,
+
+  /*
+   * Placement is mandatory for advertisement creation.
+   */
+  placementId: 10
 };
 
 const calculatedDefaultFinancials = {
@@ -240,6 +317,18 @@ beforeEach(() => {
   vi.clearAllMocks();
 
   connectMock.mockResolvedValue(mockClient);
+
+  /*
+   * validatePlacementSelection() performs pool.query().
+   *
+   * Provide a valid placement result by default so normal creation tests
+   * exercise the actual service flow instead of failing because the database
+   * mock returned undefined.
+   *
+   * Tests which explicitly queue mockResolvedValueOnce() continue to override
+   * this default result.
+   */
+  queryMock.mockResolvedValue(createPlacementQueryResult());
 });
 
 describe("createAdvertisement()", () => {

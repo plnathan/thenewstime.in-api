@@ -57,23 +57,36 @@ const pricingSchema = z.object({
   quantity: z.coerce.number().finite().positive()
 });
 
+/**
+ * Validates financial input relationships.
+ *
+ * advertisementAmount is the final commercial amount.
+ * standardAmount is system-derived and is intentionally not
+ * part of the API input contract here.
+ *
+ * The advertisement service remains responsible for calculating
+ * discountAmount and advanceAmount.
+ *
+ * The explicit `undefined` in the optional property type is
+ * intentional because the project uses
+ * `exactOptionalPropertyTypes: true`.
+ */
 const validateFinancialInputs = (
   value: {
-    agreedAmount?: number | null | undefined;
     advertisementAmount?: number | null | undefined;
     discountPercentage?: number | undefined;
     advancePercentage?: number | undefined;
   },
   context: z.RefinementCtx
 ): void => {
-  const agreedAmount = value.agreedAmount ?? value.advertisementAmount ?? null;
+  const advertisementAmount = value.advertisementAmount ?? null;
 
   const discountPercentage = value.discountPercentage ?? 0;
 
   const advancePercentage = value.advancePercentage ?? 0;
 
   if (
-    agreedAmount === null &&
+    advertisementAmount === null &&
     (discountPercentage > 0 || advancePercentage > 0)
   ) {
     if (discountPercentage > 0) {
@@ -81,7 +94,7 @@ const validateFinancialInputs = (
         code: "custom",
         path: ["discountPercentage"],
         message:
-          "Agreed amount is required when discount percentage is greater than zero."
+          "Advertisement amount is required when discount percentage is greater than zero."
       });
     }
 
@@ -90,33 +103,42 @@ const validateFinancialInputs = (
         code: "custom",
         path: ["advancePercentage"],
         message:
-          "Agreed amount is required when advance percentage is greater than zero."
+          "Advertisement amount is required when advance percentage is greater than zero."
       });
     }
 
     return;
   }
 
-  if (agreedAmount === null) {
+  if (advertisementAmount === null) {
     return;
   }
 
+  /*
+   * At validation level, advertisementAmount is the commercial
+   * amount supplied to the API.
+   *
+   * The service performs the authoritative financial calculation
+   * and persists discountAmount/advanceAmount.
+   */
   const discountAmount = Number(
-    ((agreedAmount * discountPercentage) / 100).toFixed(2)
+    ((advertisementAmount * discountPercentage) / 100).toFixed(2)
   );
 
   const advanceAmount = Number(
-    ((agreedAmount * advancePercentage) / 100).toFixed(2)
+    ((advertisementAmount * advancePercentage) / 100).toFixed(2)
   );
 
-  const netAgreedAmount = Number((agreedAmount - discountAmount).toFixed(2));
+  const netAdvertisementAmount = Number(
+    (advertisementAmount - discountAmount).toFixed(2)
+  );
 
-  if (advanceAmount > netAgreedAmount) {
+  if (advanceAmount > netAdvertisementAmount) {
     context.addIssue({
       code: "custom",
       path: ["advancePercentage"],
       message:
-        "Calculated advance amount cannot be greater than the net agreed amount after discount."
+        "Calculated advance amount cannot be greater than the net advertisement amount after discount."
     });
   }
 };
@@ -151,9 +173,10 @@ export const createAdvertisementSchema = z
 
     notes: optionalTrimmedString,
 
+    /*
+     * Final commercial advertisement amount.
+     */
     advertisementAmount: z.coerce.number().finite().min(0).optional(),
-
-    agreedAmount: z.coerce.number().finite().min(0).optional(),
 
     discountPercentage: optionalPercentage.default(0),
 
@@ -173,18 +196,69 @@ export const createAdvertisementSchema = z
     campaignId: z.coerce.number().int().positive().optional(),
 
     /*
-     * Pricing is optional at advertisement creation.
+     * Configured advertisement placement.
      *
-     * When supplied, all pricing fields are mandatory
-     * and validated by pricingSchema.
+     * The Advertisement API contract uses placementId at the
+     * top level. This is also the field consumed by the current
+     * Advertisement Create workflow and API types.
      *
-     * The rate itself is never accepted from the client.
-     * It is resolved from the active system Rate Card
-     * by the advertisement service.
+     * Do not replace this with a free-text placement value.
+     * The value must reference a configured advertisement
+     * placement.
+     */
+    placementId: z.coerce.number().int().positive().optional(),
+
+    /*
+     * Pricing remains supported for callers that provide the
+     * pricing snapshot inputs explicitly.
+     *
+     * placementId inside pricing is retained for backward
+     * compatibility with the earlier pricing contract.
      */
     pricing: pricingSchema.optional()
   })
   .superRefine((value, context) => {
+    /*
+     * If both placement representations are supplied, they must
+     * refer to the same configured placement.
+     *
+     * This prevents an ambiguous request such as:
+     *
+     * placementId: 10
+     * pricing.placementId: 11
+     */
+    if (
+      value.placementId !== undefined &&
+      value.pricing?.placementId !== undefined &&
+      value.placementId !== value.pricing.placementId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["pricing", "placementId"],
+        message:
+          "placementId and pricing.placementId must reference the same advertisement placement."
+      });
+    }
+
+    /*
+     * A configured advertisement must have a placement.
+     *
+     * The top-level placementId is the current API contract.
+     *
+     * pricing.placementId is accepted as a compatibility path
+     * for existing callers using the older nested pricing model.
+     */
+    if (
+      value.placementId === undefined &&
+      value.pricing?.placementId === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["placementId"],
+        message: "Advertisement placement is required."
+      });
+    }
+
     if (value.isHouseAd) {
       if (value.clientId !== undefined && value.clientId !== null) {
         context.addIssue({
@@ -264,18 +338,12 @@ export const updateAdvertisementSchema = z
     notes: optionalTrimmedString,
 
     /*
-     * advertisementAmount is retained for backward
-     * compatibility with the existing Advertisement API.
+     * Final commercial advertisement amount.
      *
-     * agreedAmount is the preferred financial terminology
-     * for the negotiated/agreed advertisement amount.
-     *
-     * The service/repository resolve both fields to the
-     * advertisements.advertisement_amount column.
+     * This maps directly to
+     * advertisements.advertisement_amount.
      */
     advertisementAmount: z.coerce.number().finite().min(0).optional(),
-
-    agreedAmount: z.coerce.number().finite().min(0).optional(),
 
     discountPercentage: optionalPercentage.optional(),
 
@@ -294,9 +362,41 @@ export const updateAdvertisementSchema = z
 
     campaignId: z.coerce.number().int().positive().optional(),
 
+    /*
+     * Configured advertisement placement.
+     *
+     * The Advertisement Create / Draft workflow uses the
+     * top-level placementId field.
+     */
+    placementId: z.coerce.number().int().positive().optional(),
+
+    /*
+     * Pricing is retained for compatibility with the existing
+     * pricing input contract.
+     *
+     * The service/repository must continue to protect the
+     * system-derived standardAmount and pricing snapshot.
+     */
     pricing: pricingSchema.optional()
   })
   .superRefine((value, context) => {
+    /*
+     * If both placement representations are supplied, they must
+     * refer to the same placement.
+     */
+    if (
+      value.placementId !== undefined &&
+      value.pricing?.placementId !== undefined &&
+      value.placementId !== value.pricing.placementId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["pricing", "placementId"],
+        message:
+          "placementId and pricing.placementId must reference the same advertisement placement."
+      });
+    }
+
     if (value.startAt && value.endAt) {
       const start =
         value.startAt instanceof Date ? value.startAt : new Date(value.startAt);
@@ -317,9 +417,18 @@ export const updateAdvertisementSchema = z
       }
     }
 
+    /*
+     * Validate the financial relationship whenever any
+     * financial value is supplied.
+     *
+     * The service merges omitted values with the current
+     * advertisement before performing the authoritative
+     * calculation.
+     */
     if (
-      value.agreedAmount !== undefined ||
-      value.advertisementAmount !== undefined
+      value.advertisementAmount !== undefined ||
+      value.discountPercentage !== undefined ||
+      value.advancePercentage !== undefined
     ) {
       validateFinancialInputs(value, context);
     }

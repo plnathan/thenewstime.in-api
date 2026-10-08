@@ -269,6 +269,7 @@ function mapAdvertisement(
             id: candidate.creative.id,
             formatId: candidate.format?.id ?? null,
             creativeType: candidate.creative.creativeType,
+            variant: candidate.creative.variant,
             title: candidate.creative.title,
             altText: candidate.creative.altText,
             mediaUrl: candidate.creative.mediaUrl,
@@ -287,6 +288,8 @@ function mapAdvertisement(
             displayName: candidate.format.displayName,
             widthPx: candidate.format.widthPx,
             heightPx: candidate.format.heightPx,
+            mobileWidthPx: candidate.format.mobileWidthPx,
+            mobileHeightPx: candidate.format.mobileHeightPx,
             isResponsive: candidate.format.isResponsive
           }
   };

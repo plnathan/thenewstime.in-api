@@ -18,6 +18,7 @@ describe("Advertisement Financial Approval Discount Integration", () => {
 
   let testClientId = 0;
   let testAdvertisementId = 0;
+  let testPlacementId = 0;
 
   const createdApprovalIds: number[] = [];
 
@@ -33,6 +34,7 @@ describe("Advertisement Financial Approval Discount Integration", () => {
   const financeRoleCode = `TEST_AD_FA_DISCOUNT_FINANCE_${timestamp}`;
 
   const testClientCode = `TEST-FA-DISCOUNT-${timestamp}`;
+  const testPlacementCode = `TEST-FA-DISCOUNT-PLACEMENT-${timestamp}`;
 
   const creatorPassword = "Financial_Discount_Creator@123";
   const financePassword = "Financial_Discount_Finance@123";
@@ -92,9 +94,9 @@ describe("Advertisement Financial Approval Discount Integration", () => {
   };
 
   /*
-   * ==========================================================================
+   * ========================================================================== 
    * TEST SETUP
-   * ==========================================================================
+   * ========================================================================== 
    */
 
   beforeAll(async () => {
@@ -632,6 +634,76 @@ describe("Advertisement Financial Approval Discount Integration", () => {
 
     /*
      * ------------------------------------------------------------------------
+     * Create temporary active advertisement placement.
+     *
+     * Advertisement creation now requires a valid runtime placement.
+     * The advertisement service persists the runtime relationship through
+     * advertisement_placement_rules.
+     * ------------------------------------------------------------------------
+     */
+
+    const placementResult = await pool.query(
+      `
+      INSERT INTO advertisement_placements
+      (
+        code,
+        display_name,
+        description,
+        page_type,
+        placement_type,
+        insertion_type,
+        display_order,
+        is_enabled,
+        collapse_when_empty,
+        fallback_behavior,
+        display_frequency,
+        frequency_value,
+        auto_close_enabled,
+        auto_close_seconds,
+        close_button_enabled,
+        close_on_overlay_click,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        'HOME',
+        'HOME_TOP',
+        'FIXED',
+        999,
+        TRUE,
+        TRUE,
+        'HIDE',
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        TRUE,
+        TRUE,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `Financial Discount Test Placement ${timestamp}`,
+        "Temporary placement for financial discount integration tests.",
+        creatorUserId
+      ]
+    );
+
+    testPlacementId = Number(placementResult.rows[0]?.id ?? 0);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * ------------------------------------------------------------------------
      * Login as Ad Creator.
      * ------------------------------------------------------------------------
      */
@@ -896,6 +968,28 @@ describe("Advertisement Financial Approval Discount Integration", () => {
 
     /*
      * ------------------------------------------------------------------------
+     * Remove runtime placement rules.
+     *
+     * advertisement_placement_rules has no is_active column.
+     * ------------------------------------------------------------------------
+     */
+
+    if (testAdvertisementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------------------
      * Remove advertisement.
      * ------------------------------------------------------------------------
      */
@@ -908,6 +1002,38 @@ describe("Advertisement Financial Approval Discount Integration", () => {
           WHERE id = $1
           `,
           [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------------------
+     * Remove temporary advertisement placement.
+     * ------------------------------------------------------------------------
+     */
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE placement_id = $1
+          `,
+          [testPlacementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+          `,
+          [testPlacementId]
         );
       } catch {
         // Cleanup should not fail the suite.
@@ -1138,7 +1264,8 @@ describe("Advertisement Financial Approval Discount Integration", () => {
         notes:
           "Temporary advertisement for financial discount integration tests.",
         advertisementAmount: 50000,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        placementId: testPlacementId
       });
 
     expect(response.status).toBe(201);
@@ -1148,6 +1275,41 @@ describe("Advertisement Financial Approval Discount Integration", () => {
 
     expect(testAdvertisementId).toBeGreaterThan(0);
     expect(response.body.data.workflowStatus).toBe("DRAFT");
+
+    /*
+     * ------------------------------------------------------------------------
+     * Verify that advertisement creation persisted the runtime placement.
+     *
+     * advertisement_placement_rules does not contain an is_active column.
+     * The current runtime-placement implementation identifies the persisted
+     * rule by advertisement_id + placement_id.
+     * ------------------------------------------------------------------------
+     */
+
+    const placementRuleResult = await pool.query(
+      `
+      SELECT
+        id,
+        advertisement_id,
+        placement_id
+      FROM advertisement_placement_rules
+      WHERE advertisement_id = $1
+        AND placement_id = $2
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [testAdvertisementId, testPlacementId]
+    );
+
+    expect(placementRuleResult.rows.length).toBe(1);
+
+    expect(Number(placementRuleResult.rows[0]?.advertisement_id ?? 0)).toBe(
+      testAdvertisementId
+    );
+
+    expect(Number(placementRuleResult.rows[0]?.placement_id ?? 0)).toBe(
+      testPlacementId
+    );
   });
 
   /*

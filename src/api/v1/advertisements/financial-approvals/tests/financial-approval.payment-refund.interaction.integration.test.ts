@@ -17,6 +17,7 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
 
   let clientId = 0;
   let advertisementId = 0;
+  let placementId = 0;
 
   let paymentId = 0;
 
@@ -58,6 +59,7 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
 
   const clientName = `Financial Interaction Client ${uniqueSuffix}`;
   const advertisementName = `Financial Interaction Advertisement ${uniqueSuffix}`;
+  const placementCode = `TEST-FA-INTERACTION-PLACEMENT-${uniqueSuffix}`;
 
   const getResponseBody = (
     response: request.Response
@@ -351,12 +353,85 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
     return Number(row.id);
   };
 
+  const createPlacement = async (): Promise<number> => {
+    const result = await pool.query<{ id: number | string }>(
+      `
+        INSERT INTO advertisement_placements
+        (
+          code,
+          display_name,
+          description,
+          page_type,
+          placement_type,
+          insertion_type,
+          display_order,
+          is_enabled,
+          collapse_when_empty,
+          fallback_behavior,
+          display_frequency,
+          frequency_value,
+          auto_close_enabled,
+          auto_close_seconds,
+          close_button_enabled,
+          close_on_overlay_click,
+          status,
+          created_by,
+          updated_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          'HOME',
+          'HOME_TOP',
+          'FIXED',
+          999,
+          TRUE,
+          TRUE,
+          'HIDE',
+          NULL,
+          NULL,
+          FALSE,
+          NULL,
+          TRUE,
+          TRUE,
+          'ACTIVE',
+          $4,
+          $4
+        )
+        RETURNING id
+        `,
+      [
+        placementCode,
+        `Financial Interaction Integration Test Placement ${uniqueSuffix}`,
+        "Temporary placement for financial approval payment/refund interaction integration tests.",
+        creatorUserId
+      ]
+    );
+
+    const row = result.rows[0];
+
+    if (row === undefined) {
+      throw new Error(
+        "Failed to create financial interaction test placement."
+      );
+    }
+
+    const id = Number(row.id);
+
+    expect(id).toBeGreaterThan(0);
+
+    return id;
+  };
+
   const createAdvertisement = async (): Promise<number> => {
     const response = await request(app)
       .post("/api/v1/advertisements")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
       .send({
         clientId,
+        placementId,
         name: advertisementName,
         internalName: `financial-interaction-${uniqueSuffix}`,
         advertisementType: "DISPLAY",
@@ -547,6 +622,13 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
 
     clientId = await createClient();
 
+    /*
+     * Advertisement creation now requires a valid runtime placement.
+     * Create a dedicated active placement for this integration suite so
+     * the test does not depend on production placement data.
+     */
+    placementId = await createPlacement();
+
     creatorAccessToken = await login(creatorUsername, creatorPassword);
 
     financeAccessToken = await login(financeUsername, financePassword);
@@ -671,12 +753,47 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
         [advertisementId]
       );
 
+      /*
+       * Advertisement creation automatically creates its runtime
+       * placement rule. Remove that rule before deleting the
+       * advertisement because the rule references the advertisement.
+       */
+      await pool.query(
+        `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+        [advertisementId]
+      );
+
       await pool.query(
         `
           DELETE FROM advertisements
           WHERE id = $1
           `,
         [advertisementId]
+      );
+    }
+
+    /*
+     * Remove the dedicated placement fixture after the advertisement
+     * and its runtime placement rule have been removed.
+     */
+    if (placementId > 0) {
+      await pool.query(
+        `
+          DELETE FROM advertisement_placement_rules
+          WHERE placement_id = $1
+          `,
+        [placementId]
+      );
+
+      await pool.query(
+        `
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+          `,
+        [placementId]
       );
     }
 

@@ -58,7 +58,8 @@ export interface AdvertisementDeliveryCandidate {
 
   creative: {
     id: number;
-    creativeType: "IMAGE" | "HTML" | "TEXT";
+    creativeType: "IMAGE" | "VIDEO" | "HTML" | "TEXT";
+    variant: "DESKTOP" | "MOBILE";
     title: string | null;
     altText: string | null;
     mediaUrl: string;
@@ -76,6 +77,8 @@ export interface AdvertisementDeliveryCandidate {
     description: string | null;
     widthPx: number | null;
     heightPx: number | null;
+    mobileWidthPx: number | null;
+    mobileHeightPx: number | null;
     isResponsive: boolean;
   } | null;
 
@@ -124,7 +127,9 @@ interface AdvertisementDeliveryCandidateDbRow {
   schedule_priority: number;
 
   creative_id: string | number | null;
-  creative_type: "IMAGE" | "HTML" | "TEXT" | null;
+  creative_type: "IMAGE" | "VIDEO" | "HTML" | "TEXT" | null;
+  creative_variant: "DESKTOP" | "MOBILE" | null;
+
   creative_title: string | null;
   creative_alt_text: string | null;
   creative_media_url: string | null;
@@ -140,6 +145,8 @@ interface AdvertisementDeliveryCandidateDbRow {
   format_description: string | null;
   format_width_px: number | null;
   format_height_px: number | null;
+  mobile_format_width_px: number | null;
+  mobile_format_height_px: number | null;
   format_is_responsive: boolean | null;
 
   targets: AdvertisementDeliveryTargetRow[] | null;
@@ -204,7 +211,9 @@ function mapCandidate(
         ? null
         : {
             id: Number(row.creative_id),
-            creativeType: row.creative_type as "IMAGE" | "HTML" | "TEXT",
+            creativeType: row.creative_type as
+              "IMAGE" | "VIDEO" | "HTML" | "TEXT",
+            variant: row.creative_variant as "DESKTOP" | "MOBILE",
             title: row.creative_title,
             altText: row.creative_alt_text,
             mediaUrl: row.creative_media_url,
@@ -225,6 +234,8 @@ function mapCandidate(
             description: row.format_description,
             widthPx: row.format_width_px,
             heightPx: row.format_height_px,
+            mobileWidthPx: row.mobile_format_width_px,
+            mobileHeightPx: row.mobile_format_height_px,
             isResponsive: row.format_is_responsive ?? true
           },
 
@@ -260,154 +271,158 @@ async function findEligibleCandidatesByHouseAdType(
   const result = await db.query<AdvertisementDeliveryCandidateDbRow>(
     `
 SELECT
-a.id AS advertisement_id,
-a.name AS advertisement_name,
-a.advertisement_type,
-a.destination_url,
-a.priority,
-a.open_in_new_tab,
-a.is_clickable,
-a.is_house_ad,
+  a.id AS advertisement_id,
+  a.name AS advertisement_name,
+  a.advertisement_type,
+  a.destination_url,
+  a.priority,
+  a.open_in_new_tab,
+  a.is_clickable,
+  a.is_house_ad,
 
-    p.id AS placement_id,
-    p.code AS placement_code,
-    p.display_name AS placement_display_name,
-    p.description AS placement_description,
-    p.page_type,
-    p.placement_type,
-    p.insertion_type AS placement_insertion_type,
-    p.display_order AS placement_display_order,
-    p.collapse_when_empty,
-    p.fallback_behavior,
-    p.display_frequency,
-    p.frequency_value,
-    p.auto_close_enabled,
-    p.auto_close_seconds,
-    p.close_button_enabled,
-    p.close_on_overlay_click,
+  p.id AS placement_id,
+  p.code AS placement_code,
+  p.display_name AS placement_display_name,
+  p.description AS placement_description,
+  p.page_type,
+  p.placement_type,
+  p.insertion_type AS placement_insertion_type,
+  p.display_order AS placement_display_order,
+  p.collapse_when_empty,
+  p.fallback_behavior,
+  p.display_frequency,
+  p.frequency_value,
+  p.auto_close_enabled,
+  p.auto_close_seconds,
+  p.close_button_enabled,
+  p.close_on_overlay_click,
 
-    pr.id AS placement_rule_id,
-    pr.display_order AS placement_rule_display_order,
-    pr.insertion_type AS placement_rule_insertion_type,
-    pr.insertion_position,
-    pr.max_impressions,
+  pr.id AS placement_rule_id,
+  pr.display_order AS placement_rule_display_order,
+  pr.insertion_type AS placement_rule_insertion_type,
+  pr.insertion_position,
+  pr.max_impressions,
 
-    s.id AS schedule_id,
-    s.priority AS schedule_priority,
+  s.id AS schedule_id,
+  s.priority AS schedule_priority,
 
-    c.id AS creative_id,
-    c.creative_type,
-    c.title AS creative_title,
-    c.alt_text AS creative_alt_text,
-    c.media_url AS creative_media_url,
-    c.thumbnail_url AS creative_thumbnail_url,
-    c.width_px AS creative_width_px,
-    c.height_px AS creative_height_px,
-    c.display_order AS creative_display_order,
-    c.is_primary AS creative_is_primary,
+  c.id AS creative_id,
+  c.creative_type,
+  c.variant AS creative_variant,
+  c.title AS creative_title,
+  c.alt_text AS creative_alt_text,
+  c.media_url AS creative_media_url,
+  c.thumbnail_url AS creative_thumbnail_url,
+  c.width_px AS creative_width_px,
+  c.height_px AS creative_height_px,
+  c.display_order AS creative_display_order,
+  c.is_primary AS creative_is_primary,
 
-    f.id AS format_id,
-    f.code AS format_code,
-    f.display_name AS format_display_name,
-    f.description AS format_description,
-    f.width_px AS format_width_px,
-    f.height_px AS format_height_px,
-    f.is_responsive AS format_is_responsive,
+  f.id AS format_id,
+  f.code AS format_code,
+  f.display_name AS format_display_name,
+  f.description AS format_description,
+  f.width_px AS format_width_px,
+  f.height_px AS format_height_px,
+  f.mobile_width_px AS mobile_format_width_px,
+  f.mobile_height_px AS mobile_format_height_px,
+  f.is_responsive AS format_is_responsive,
 
-    COALESCE(
-      (
-        SELECT jsonb_agg(
-          jsonb_build_object(
-            'id', t.id,
-            'targetType', t.target_type,
-            'targetValue', t.target_value,
-            'isInclude', t.is_include
-          )
-          ORDER BY
-            t.is_include DESC,
-            t.target_type ASC,
-            t.target_value ASC,
-            t.id ASC
+  COALESCE(
+    (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'id', t.id,
+          'targetType', t.target_type,
+          'targetValue', t.target_value,
+          'isInclude', t.is_include
         )
-        FROM advertisement_targets t
-        WHERE t.advertisement_id = a.id
-      ),
-      '[]'::jsonb
-    ) AS targets
+        ORDER BY
+          t.is_include DESC,
+          t.target_type ASC,
+          t.target_value ASC,
+          t.id ASC
+      )
+      FROM advertisement_targets t
+      WHERE t.advertisement_id = a.id
+    ),
+    '[]'::jsonb
+  ) AS targets
 
-  FROM advertisements a
+FROM advertisements a
 
-  INNER JOIN advertisement_placement_rules pr
-    ON pr.advertisement_id = a.id
-   AND pr.status = 'ACTIVE'
+INNER JOIN advertisement_placement_rules pr
+  ON pr.advertisement_id = a.id
+ AND pr.status = 'ACTIVE'
 
-  INNER JOIN advertisement_placements p
-    ON p.id = pr.placement_id
-   AND p.status = 'ACTIVE'
-   AND p.is_enabled = TRUE
-   AND p.page_type = $1
-   AND p.placement_type = $2
-   ${placementIdCondition}
+INNER JOIN advertisement_placements p
+  ON p.id = pr.placement_id
+ AND p.status = 'ACTIVE'
+ AND p.is_enabled = TRUE
+ AND p.page_type = $1
+ AND p.placement_type = $2
+ ${placementIdCondition}
 
-  INNER JOIN advertisement_schedules s
-    ON s.advertisement_id = a.id
-   AND s.placement_id = p.id
-   AND (
-     s.placement_rule_id IS NULL
-     OR s.placement_rule_id = pr.id
-   )
-   AND s.status = 'ACTIVE'
-   AND s.start_at <= $3
-   AND s.end_at > $3
+INNER JOIN advertisement_schedules s
+  ON s.advertisement_id = a.id
+ AND s.placement_id = p.id
+ AND (
+   s.placement_rule_id IS NULL
+   OR s.placement_rule_id = pr.id
+ )
+ AND s.status = 'ACTIVE'
+ AND s.start_at <= $3
+ AND s.end_at > $3
 
-  LEFT JOIN LATERAL (
-    SELECT
-      c.id,
-      c.creative_type,
-      c.title,
-      c.alt_text,
-      c.media_url,
-      c.thumbnail_url,
-      c.width_px,
-      c.height_px,
-      c.display_order,
-      c.is_primary,
-      c.format_id
-    FROM advertisement_creatives c
-    WHERE c.advertisement_id = a.id
-      AND c.status = 'ACTIVE'
-    ORDER BY
-      c.is_primary DESC,
-      c.display_order ASC,
-      c.id ASC
-    LIMIT 1
-  ) c
-    ON TRUE
-
-  LEFT JOIN advertisement_formats f
-    ON f.id = c.format_id
-   AND f.status = 'ACTIVE'
-
-  WHERE a.workflow_status = 'APPROVED'
-    AND a.status = 'ACTIVE'
-    AND a.is_house_ad = ${houseAdOnly ? "TRUE" : "FALSE"}
-    ${houseAdOnly ? "AND p.fallback_behavior = 'HOUSE_AD'" : ""}
-    AND (
-      a.start_at IS NULL
-      OR a.start_at <= $3
-    )
-    AND (
-      a.end_at IS NULL
-      OR a.end_at > $3
-    )
-
+LEFT JOIN LATERAL (
+  SELECT
+    c.id,
+    c.creative_type,
+    c.variant,
+    c.title,
+    c.alt_text,
+    c.media_url,
+    c.thumbnail_url,
+    c.width_px,
+    c.height_px,
+    c.display_order,
+    c.is_primary,
+    c.format_id
+  FROM advertisement_creatives c
+  WHERE c.advertisement_id = a.id
+    AND c.status = 'ACTIVE'
   ORDER BY
-    s.priority DESC,
-    a.priority DESC,
-    pr.display_order ASC,
-    p.display_order ASC,
-    a.id ASC,
-    pr.id ASC
+    c.is_primary DESC,
+    c.display_order ASC,
+    c.id ASC
+  LIMIT 1
+) c
+  ON TRUE
+
+LEFT JOIN advertisement_formats f
+  ON f.id = c.format_id
+ AND f.status = 'ACTIVE'
+
+WHERE a.workflow_status = 'APPROVED'
+  AND a.status = 'ACTIVE'
+  AND a.is_house_ad = ${houseAdOnly ? "TRUE" : "FALSE"}
+  ${houseAdOnly ? "AND p.fallback_behavior = 'HOUSE_AD'" : ""}
+  AND (
+    a.start_at IS NULL
+    OR a.start_at <= $3
+  )
+  AND (
+    a.end_at IS NULL
+    OR a.end_at > $3
+  )
+
+ORDER BY
+  s.priority DESC,
+  a.priority DESC,
+  pr.display_order ASC,
+  p.display_order ASC,
+  a.id ASC,
+  pr.id ASC
 `,
     values
   );

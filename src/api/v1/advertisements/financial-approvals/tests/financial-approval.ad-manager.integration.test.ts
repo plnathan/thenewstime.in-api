@@ -17,6 +17,7 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
   let managerRoleId = 0;
 
   let testClientId = 0;
+  let testPlacementId = 0;
   let testAdvertisementId = 0;
   let testApprovalId = 0;
 
@@ -32,6 +33,7 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
   const managerRoleCode = `TEST_AD_FA_MANAGER_${timestamp}`;
 
   const testClientCode = `TEST-FA-AM-${timestamp}`;
+  const testPlacementCode = `FA_AM_BOUNDARY_${timestamp}`;
 
   const creatorPassword = "Financial_Approval_Creator@123";
   const managerPassword = "Financial_Approval_Ad_Manager@123";
@@ -596,6 +598,75 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
 
     /*
      * ------------------------------------------------------------------------
+     * Create temporary active advertisement placement.
+     *
+     * Advertisement creation now requires a valid runtime placement.
+     * This placement is intentionally created only for this integration test.
+     * ------------------------------------------------------------------------
+     */
+
+    const placementResult = await pool.query(
+      `
+      INSERT INTO advertisement_placements
+      (
+        code,
+        display_name,
+        description,
+        page_type,
+        placement_type,
+        insertion_type,
+        display_order,
+        is_enabled,
+        collapse_when_empty,
+        fallback_behavior,
+        display_frequency,
+        frequency_value,
+        auto_close_enabled,
+        auto_close_seconds,
+        close_button_enabled,
+        close_on_overlay_click,
+        status,
+        created_by,
+        updated_by
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        'HOME',
+        'HOME_TOP',
+        'FIXED',
+        999,
+        TRUE,
+        TRUE,
+        'HIDE',
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        TRUE,
+        TRUE,
+        'ACTIVE',
+        $4,
+        $4
+      )
+      RETURNING id
+      `,
+      [
+        testPlacementCode,
+        `Financial Approval Ad Manager Placement ${timestamp}`,
+        "Temporary placement for Ad Manager financial boundary integration tests.",
+        creatorUserId
+      ]
+    );
+
+    testPlacementId = Number(placementResult.rows[0]?.id ?? 0);
+
+    expect(testPlacementId).toBeGreaterThan(0);
+
+    /*
+     * ------------------------------------------------------------------------
      * Login as Ad Creator.
      * ------------------------------------------------------------------------
      */
@@ -635,6 +706,10 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
     /*
      * ------------------------------------------------------------------------
      * Create advertisement through the Ad Creator.
+     *
+     * placementId is required by the current advertisement creation service.
+     * The placement is the runtime delivery placement; it is not a pricing
+     * placement and does not bypass the pricing/rate-card rules.
      * ------------------------------------------------------------------------
      */
 
@@ -654,7 +729,8 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
         notes:
           "Temporary advertisement for Ad Manager financial boundary tests.",
         advertisementAmount: 50000,
-        currencyCode: "INR"
+        currencyCode: "INR",
+        placementId: testPlacementId
       });
 
     expect(advertisementResponse.status).toBe(201);
@@ -664,6 +740,42 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
 
     expect(testAdvertisementId).toBeGreaterThan(0);
     expect(advertisementResponse.body.data.workflowStatus).toBe("DRAFT");
+
+    /*
+     * ------------------------------------------------------------------------
+     * Verify that the advertisement was persisted against the requested
+     * runtime placement.
+     *
+     * advertisement_placement_rules does not contain an is_active column.
+     * The current runtime-placement implementation identifies the persisted
+     * rule by advertisement_id + placement_id.
+     * ------------------------------------------------------------------------
+     */
+
+    const placementRuleResult = await pool.query(
+      `
+      SELECT
+        id,
+        advertisement_id,
+        placement_id
+      FROM advertisement_placement_rules
+      WHERE advertisement_id = $1
+        AND placement_id = $2
+      ORDER BY id DESC
+      LIMIT 1
+      `,
+      [testAdvertisementId, testPlacementId]
+    );
+
+    expect(placementRuleResult.rows.length).toBe(1);
+
+    expect(Number(placementRuleResult.rows[0]?.advertisement_id ?? 0)).toBe(
+      testAdvertisementId
+    );
+
+    expect(Number(placementRuleResult.rows[0]?.placement_id ?? 0)).toBe(
+      testPlacementId
+    );
 
     /*
      * ------------------------------------------------------------------------
@@ -746,6 +858,9 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
     /*
      * ------------------------------------------------------------------------
      * Remove advertisement.
+     *
+     * Runtime placement rules are normally removed by the advertisement
+     * cascade. They are explicitly removed first as defensive test cleanup.
      * ------------------------------------------------------------------------
      */
 
@@ -753,10 +868,54 @@ describe("Advertisement Financial Approval - Ad Manager RBAC Boundary", () => {
       try {
         await pool.query(
           `
+          DELETE FROM advertisement_placement_rules
+          WHERE advertisement_id = $1
+          `,
+          [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
           DELETE FROM advertisements
           WHERE id = $1
           `,
           [testAdvertisementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------------------
+     * Remove temporary placement.
+     * ------------------------------------------------------------------------
+     */
+
+    if (testPlacementId > 0) {
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placement_rules
+          WHERE placement_id = $1
+          `,
+          [testPlacementId]
+        );
+      } catch {
+        // Cleanup should not fail the suite.
+      }
+
+      try {
+        await pool.query(
+          `
+          DELETE FROM advertisement_placements
+          WHERE id = $1
+          `,
+          [testPlacementId]
         );
       } catch {
         // Cleanup should not fail the suite.
