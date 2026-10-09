@@ -35,6 +35,9 @@ import { calculateAdvertisementAgreedAmountSchema } from "../agreed-amount/agree
 
 import clientRoutes from "../clients/client.routes.js";
 import creativeRoutes from "../creatives/creative.routes.js";
+import * as creativeUploadController from "../creatives/creative-upload.controller.js";
+import { advertisementCreativeUpload } from "../creatives/creative-upload.middleware.js";
+
 import deliveryRoutes from "../delivery/delivery.routes.js";
 import financialApprovalThresholdRoutes from "../financial-approval-thresholds/financial-approval-threshold.routes.js";
 import financialApprovalRoutes from "../financial-approvals/financial-approval.routes.js";
@@ -45,6 +48,7 @@ import pricingRoutes from "../pricing/pricing.routes.js";
 import rateCardRoutes from "../rate-cards/rate-card.routes.js";
 import rotationRoutes from "../rotation/rotation.routes.js";
 import scheduleRoutes from "../schedules/schedule.routes.js";
+import targetRoutes from "../targets/target.routes.js";
 
 const router = Router();
 
@@ -66,6 +70,30 @@ router.use("/delivery", deliveryRoutes);
  * All routes below require authentication.
  */
 router.use(authenticate);
+
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Creative File Upload
+ * --------------------------------------------------------------------------
+ *
+ * POST /api/v1/advertisements/creatives/upload
+ *
+ * Uploads creative files before an advertisement record exists.
+ *
+ * The middleware validates the uploaded file and accepts the multipart
+ * field named "file". The controller uploads it to Cloudinary and returns
+ * the permanent URL, dimensions, and related metadata.
+ *
+ * RBAC:
+ *   Resource: advertisements.creatives
+ *   Action:   create
+ */
+router.post(
+  "/creatives/upload",
+  authorize("ADVERTISEMENT", "advertisements.creatives", "create"),
+  advertisementCreativeUpload.single("file"),
+  creativeUploadController.upload
+);
 
 /**
  * --------------------------------------------------------------------------
@@ -168,11 +196,9 @@ router.use("/placement-rules", placementRuleRoutes);
  * advertisement identifier.
  *
  * RBAC resource:
- *
  *   advertisements.rotation
  *
  * Actions:
- *
  *   read
  *   create
  *   update
@@ -197,9 +223,8 @@ router.use("/schedules", scheduleRoutes);
  * Calculates the agreed amount without persisting it.
  *
  * RBAC:
- *
- *   Resource : advertisements
- *   Action   : read
+ *   Resource: advertisements
+ *   Action:   read
  */
 router.post(
   "/agreed-amount/calculate",
@@ -271,6 +296,21 @@ router.use("/clients", clientRoutes);
  * inside the creative module.
  */
 router.use("/:advertisementId/creatives", creativeRoutes);
+
+/**
+ * --------------------------------------------------------------------------
+ * Advertisement Targeting
+ * --------------------------------------------------------------------------
+ *
+ * Final API paths:
+ *
+ * GET    /api/v1/advertisements/:advertisementId/targets
+ * POST   /api/v1/advertisements/:advertisementId/targets
+ * PUT    /api/v1/advertisements/:advertisementId/targets
+ * PATCH  /api/v1/advertisements/:advertisementId/targets/:targetId
+ * DELETE /api/v1/advertisements/:advertisementId/targets/:targetId
+ */
+router.use("/", targetRoutes);
 
 /**
  * --------------------------------------------------------------------------

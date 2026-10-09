@@ -634,3 +634,13 @@ SELECT
 FROM public.advertisement_placements
 ORDER BY id;
 ------------------------------
+SELECT
+    id,
+    advertisement_id,
+    placement_id,
+    status,
+    created_at
+FROM advertisement_placement_rules
+WHERE advertisement_id = 1688
+ORDER BY id DESC;
+-------------------------------

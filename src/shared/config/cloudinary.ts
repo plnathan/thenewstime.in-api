@@ -2,19 +2,12 @@ import { v2 as cloudinary, type UploadApiResponse } from "cloudinary";
 
 import { ApiError } from "../utils/apiErrorInfo.js";
 
+export type AdvertisementCreativeResourceType = "image" | "video";
+
 const getClient = () => {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-
   const apiKey = process.env.CLOUDINARY_API_KEY;
-
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
-
-  // console.log("Cloudinary configuration:", {
-  //   cloudName,
-  //   apiKeyPresent: Boolean(apiKey),
-  //   apiSecretPresent: Boolean(apiSecret),
-  //   apiSecretLength: apiSecret?.length
-  // });
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new ApiError(500, "Cloudinary configuration is missing.");
@@ -30,6 +23,11 @@ const getClient = () => {
   return cloudinary;
 };
 
+/**
+ * Existing news-media image upload.
+ *
+ * Keep this function compatible with the current news upload service.
+ */
 export const uploadImageBuffer = async (
   buffer: Buffer,
   options: {
@@ -42,20 +40,11 @@ export const uploadImageBuffer = async (
   return new Promise((resolve, reject) => {
     const uploadOptions = {
       folder: options.folder,
-
       resource_type: "image" as const,
-
       overwrite: false,
-
       use_filename: false,
-
       unique_filename: true,
-
-      ...(options.publicId
-        ? {
-            public_id: options.publicId
-          }
-        : {})
+      ...(options.publicId ? { public_id: options.publicId } : {})
     };
 
     const stream = client.uploader.upload_stream(
@@ -63,7 +52,6 @@ export const uploadImageBuffer = async (
       (error, result) => {
         if (error || !result) {
           reject(error ?? new Error("Cloudinary upload failed."));
-
           return;
         }
 
@@ -75,6 +63,51 @@ export const uploadImageBuffer = async (
   });
 };
 
+/**
+ * Upload an advertisement image or video.
+ *
+ * The resource type is explicitly selected so videos are stored
+ * as Cloudinary video resources rather than image resources.
+ */
+export const uploadAdvertisementCreativeBuffer = async (
+  buffer: Buffer,
+  options: {
+    resourceType: AdvertisementCreativeResourceType;
+    folder: string;
+    publicId?: string;
+  }
+): Promise<UploadApiResponse> => {
+  const client = getClient();
+
+  return new Promise((resolve, reject) => {
+    const uploadOptions = {
+      folder: options.folder,
+      resource_type: options.resourceType,
+      overwrite: false,
+      use_filename: false,
+      unique_filename: true,
+      ...(options.publicId ? { public_id: options.publicId } : {})
+    };
+
+    const stream = client.uploader.upload_stream(
+      uploadOptions,
+      (error, result) => {
+        if (error || !result) {
+          reject(error ?? new Error("Advertisement creative upload failed."));
+          return;
+        }
+
+        resolve(result);
+      }
+    );
+
+    stream.end(buffer);
+  });
+};
+
+/**
+ * Existing news-media cleanup.
+ */
 export const deleteCloudinaryImage = async (
   publicId: string
 ): Promise<void> => {
@@ -86,16 +119,16 @@ export const deleteCloudinaryImage = async (
   });
 };
 
+/**
+ * Generate a transformed thumbnail URL for an image.
+ */
 export const getThumbnailUrl = (publicId: string): string => {
   const client = getClient();
 
   return client.url(publicId, {
     secure: true,
-
     resource_type: "image",
-
     type: "upload",
-
     transformation: [
       {
         width: 400,

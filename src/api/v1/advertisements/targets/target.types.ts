@@ -19,3 +19,32 @@ export interface AdvertisementTargetContext {
   district?: string;
   country?: string;
 }
+
+/**
+ * Targeting fields supplied by an API caller.
+ *
+ * advertisementId comes from the validated route parameter,
+ * not from the request body.
+ */
+export interface CreateAdvertisementTargetInput {
+  targetType: AdvertisementTargetType;
+  targetValue: string;
+  isInclude?: boolean;
+}
+
+/**
+ * Complete insert input used by the repository.
+ */
+export interface CreateAdvertisementTargetRecordInput extends CreateAdvertisementTargetInput {
+  advertisementId: number;
+}
+
+export interface UpdateAdvertisementTargetInput {
+  targetType?: AdvertisementTargetType;
+  targetValue?: string;
+  isInclude?: boolean;
+}
+
+export interface ReplaceAdvertisementTargetsInput {
+  targets: CreateAdvertisementTargetInput[];
+}

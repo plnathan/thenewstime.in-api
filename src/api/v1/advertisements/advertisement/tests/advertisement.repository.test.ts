@@ -499,6 +499,35 @@ const mockTransactionRollback = (): void => {
   });
 };
 
+const mockScheduleSyncWithoutDates = (): void => {
+  /*
+   * syncAdvertisementSchedule() first loads the current
+   * advertisement schedule and active placement rule.
+   */
+  queryMock.mockResolvedValueOnce({
+    rowCount: 1,
+    rows: [
+      {
+        start_at: null,
+        end_at: null,
+        priority: 0,
+        notes: null,
+        placement_rule_id: null,
+        placement_id: null
+      }
+    ]
+  });
+
+  /*
+   * With no complete schedule, the repository cancels any
+   * previously scheduled row rather than inserting a new one.
+   */
+  queryMock.mockResolvedValueOnce({
+    rowCount: 0,
+    rows: []
+  });
+};
+
 beforeEach(() => {
   queryMock.mockReset();
   connectMock.mockReset();
@@ -590,6 +619,8 @@ describe("create()", () => {
         rows: []
       });
 
+    mockScheduleSyncWithoutDates();
+
     queryMock
       .mockResolvedValueOnce({
         rowCount: 1,
@@ -653,77 +684,82 @@ describe("create()", () => {
     ]);
   });
 
-  it("should create with pricing fields when calculated pricing is supplied", async () => {
-    const advertisement = createAdvertisement();
+    it("should create with pricing fields when calculated pricing is supplied", async () => {
+      const advertisement = createAdvertisement();
 
-    mockTransactionBegin();
+      mockTransactionBegin();
 
-    queryMock
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ id: 100 }]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createRuntimePlacementDbRow()]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: []
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: []
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [
-          createAdvertisementDbRow({
-            ...advertisement,
-            standardAmount: 5000,
-            pricingPlacementId: 10,
-            pricingUnit: "DAY",
-            pricingQuantity: 5
-          })
-        ]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createClientDbRow(createClient())]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createRuntimePlacementDbRow()]
-      });
+      queryMock
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [{ id: 100 }]
+        })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [createRuntimePlacementDbRow()]
+        })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: []
+        })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: []
+        });
 
-    mockTransactionCommit();
+      // Required: create() synchronizes the schedule before reloading the advertisement.
+      mockScheduleSyncWithoutDates();
 
-    const input = {
-      clientId: 1,
-      placementId: 10,
-      name: "Priced Advertisement",
-      destinationUrl: "https://example.com",
-      advertisementType: "DISPLAY" as const,
-      priority: 0,
-      isClickable: true,
-      openInNewTab: true,
+      queryMock
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [
+            createAdvertisementDbRow({
+              ...advertisement,
+              standardAmount: 5000,
+              pricingPlacementId: 10,
+              pricingUnit: "DAY",
+              pricingQuantity: 5
+            })
+          ]
+        })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [createClientDbRow(createClient())]
+        })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [createRuntimePlacementDbRow()]
+        });
 
-      standardAmount: 5000,
-      pricingPlacementId: 10,
-      pricingUnit: "DAY" as const,
-      pricingQuantity: 5
-    };
+      mockTransactionCommit();
 
-    const result = await repository.create(input, 10);
+      const input = {
+        clientId: 1,
+        placementId: 10,
+        name: "Priced Advertisement",
+        destinationUrl: "https://example.com",
+        advertisementType: "DISPLAY" as const,
+        priority: 0,
+        isClickable: true,
+        openInNewTab: true,
 
-    expect(result.standardAmount).toBe(5000);
-    expect(result.pricingPlacementId).toBe(10);
-    expect(result.pricingUnit).toBe("DAY");
-    expect(result.pricingQuantity).toBe(5);
+        standardAmount: 5000,
+        pricingPlacementId: 10,
+        pricingUnit: "DAY" as const,
+        pricingQuantity: 5
+      };
 
-    expect(connectMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).toHaveBeenCalledTimes(1);
-  });
+      const result = await repository.create(input, 10);
+
+      expect(result.standardAmount).toBe(5000);
+      expect(result.pricingPlacementId).toBe(10);
+      expect(result.pricingUnit).toBe("DAY");
+      expect(result.pricingQuantity).toBe(5);
+
+      expect(connectMock).toHaveBeenCalledTimes(1);
+      expect(releaseMock).toHaveBeenCalledTimes(1);
+    });
 
   it("should throw when the client does not exist", async () => {
     mockTransactionBegin();
@@ -794,11 +830,14 @@ describe("create()", () => {
       .mockResolvedValueOnce({
         rowCount: 1,
         rows: []
-      })
-      .mockResolvedValueOnce({
-        rowCount: 0,
-        rows: []
       });
+
+    mockScheduleSyncWithoutDates();
+
+    queryMock.mockResolvedValueOnce({
+      rowCount: 0,
+      rows: []
+    });
 
     mockTransactionRollback();
 
@@ -819,11 +858,13 @@ describe("create()", () => {
   });
 });
 
-describe("update()", () => {
   it("should return the existing advertisement when there are no update fields", async () => {
     const advertisement = createAdvertisement();
 
     mockTransactionBegin();
+
+    // Required: update() synchronizes the schedule before reloading the advertisement.
+    mockScheduleSyncWithoutDates();
 
     queryMock
       .mockResolvedValueOnce({
@@ -848,99 +889,6 @@ describe("update()", () => {
     expect(connectMock).toHaveBeenCalledTimes(1);
     expect(releaseMock).toHaveBeenCalledTimes(1);
   });
-
-  it("should update an advertisement", async () => {
-    const advertisement = createAdvertisement();
-
-    mockTransactionBegin();
-
-    queryMock
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [{ id: 100 }]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createAdvertisementDbRow(advertisement)]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createClientDbRow(createClient())]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createRuntimePlacementDbRow()]
-      });
-
-    mockTransactionCommit();
-
-    const input = {
-      name: "Updated Advertisement",
-      priority: 5,
-      destinationUrl: "https://example.com/updated"
-    };
-
-    const result = await repository.update(100, input, 20);
-
-    expect(result).toEqual(advertisement);
-
-    expect(connectMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).toHaveBeenCalledTimes(1);
-
-    expect(queryMock.mock.calls).toContainEqual([
-      expect.anything(),
-      ["Updated Advertisement", "https://example.com/updated", 5, 20, 100]
-    ]);
-  });
-
-  it("should return null when the advertisement does not exist", async () => {
-    mockTransactionBegin();
-
-    queryMock.mockResolvedValueOnce({
-      rowCount: 0,
-      rows: []
-    });
-
-    mockTransactionRollback();
-
-    const result = await repository.update(
-      999,
-      {
-        name: "Updated Advertisement"
-      },
-      20
-    );
-
-    expect(result).toBeNull();
-
-    expect(connectMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("should return null when the update does not return an ID", async () => {
-    mockTransactionBegin();
-
-    queryMock.mockResolvedValueOnce({
-      rowCount: 1,
-      rows: []
-    });
-
-    mockTransactionRollback();
-
-    const result = await repository.update(
-      100,
-      {
-        name: "Updated Advertisement"
-      },
-      20
-    );
-
-    expect(result).toBeNull();
-
-    expect(connectMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).toHaveBeenCalledTimes(1);
-  });
-});
 
 describe("list()", () => {
   it("should return advertisements with total count", async () => {

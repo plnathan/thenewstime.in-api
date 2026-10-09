@@ -510,62 +510,63 @@ const attachRuntimePlacement = async (
  * Runtime Placement Rule persistence
  * ------------------------------------------------------------ */
 
-const saveRuntimePlacementRule = async (
+async function saveRuntimePlacementRule(
   advertisementId: number,
   placementId: number,
   userId: number,
   client: PoolClient
-): Promise<void> => {
+): Promise<void> {
   const placementResult = await client.query<{
-    id: number | string;
+    id: number;
     insertion_type: string;
     display_order: number;
     status: string;
     is_enabled: boolean;
   }>(
     `
-            SELECT
-                id,
-                insertion_type,
-                display_order,
-                status,
-                is_enabled
-            FROM advertisement_placements
-            WHERE id = $1
-            LIMIT 1
-            `,
+        SELECT
+            id,
+            insertion_type,
+            display_order,
+            status,
+            is_enabled
+        FROM advertisement_placements
+        WHERE id = $1
+        LIMIT 1
+        `,
     [placementId]
   );
 
   const placement = placementResult.rows[0];
 
   if (!placement) {
-    throw new Error("Advertisement placement was not found.");
+    throw new Error(`Advertisement placement ${placementId} does not exist.`);
   }
 
-  if (placement.status !== "ACTIVE" || !placement.is_enabled) {
-    throw new Error("The selected advertisement placement is not active.");
+  if (placement.status !== "ACTIVE" || placement.is_enabled !== true) {
+    throw new Error(
+      `Advertisement placement ${placementId} is not active or enabled.`
+    );
   }
 
-  /*
-   * Only one ACTIVE runtime Placement Rule should exist for
-   * an advertisement.
-   */
+  // Deactivate the currently active rule(s) for this advertisement.
+  // Do not delete existing rows: (advertisement_id, placement_id)
+  // is protected by the uq_advertisement_placement_rules constraint.
   await client.query(
     `
         UPDATE advertisement_placement_rules
-        SET
-            status = 'INACTIVE'
+        SET status = 'INACTIVE'
         WHERE advertisement_id = $1
           AND status = 'ACTIVE'
         `,
     [advertisementId]
   );
 
+  // Reuse an existing rule for the same placement when one exists.
+  // Otherwise, create a new rule.
   await client.query(
     `
-        INSERT INTO advertisement_placement_rules
-        (
+        INSERT INTO advertisement_placement_rules (
             advertisement_id,
             placement_id,
             display_order,
@@ -575,17 +576,14 @@ const saveRuntimePlacementRule = async (
             status,
             created_by
         )
-        VALUES
-        (
-            $1,
-            $2,
-            $3,
-            $4,
-            NULL,
-            NULL,
-            'ACTIVE',
-            $5
-        )
+        VALUES ($1, $2, $3, $4, NULL, NULL, 'ACTIVE', $5)
+        ON CONFLICT (advertisement_id, placement_id)
+        DO UPDATE SET
+            display_order = EXCLUDED.display_order,
+            insertion_type = EXCLUDED.insertion_type,
+            insertion_position = EXCLUDED.insertion_position,
+            max_impressions = EXCLUDED.max_impressions,
+            status = 'ACTIVE'
         `,
     [
       advertisementId,
@@ -595,7 +593,241 @@ const saveRuntimePlacementRule = async (
       userId
     ]
   );
-};
+}
+
+/* ------------------------------------------------------------
+ * Advertisement Schedule persistence
+ * ------------------------------------------------------------ */
+
+/**
+ * Synchronize the advertisement's current schedule with
+ * public.advertisement_schedules.
+ *
+ * The advertisement's start_at/end_at columns remain the
+ * source of truth for the currently configured schedule.
+ *
+ * Repeated Save Draft operations update the existing SCHEDULED
+ * row instead of creating a duplicate schedule record.
+ *
+ * This function must be called inside the same database
+ * transaction as the advertisement create/update operation.
+ */
+async function syncAdvertisementSchedule(
+  advertisementId: number,
+  userId: number,
+  client: PoolClient
+): Promise<void> {
+  const advertisementResult = await client.query<{
+    start_at: Date | string | null;
+    end_at: Date | string | null;
+    priority: number;
+    notes: string | null;
+    placement_rule_id: number | string | null;
+    placement_id: number | string | null;
+  }>(
+    `
+    SELECT
+      a.start_at,
+      a.end_at,
+      a.priority,
+      a.notes,
+      active_rule.id AS placement_rule_id,
+      active_rule.placement_id
+    FROM advertisements a
+    LEFT JOIN LATERAL (
+      SELECT
+        pr.id,
+        pr.placement_id
+      FROM advertisement_placement_rules pr
+      WHERE pr.advertisement_id = a.id
+        AND pr.status = 'ACTIVE'
+      ORDER BY pr.id DESC
+      LIMIT 1
+    ) active_rule ON TRUE
+    WHERE a.id = $1
+    FOR UPDATE OF a
+    `,
+    [advertisementId]
+  );
+
+  const advertisement = advertisementResult.rows[0];
+
+  if (!advertisement) {
+    throw new Error(
+      `Cannot save the schedule: advertisement ${advertisementId} was not found.`
+    );
+  }
+
+  const startAt = advertisement.start_at
+    ? new Date(advertisement.start_at)
+    : null;
+
+  const endAt = advertisement.end_at ? new Date(advertisement.end_at) : null;
+
+  /*
+   * The schedule table requires both timestamps.
+   *
+   * If the advertisement has no complete schedule, do not
+   * insert an invalid row. Cancel any existing scheduled
+   * row so the schedule table does not retain stale dates.
+   */
+  if (!startAt || !endAt) {
+    await client.query(
+      `
+      UPDATE advertisement_schedules
+      SET
+        status = 'CANCELLED',
+        updated_by = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE advertisement_id = $1
+        AND status = 'SCHEDULED'
+      `,
+      [advertisementId, userId]
+    );
+
+    return;
+  }
+
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+    throw new Error(
+      "Advertisement schedule contains an invalid start or end date/time."
+    );
+  }
+
+  if (endAt.getTime() <= startAt.getTime()) {
+    throw new Error(
+      "Advertisement schedule end date/time must be after its start date/time."
+    );
+  }
+
+  /*
+   * A schedule should follow the currently selected runtime
+   * placement and its active placement rule.
+   */
+  const placementId =
+    advertisement.placement_id === null
+      ? null
+      : Number(advertisement.placement_id);
+
+  const placementRuleId =
+    advertisement.placement_rule_id === null
+      ? null
+      : Number(advertisement.placement_rule_id);
+
+  /*
+   * Reuse the latest scheduled row when one exists.
+   * Lock it to avoid concurrent saves creating duplicates.
+   */
+  const existingScheduleResult = await client.query<{
+    id: number | string;
+  }>(
+    `
+    SELECT id
+    FROM advertisement_schedules
+    WHERE advertisement_id = $1
+      AND status = 'SCHEDULED'
+    ORDER BY id DESC
+    LIMIT 1
+    FOR UPDATE
+    `,
+    [advertisementId]
+  );
+
+  const existingSchedule = existingScheduleResult.rows[0];
+
+  if (existingSchedule) {
+    const scheduleId = Number(existingSchedule.id);
+
+    /*
+     * If old duplicate scheduled rows already exist, cancel
+     * all except the row that will be reused.
+     */
+    await client.query(
+      `
+      UPDATE advertisement_schedules
+      SET
+        status = 'CANCELLED',
+        updated_by = $3,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE advertisement_id = $1
+        AND status = 'SCHEDULED'
+        AND id <> $2
+      `,
+      [advertisementId, scheduleId, userId]
+    );
+
+    await client.query(
+      `
+      UPDATE advertisement_schedules
+      SET
+        placement_id = $2,
+        placement_rule_id = $3,
+        start_at = $4,
+        end_at = $5,
+        status = 'SCHEDULED',
+        priority = $6,
+        notes = $7,
+        updated_by = $8,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      `,
+      [
+        scheduleId,
+        placementId,
+        placementRuleId,
+        startAt,
+        endAt,
+        advertisement.priority,
+        advertisement.notes,
+        userId
+      ]
+    );
+
+    return;
+  }
+
+  /*
+   * First schedule for this advertisement.
+   */
+  await client.query(
+    `
+    INSERT INTO advertisement_schedules (
+      advertisement_id,
+      placement_id,
+      placement_rule_id,
+      start_at,
+      end_at,
+      status,
+      priority,
+      notes,
+      created_by,
+      updated_by
+    )
+    VALUES (
+      $1,
+      $2,
+      $3,
+      $4,
+      $5,
+      'SCHEDULED',
+      $6,
+      $7,
+      $8,
+      $8
+    )
+    `,
+    [
+      advertisementId,
+      placementId,
+      placementRuleId,
+      startAt,
+      endAt,
+      advertisement.priority,
+      advertisement.notes,
+      userId
+    ]
+  );
+}
 
 /* ------------------------------------------------------------
  * Client
@@ -939,6 +1171,8 @@ export const create = async (
       db
     );
 
+    await syncAdvertisementSchedule(advertisementId, createdBy, db);
+
     const advertisement = await findById(advertisementId, db);
 
     if (!advertisement) {
@@ -967,6 +1201,10 @@ export const create = async (
  * Update
  * ------------------------------------------------------------ */
 
+/* ------------------------------------------------------------
+ * Update
+ * ------------------------------------------------------------ */
+
 export const update = async (
   id: number,
   input: UpdateAdvertisementInput &
@@ -990,7 +1228,6 @@ export const update = async (
 
     const addField = (column: string, value: unknown): void => {
       values.push(value);
-
       fields.push(`${column} = $${values.length}`);
     };
 
@@ -1017,14 +1254,18 @@ export const update = async (
     if (input.startAt !== undefined) {
       addField(
         "start_at",
-        input.startAt instanceof Date ? input.startAt : new Date(input.startAt)
+        input.startAt instanceof Date
+          ? input.startAt
+          : new Date(input.startAt)
       );
     }
 
     if (input.endAt !== undefined) {
       addField(
         "end_at",
-        input.endAt instanceof Date ? input.endAt : new Date(input.endAt)
+        input.endAt instanceof Date
+          ? input.endAt
+          : new Date(input.endAt)
       );
     }
 
@@ -1069,9 +1310,11 @@ export const update = async (
     }
 
     /*
-     * It is valid for an Update request to contain only
-     * placementId. Therefore placement persistence must
-     * not depend on advertisements UPDATE having fields.
+     * A placement-only update is valid.
+     *
+     * When advertisement fields are supplied, require the
+     * UPDATE query to return an ID before continuing with
+     * placement or schedule synchronization.
      */
     if (fields.length > 0) {
       values.push(updatedBy);
@@ -1086,18 +1329,27 @@ export const update = async (
         id: number | string;
       }>(
         `
-                    UPDATE advertisements
-                    SET
-                        ${fields.join(", ")},
-                        updated_by = $${updatedByIndex},
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = $${idIndex}
-                    RETURNING id
-                    `,
+        UPDATE advertisements
+        SET
+          ${fields.join(", ")},
+          updated_by = $${updatedByIndex},
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $${idIndex}
+        RETURNING id
+        `,
         values
       );
 
-      if (result.rowCount === 0) {
+      /*
+       * Check both rowCount and the returned row.
+       *
+       * Some database mocks or drivers can report a
+       * non-zero rowCount while returning no rows.
+       * Do not attempt schedule synchronization in that case.
+       */
+      const updatedRow = result.rows[0];
+
+      if (result.rowCount === 0 || !updatedRow) {
         if (ownsTransaction) {
           await db.query("ROLLBACK");
         }
@@ -1106,10 +1358,28 @@ export const update = async (
       }
     }
 
+    /*
+     * Persist a newly selected runtime placement.
+     */
     if (input.placementId !== undefined) {
-      await saveRuntimePlacementRule(id, input.placementId, updatedBy, db);
+      await saveRuntimePlacementRule(
+        id,
+        input.placementId,
+        updatedBy,
+        db
+      );
     }
 
+    /*
+     * Keep the schedule table synchronized with the
+     * advertisement's current dates and active placement.
+     */
+    await syncAdvertisementSchedule(id, updatedBy, db);
+
+    /*
+     * Reload the persisted advertisement, including client
+     * and runtime placement information.
+     */
     const advertisement = await findById(id, db);
 
     if (ownsTransaction) {
