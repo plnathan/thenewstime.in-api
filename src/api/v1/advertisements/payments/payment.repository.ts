@@ -113,16 +113,20 @@ function mapSummary(
   const refundedAmount = Number(row.refunded_amount);
   const netPaidAmount = Number(row.net_paid_amount);
 
+  const advanceRequiredAmount = Number(row.advance_required_amount);
+  const advanceReceivedAmount = Number(row.advance_received_amount);
+  const advancePendingAmount = Number(row.advance_pending_amount);
+
+  /*
+   * advertisement_amount is the agreed amount after commercial discount.
+   * Do not subtract discount_amount a second time. Advance is a collection
+   * requirement, not an additional charge; the net payment ledger already
+   * accounts for payments and refunds.
+   */
   const outstandingAmount =
     advertisementAmount === null
       ? null
-      : Math.max(
-          0,
-          advertisementAmount -
-            discountAmount -
-            adjustmentAmount -
-            netPaidAmount
-        );
+      : Math.max(0, advertisementAmount - adjustmentAmount - netPaidAmount);
 
   return {
     advertisementId: Number(row.advertisement_id),
@@ -132,7 +136,74 @@ function mapSummary(
     verifiedPaymentAmount,
     refundedAmount,
     netPaidAmount,
+    advanceRequiredAmount,
+    advanceReceivedAmount,
+    advancePendingAmount,
     outstandingAmount
+  };
+}
+
+/**
+ * Runs payment validation and insertion while holding a row lock on the
+ * advertisement. All payment-creation paths should use this helper so
+ * concurrent requests cannot overbook the same balance.
+ */
+export async function withAdvertisementLock<T>(
+  advertisementId: number,
+  operation: (executor: PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query<{ id: number }>(
+      "SELECT id FROM advertisements WHERE id = $1 FOR UPDATE",
+      [advertisementId]
+    );
+
+    if (result.rows[0] === undefined) {
+      throw new Error("Advertisement not found.");
+    }
+
+    const value = await operation(client);
+    await client.query("COMMIT");
+    return value;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Amounts already recorded but not verified. These reserve the balance so
+ * additional payment entries cannot collectively exceed the advertisement
+ * amount. Advance reservations are also returned separately.
+ */
+export async function getUnsettledPaymentAmounts(
+  advertisementId: number,
+  executor: DbExecutor = pool
+): Promise<{ total: number; advance: number }> {
+  const result = await executor.query<{ total: string; advance: string }>(
+    `
+      SELECT
+        COALESCE(SUM(amount), 0)::numeric AS total,
+        COALESCE(
+          SUM(CASE WHEN payment_type = 'ADVANCE' THEN amount ELSE 0 END),
+          0
+        )::numeric AS advance
+      FROM advertisement_payments
+      WHERE advertisement_id = $1
+        AND payment_status IN ('PENDING', 'RECEIVED')
+    `,
+    [advertisementId]
+  );
+
+  return {
+    total: Number(result.rows[0]?.total ?? 0),
+    advance: Number(result.rows[0]?.advance ?? 0)
   };
 }
 
@@ -847,6 +918,10 @@ export async function getSummary(
 
       COALESCE(a.adjustment_amount, 0)::numeric AS adjustment_amount,
 
+      /*
+       * Gross verified payments include fully refunded payments.
+       * Refunds are reported separately and subtracted for net paid.
+       */
       COALESCE(
         (
           SELECT SUM(p.amount)
@@ -857,6 +932,9 @@ export async function getSummary(
         0
       )::numeric AS verified_payment_amount,
 
+      /*
+       * Total refunds across all payment types for this advertisement.
+       */
       COALESCE(
         (
           SELECT SUM(pr.amount)
@@ -868,6 +946,10 @@ export async function getSummary(
         0
       )::numeric AS refunded_amount,
 
+      /*
+       * Net collected amount across all verified/refunded payments.
+       * This is the amount used by the outstanding-balance calculation.
+       */
       GREATEST(
         COALESCE(
           (
@@ -890,7 +972,87 @@ export async function getSummary(
           0
         ),
         0
-      )::numeric AS net_paid_amount
+      )::numeric AS net_paid_amount,
+
+      /*
+       * Advance Required:
+       * Use the configured commercial amount directly.
+       * A zero value means no advance is required.
+       */
+      COALESCE(a.advance_amount, 0)::numeric
+        AS advance_required_amount,
+
+      /*
+       * Advance Received:
+       * Sum verified ADVANCE payments, including those later marked
+       * REFUNDED, then subtract refunds linked specifically to those
+       * ADVANCE payments.
+       *
+       * RECEIVED, PENDING and CANCELLED payments do not count.
+       */
+      GREATEST(
+        COALESCE(
+          (
+            SELECT SUM(p.amount)
+            FROM advertisement_payments p
+            WHERE p.advertisement_id = a.id
+              AND p.payment_type = 'ADVANCE'
+              AND p.payment_status IN ('VERIFIED', 'REFUNDED')
+          ),
+          0
+        )
+        -
+        COALESCE(
+          (
+            SELECT SUM(pr.amount)
+            FROM advertisement_payment_refunds pr
+            INNER JOIN advertisement_payments p
+              ON p.id = pr.payment_id
+            WHERE p.advertisement_id = a.id
+              AND p.payment_type = 'ADVANCE'
+              AND p.payment_status IN ('VERIFIED', 'REFUNDED')
+          ),
+          0
+        ),
+        0
+      )::numeric AS advance_received_amount,
+
+      /*
+       * Advance Pending:
+       * The outstanding portion of the configured advance requirement.
+       * It can never be negative if more advance has been collected.
+       */
+      GREATEST(
+        COALESCE(a.advance_amount, 0)
+        -
+        GREATEST(
+          COALESCE(
+            (
+              SELECT SUM(p.amount)
+              FROM advertisement_payments p
+              WHERE p.advertisement_id = a.id
+                AND p.payment_type = 'ADVANCE'
+                AND p.payment_status IN ('VERIFIED', 'REFUNDED')
+            ),
+            0
+          )
+          -
+          COALESCE(
+            (
+              SELECT SUM(pr.amount)
+              FROM advertisement_payment_refunds pr
+              INNER JOIN advertisement_payments p
+                ON p.id = pr.payment_id
+              WHERE p.advertisement_id = a.id
+                AND p.payment_type = 'ADVANCE'
+                AND p.payment_status IN ('VERIFIED', 'REFUNDED')
+            ),
+            0
+          ),
+          0
+        ),
+        0
+      )::numeric AS advance_pending_amount
 
     FROM advertisements a
     WHERE a.id = $1

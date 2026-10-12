@@ -17,6 +17,14 @@ function roundCurrency(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function normalizeOptionalText(
+  value: string | null | undefined
+): string | undefined {
+  const normalized = value?.trim();
+
+  return normalized ? normalized : undefined;
+}
+
 export async function getPaymentById(
   id: number
 ): Promise<AdvertisementPayment> {
@@ -33,6 +41,16 @@ export async function createPayment(
   data: CreateAdvertisementPaymentInput,
   recordedBy: number
 ): Promise<AdvertisementPayment> {
+  if (!Number.isFinite(data.amount) || data.amount <= 0) {
+    throw new ApiError(400, "Payment amount must be greater than zero.");
+  }
+
+  const amount = roundCurrency(data.amount);
+
+  if (amount <= 0) {
+    throw new ApiError(400, "Payment amount must be greater than zero.");
+  }
+
   const advertisementExists = await repository.advertisementExists(
     data.advertisementId
   );
@@ -41,22 +59,13 @@ export async function createPayment(
     throw new ApiError(404, "Advertisement not found.");
   }
 
-  const transactionReference = data.transactionReference?.trim() || undefined;
+  const transactionReference = normalizeOptionalText(data.transactionReference);
 
-  if (transactionReference !== undefined) {
-    const duplicateReference =
-      await repository.hasTransactionReference(transactionReference);
-
-    if (duplicateReference) {
-      throw new ApiError(409, "Transaction reference already exists.");
-    }
-  }
-
-  const notes = data.notes?.trim() || undefined;
+  const notes = normalizeOptionalText(data.notes);
 
   const createData: CreateAdvertisementPaymentInput = {
     advertisementId: data.advertisementId,
-    amount: data.amount,
+    amount,
     paymentType: data.paymentType
   };
 
@@ -76,7 +85,114 @@ export async function createPayment(
     createData.notes = notes;
   }
 
-  return repository.create(createData, recordedBy);
+  /*
+   * Serialize payment creation for the same advertisement.
+   *
+   * The advertisement row lock prevents concurrent requests from
+   * independently consuming the same outstanding or advance balance.
+   */
+  return repository.withAdvertisementLock(
+    data.advertisementId,
+    async (executor) => {
+      const summary = await repository.getSummary(
+        data.advertisementId,
+        executor
+      );
+
+      if (summary === null) {
+        throw new ApiError(404, "Advertisement payment summary not found.");
+      }
+
+      const outstanding = summary.outstandingAmount;
+
+      if (outstanding === null || outstanding <= 0) {
+        throw new ApiError(
+          400,
+          "No outstanding balance remains for this advertisement."
+        );
+      }
+
+      const reservations = await repository.getUnsettledPaymentAmounts(
+        data.advertisementId,
+        executor
+      );
+
+      const availableBalance = roundCurrency(
+        Math.max(0, outstanding - reservations.total)
+      );
+
+      if (availableBalance <= 0) {
+        throw new ApiError(
+          400,
+          "The remaining balance is already covered by payments awaiting verification."
+        );
+      }
+
+      if (amount > availableBalance) {
+        throw new ApiError(
+          400,
+          `Payment amount cannot exceed the available outstanding balance of ${availableBalance.toFixed(2)}.`
+        );
+      }
+
+      const advancePending = roundCurrency(summary.advancePendingAmount);
+      const unsettledAdvance = roundCurrency(reservations.advance);
+
+      const availableAdvance = roundCurrency(
+        Math.max(0, advancePending - unsettledAdvance)
+      );
+
+      /*
+       * The required advance must be settled before a regular or
+       * installment payment can be recorded.
+       */
+      if (advancePending > 0 && data.paymentType !== "ADVANCE") {
+        throw new ApiError(
+          400,
+          `The required advance must be recorded and verified before a ${data.paymentType.toLowerCase()} payment can be recorded. Advance pending: ${advancePending.toFixed(2)}.`
+        );
+      }
+
+      if (data.paymentType === "ADVANCE") {
+        if (advancePending <= 0) {
+          throw new ApiError(400, "No advance payment is currently required.");
+        }
+
+        if (availableAdvance <= 0) {
+          throw new ApiError(
+            400,
+            "An advance payment is already awaiting verification. Verify or cancel it before recording another advance."
+          );
+        }
+
+        if (amount > availableAdvance) {
+          throw new ApiError(
+            400,
+            `Advance payment cannot exceed the remaining advance required of ${availableAdvance.toFixed(2)}.`
+          );
+        }
+      }
+
+      /*
+       * Check transaction references inside the transaction and while
+       * holding the advertisement lock. This avoids duplicate references
+       * for concurrent payment requests on the same advertisement.
+       */
+      if (transactionReference !== undefined) {
+        const duplicateReference = await repository.hasTransactionReference(
+          transactionReference,
+          undefined,
+          executor
+        );
+
+        if (duplicateReference) {
+          throw new ApiError(409, "Transaction reference already exists.");
+        }
+      }
+
+      return repository.create(createData, recordedBy, executor);
+    }
+  );
 }
 
 export async function updatePayment(
@@ -96,26 +212,20 @@ export async function updatePayment(
     );
   }
 
-  const transactionReference =
-    data.transactionReference === undefined
-      ? undefined
-      : data.transactionReference.trim();
-
-  if (transactionReference !== undefined && transactionReference.length > 0) {
-    const duplicateReference = await repository.hasTransactionReference(
-      transactionReference,
-      id
-    );
-
-    if (duplicateReference) {
-      throw new ApiError(409, "Transaction reference already exists.");
-    }
-  }
-
   const updateData: UpdateAdvertisementPaymentInput = {};
 
   if (data.amount !== undefined) {
-    updateData.amount = data.amount;
+    if (!Number.isFinite(data.amount) || data.amount <= 0) {
+      throw new ApiError(400, "Payment amount must be greater than zero.");
+    }
+
+    const amount = roundCurrency(data.amount);
+
+    if (amount <= 0) {
+      throw new ApiError(400, "Payment amount must be greater than zero.");
+    }
+
+    updateData.amount = amount;
   }
 
   if (data.paymentType !== undefined) {
@@ -130,8 +240,28 @@ export async function updatePayment(
     updateData.paymentMethod = data.paymentMethod;
   }
 
-  if (transactionReference !== undefined) {
-    updateData.transactionReference = transactionReference;
+  if (data.transactionReference !== undefined) {
+    const transactionReference = normalizeOptionalText(
+      data.transactionReference
+    );
+
+    if (transactionReference !== undefined) {
+      const duplicateReference = await repository.hasTransactionReference(
+        transactionReference,
+        id
+      );
+
+      if (duplicateReference) {
+        throw new ApiError(
+          409,
+          "This transaction reference is already recorded. Check Payment History and enter the correct unique transaction reference. For cash payments without a transaction reference, leave this field blank."
+        );
+      }
+
+      updateData.transactionReference = transactionReference;
+    } else {
+      updateData.transactionReference = "";
+    }
   }
 
   if (data.notes !== undefined) {
@@ -156,7 +286,6 @@ export async function listPayments(
 
   return {
     items: result.items,
-
     pagination: {
       page,
       pageSize,
@@ -272,14 +401,19 @@ export async function createPaymentRefund(
     throw new ApiError(400, "Only verified payments can be refunded.");
   }
 
+  if (!Number.isFinite(data.amount) || data.amount <= 0) {
+    throw new ApiError(400, "Refund amount must be greater than zero.");
+  }
+
+  const amount = roundCurrency(data.amount);
+
+  if (amount <= 0) {
+    throw new ApiError(400, "Refund amount must be greater than zero.");
+  }
+
   /*
-   * Calculate the remaining refundable amount from the
-   * original payment amount and all existing refund entries.
-   *
-   * IMPORTANT:
-   * Use getTotalRefundedAmount() because this is the
-   * repository method responsible for summing the refund
-   * ledger for a payment.
+   * Calculate the refundable balance from the original payment and
+   * the complete refund ledger for that payment.
    */
   const alreadyRefunded = await repository.getTotalRefundedAmount(
     data.paymentId
@@ -291,35 +425,29 @@ export async function createPaymentRefund(
     throw new ApiError(400, "This payment has no remaining refundable amount.");
   }
 
-  if (data.amount <= 0) {
-    throw new ApiError(400, "Refund amount must be greater than zero.");
-  }
-
-  if (data.amount > refundableAmount) {
+  if (amount > refundableAmount) {
     throw new ApiError(
       400,
-      `Refund amount cannot exceed the remaining refundable amount of ${refundableAmount.toFixed(
-        2
-      )}.`
+      `Refund amount cannot exceed the remaining refundable amount of ${refundableAmount.toFixed(2)}.`
     );
   }
 
   const refundData: CreateAdvertisementPaymentRefundInput = {
     paymentId: data.paymentId,
-    amount: data.amount
+    amount
   };
 
   if (data.refundDate !== undefined) {
     refundData.refundDate = data.refundDate;
   }
 
-  const refundReference = data.refundReference?.trim() || undefined;
+  const refundReference = normalizeOptionalText(data.refundReference);
 
   if (refundReference !== undefined) {
     refundData.refundReference = refundReference;
   }
 
-  const refundReason = data.refundReason?.trim() || undefined;
+  const refundReason = normalizeOptionalText(data.refundReason);
 
   if (refundReason !== undefined) {
     refundData.refundReason = refundReason;
@@ -328,14 +456,13 @@ export async function createPaymentRefund(
   const refund = await repository.createRefund(refundData, refundedBy);
 
   /*
-   * A full refund changes the payment ledger status
-   * to REFUNDED.
+   * A full refund changes the original payment status to REFUNDED.
+   * Partial refunds leave the original payment VERIFIED.
    *
-   * A partial refund deliberately leaves the original
-   * payment as VERIFIED because a refundable balance
-   * remains.
+   * Gross payment history includes VERIFIED and REFUNDED payments.
+   * Refund ledger entries are subtracted when calculating net collections.
    */
-  const remainingAmount = roundCurrency(refundableAmount - data.amount);
+  const remainingAmount = roundCurrency(refundableAmount - amount);
 
   if (remainingAmount === 0) {
     await repository.markRefunded(
@@ -382,6 +509,12 @@ export async function getPaymentSummary(
     refundedAmount: roundCurrency(summary.refundedAmount),
 
     netPaidAmount: roundCurrency(summary.netPaidAmount),
+
+    advanceRequiredAmount: roundCurrency(summary.advanceRequiredAmount),
+
+    advanceReceivedAmount: roundCurrency(summary.advanceReceivedAmount),
+
+    advancePendingAmount: roundCurrency(summary.advancePendingAmount),
 
     outstandingAmount:
       summary.outstandingAmount === null

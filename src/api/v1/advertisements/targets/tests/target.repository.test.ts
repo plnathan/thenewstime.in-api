@@ -28,6 +28,10 @@ const createTargetRow = (
     target_type: AdvertisementTargetType;
     target_value: string;
     is_include: boolean;
+    created_by: string | number | null;
+    updated_by: string | number | null;
+    created_by_name: string | null;
+    updated_by_name: string | null;
     created_at: Date | string;
     updated_at: Date | string;
   }> = {}
@@ -37,12 +41,53 @@ const createTargetRow = (
   target_type: overrides.target_type ?? "STATE",
   target_value: overrides.target_value ?? "tamil-nadu",
   is_include: overrides.is_include ?? true,
+  created_by: overrides.created_by ?? null,
+  updated_by: overrides.updated_by ?? null,
+  created_by_name: overrides.created_by_name ?? null,
+  updated_by_name: overrides.updated_by_name ?? null,
   created_at: overrides.created_at ?? "2026-09-19T10:00:00.000Z",
   updated_at: overrides.updated_at ?? "2026-09-19T11:00:00.000Z"
 });
 
 const createClient = () => ({
   query: vi.fn<MockQueryFunction>()
+});
+
+const expectTargetOrdering = (sql: unknown, includeTargetType: boolean) => {
+  const normalizedSql = String(sql).replace(/\s+/g, " ").trim();
+
+  const expectedOrdering = includeTargetType
+    ? [
+        "ORDER BY",
+        "target.is_include DESC,",
+        "target.target_type ASC,",
+        "target.target_value ASC,",
+        "target.id ASC"
+      ].join(" ")
+    : [
+        "ORDER BY",
+        "target.is_include DESC,",
+        "target.target_value ASC,",
+        "target.id ASC"
+      ].join(" ");
+
+  expect(normalizedSql).toContain(expectedOrdering);
+};
+
+const expectCreatedTarget = (row: ReturnType<typeof createTargetRow>) => ({
+  id: Number(row.id),
+  advertisementId: Number(row.advertisement_id),
+  targetType: row.target_type,
+  targetValue: row.target_value,
+  isInclude: row.is_include,
+  createdBy: row.created_by == null ? null : Number(row.created_by),
+  updatedBy: row.updated_by == null ? null : Number(row.updated_by),
+  createdByName: row.created_by_name,
+  updatedByName: row.updated_by_name,
+  createdAt:
+    row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+  updatedAt:
+    row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at)
 });
 
 describe("target.repository", () => {
@@ -77,6 +122,10 @@ describe("target.repository", () => {
         targetType: "STATE",
         targetValue: "tamil-nadu",
         isInclude: true,
+        createdBy: null,
+        updatedBy: null,
+        createdByName: null,
+        updatedByName: null,
         createdAt,
         updatedAt
       });
@@ -85,8 +134,10 @@ describe("target.repository", () => {
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
-      expect(sql).toContain("FROM advertisement_targets");
-      expect(sql).toContain("WHERE id = $1");
+      expect(sql).toContain("FROM advertisement_targets AS target");
+      expect(sql).toContain("WHERE target.id = $1");
+      expect(sql).toContain("LEFT JOIN users AS created_user");
+      expect(sql).toContain("LEFT JOIN users AS updated_user");
       expect(sql).toContain("LIMIT 1");
       expect(values).toEqual([101]);
     });
@@ -237,8 +288,8 @@ describe("target.repository", () => {
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
-      expect(sql).toContain("FROM advertisement_targets");
-      expect(sql).toContain("WHERE advertisement_id = $1");
+      expect(sql).toContain("FROM advertisement_targets AS target");
+      expect(sql).toContain("WHERE target.advertisement_id = $1");
       expect(sql).not.toContain("advertisement_id = $2");
       expect(values).toEqual([202]);
     });
@@ -250,9 +301,7 @@ describe("target.repository", () => {
 
       const [sql] = queryMock.mock.calls[0] ?? [];
 
-      expect(sql).toContain(
-        "ORDER BY\n        is_include DESC,\n        target_type ASC,\n        target_value ASC,\n        id ASC"
-      );
+      expectTargetOrdering(sql, true);
     });
 
     it("maps all supported target types", async () => {
@@ -382,8 +431,8 @@ describe("target.repository", () => {
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
-      expect(sql).toContain("WHERE advertisement_id = $1");
-      expect(sql).toContain("AND target_type = $2");
+      expect(sql).toContain("WHERE target.advertisement_id = $1");
+      expect(sql).toContain("AND target.target_type = $2");
       expect(values).toEqual([202, "STATE"]);
     });
 
@@ -394,9 +443,7 @@ describe("target.repository", () => {
 
       const [sql] = queryMock.mock.calls[0] ?? [];
 
-      expect(sql).toContain(
-        "ORDER BY\n        is_include DESC,\n        target_value ASC,\n        id ASC"
-      );
+      expectTargetOrdering(sql, false);
     });
 
     it("supports every target type", async () => {
@@ -466,38 +513,37 @@ describe("target.repository", () => {
       const createdAt = new Date("2026-09-19T10:00:00.000Z");
       const updatedAt = new Date("2026-09-19T11:00:00.000Z");
 
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            id: 301,
-            advertisement_id: 202,
-            target_type: "SITE",
-            target_value: "thenewstime.in",
-            is_include: false,
-            created_at: createdAt,
-            updated_at: updatedAt
-          })
-        ]
+      const insertedRow = createTargetRow({
+        id: 301,
+        advertisement_id: 202,
+        target_type: "SITE",
+        target_value: "thenewstime.in",
+        is_include: false,
+        created_by: 1,
+        updated_by: 1,
+        created_at: createdAt,
+        updated_at: updatedAt
       });
+
+      queryMock
+        .mockResolvedValueOnce({
+          rows: [insertedRow]
+        })
+        .mockResolvedValueOnce({
+          rows: [insertedRow]
+        });
 
       const result = await repository.create({
         advertisementId: 202,
         targetType: "SITE",
         targetValue: "thenewstime.in",
-        isInclude: false
-      });
-
-      expect(result).toEqual({
-        id: 301,
-        advertisementId: 202,
-        targetType: "SITE",
-        targetValue: "thenewstime.in",
         isInclude: false,
-        createdAt,
-        updatedAt
+        createdBy: 1,
+        updatedBy: 1
       });
 
-      expect(queryMock).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(expectCreatedTarget(insertedRow));
+      expect(queryMock).toHaveBeenCalledTimes(2);
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
@@ -506,70 +552,87 @@ describe("target.repository", () => {
       expect(sql).toContain("target_type");
       expect(sql).toContain("target_value");
       expect(sql).toContain("is_include");
+      expect(sql).toContain("created_by");
+      expect(sql).toContain("updated_by");
       expect(sql).toContain("RETURNING");
-      expect(values).toEqual([202, "SITE", "thenewstime.in", false]);
+      expect(values).toEqual([202, "SITE", "thenewstime.in", false, 1, 1]);
     });
 
     it("trims the target value before inserting", async () => {
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            target_value: "tamil-nadu"
-          })
-        ]
+      const row = createTargetRow({
+        target_value: "tamil-nadu",
+        created_by: 1,
+        updated_by: 1
       });
+
+      queryMock
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
 
       const result = await repository.create({
         advertisementId: 202,
         targetType: "STATE",
-        targetValue: "  tamil-nadu  "
+        targetValue: "  tamil-nadu  ",
+        createdBy: 1,
+        updatedBy: 1
       });
 
       const [, values] = queryMock.mock.calls[0] ?? [];
 
-      expect(values).toEqual([202, "STATE", "tamil-nadu", true]);
+      expect(values).toEqual([202, "STATE", "tamil-nadu", true, 1, 1]);
       expect(result.targetValue).toBe("tamil-nadu");
+      expect(queryMock).toHaveBeenCalledTimes(2);
     });
 
     it("defaults isInclude to true when it is omitted", async () => {
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            is_include: true
-          })
-        ]
+      const row = createTargetRow({
+        is_include: true,
+        created_by: 1,
+        updated_by: 1
       });
 
-      await repository.create({
-        advertisementId: 202,
-        targetType: "STATE",
-        targetValue: "tamil-nadu"
-      });
-
-      const [, values] = queryMock.mock.calls[0] ?? [];
-
-      expect(values).toEqual([202, "STATE", "tamil-nadu", true]);
-    });
-
-    it("preserves an explicit false isInclude value", async () => {
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            is_include: false
-          })
-        ]
-      });
+      queryMock
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
 
       await repository.create({
         advertisementId: 202,
         targetType: "STATE",
         targetValue: "tamil-nadu",
-        isInclude: false
+        createdBy: 1,
+        updatedBy: 1
       });
 
       const [, values] = queryMock.mock.calls[0] ?? [];
 
-      expect(values).toEqual([202, "STATE", "tamil-nadu", false]);
+      expect(values).toEqual([202, "STATE", "tamil-nadu", true, 1, 1]);
+      expect(queryMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("preserves an explicit false isInclude value", async () => {
+      const row = createTargetRow({
+        is_include: false,
+        created_by: 1,
+        updated_by: 1
+      });
+
+      queryMock
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
+
+      await repository.create({
+        advertisementId: 202,
+        targetType: "STATE",
+        targetValue: "tamil-nadu",
+        isInclude: false,
+        createdBy: 1,
+        updatedBy: 1
+      });
+
+      const [, values] = queryMock.mock.calls[0] ?? [];
+
+      expect(values).toEqual([202, "STATE", "tamil-nadu", false, 1, 1]);
+      expect(queryMock).toHaveBeenCalledTimes(2);
     });
 
     it("throws when the insert returns no row", async () => {
@@ -579,35 +642,45 @@ describe("target.repository", () => {
         repository.create({
           advertisementId: 202,
           targetType: "STATE",
-          targetValue: "tamil-nadu"
+          targetValue: "tamil-nadu",
+          createdBy: 1,
+          updatedBy: 1
         })
       ).rejects.toThrow("Failed to create advertisement targeting rule.");
+
+      expect(queryMock).toHaveBeenCalledTimes(1);
     });
 
     it("uses the supplied PoolClient for insertion", async () => {
       const client = createClient();
-
-      client.query.mockResolvedValueOnce({
-        rows: [createTargetRow()]
+      const row = createTargetRow({
+        created_by: 1,
+        updated_by: 1
       });
+
+      client.query
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
 
       const result = await repository.create(
         {
           advertisementId: 202,
           targetType: "STATE",
-          targetValue: "tamil-nadu"
+          targetValue: "tamil-nadu",
+          createdBy: 1,
+          updatedBy: 1
         },
         client as never
       );
 
       expect(result.id).toBe(101);
-      expect(client.query).toHaveBeenCalledTimes(1);
+      expect(client.query).toHaveBeenCalledTimes(2);
       expect(queryMock).not.toHaveBeenCalled();
 
       const [sql, values] = client.query.mock.calls[0] ?? [];
 
       expect(sql).toContain("INSERT INTO advertisement_targets");
-      expect(values).toEqual([202, "STATE", "tamil-nadu", true]);
+      expect(values).toEqual([202, "STATE", "tamil-nadu", true, 1, 1]);
     });
 
     it("propagates database errors", async () => {
@@ -617,7 +690,9 @@ describe("target.repository", () => {
         repository.create({
           advertisementId: 202,
           targetType: "STATE",
-          targetValue: "tamil-nadu"
+          targetValue: "tamil-nadu",
+          createdBy: 1,
+          updatedBy: 1
         })
       ).rejects.toThrow("database failure");
     });
@@ -625,31 +700,30 @@ describe("target.repository", () => {
 
   describe("update", () => {
     it("updates all supplied fields and returns the mapped row", async () => {
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            id: 101,
-            advertisement_id: 202,
-            target_type: "DISTRICT",
-            target_value: "chennai",
-            is_include: false
-          })
-        ]
-      });
-
-      const result = await repository.update(101, {
-        targetType: "DISTRICT",
-        targetValue: "chennai",
-        isInclude: false
-      });
-
-      expect(result).toMatchObject({
+      const row = createTargetRow({
         id: 101,
-        advertisementId: 202,
-        targetType: "DISTRICT",
-        targetValue: "chennai",
-        isInclude: false
+        advertisement_id: 202,
+        target_type: "DISTRICT",
+        target_value: "chennai",
+        is_include: false,
+        updated_by: 1
       });
+
+      queryMock
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
+
+      const result = await repository.update(
+        101,
+        {
+          targetType: "DISTRICT",
+          targetValue: "chennai",
+          isInclude: false
+        },
+        1
+      );
+
+      expect(result).toEqual(expectCreatedTarget(row));
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
@@ -657,79 +731,109 @@ describe("target.repository", () => {
       expect(sql).toContain("target_type = $1");
       expect(sql).toContain("target_value = $2");
       expect(sql).toContain("is_include = $3");
-      expect(sql).toContain("WHERE id = $4");
+      expect(sql).toContain("updated_by = $4");
+      expect(sql).toContain("WHERE id = $5");
       expect(sql).toContain("RETURNING");
-      expect(values).toEqual(["DISTRICT", "chennai", false, 101]);
+      expect(values).toEqual(["DISTRICT", "chennai", false, 1, 101]);
+      expect(queryMock).toHaveBeenCalledTimes(2);
     });
 
     it("updates only the target type when it is the only supplied field", async () => {
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            target_type: "COUNTRY"
-          })
-        ]
+      const row = createTargetRow({
+        target_type: "COUNTRY",
+        updated_by: 1
       });
 
-      await repository.update(101, {
-        targetType: "COUNTRY"
-      });
+      queryMock
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
+
+      await repository.update(
+        101,
+        {
+          targetType: "COUNTRY"
+        },
+        1
+      );
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
       expect(sql).toContain("target_type = $1");
       expect(sql).not.toContain("target_value =");
       expect(sql).not.toContain("is_include =");
-      expect(sql).toContain("WHERE id = $2");
-      expect(values).toEqual(["COUNTRY", 101]);
+      expect(sql).toContain("updated_by = $2");
+      expect(sql).toContain("WHERE id = $3");
+      expect(values).toEqual(["COUNTRY", 1, 101]);
+      expect(queryMock).toHaveBeenCalledTimes(2);
     });
 
     it("trims targetValue when updating it", async () => {
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            target_value: "kerala"
-          })
-        ]
+      const row = createTargetRow({
+        target_value: "kerala",
+        updated_by: 1
       });
 
-      await repository.update(101, {
-        targetValue: "  kerala  "
-      });
+      queryMock
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
+
+      await repository.update(
+        101,
+        {
+          targetValue: "  kerala  "
+        },
+        1
+      );
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
       expect(sql).toContain("target_value = $1");
-      expect(values).toEqual(["kerala", 101]);
+      expect(sql).toContain("updated_by = $2");
+      expect(sql).toContain("WHERE id = $3");
+      expect(values).toEqual(["kerala", 1, 101]);
+      expect(queryMock).toHaveBeenCalledTimes(2);
     });
 
     it("updates isInclude when its value is false", async () => {
-      queryMock.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            is_include: false
-          })
-        ]
+      const row = createTargetRow({
+        is_include: false,
+        updated_by: 1
       });
 
-      await repository.update(101, {
-        isInclude: false
-      });
+      queryMock
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
+
+      await repository.update(
+        101,
+        {
+          isInclude: false
+        },
+        1
+      );
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
       expect(sql).toContain("is_include = $1");
-      expect(values).toEqual([false, 101]);
+      expect(sql).toContain("updated_by = $2");
+      expect(sql).toContain("WHERE id = $3");
+      expect(values).toEqual([false, 1, 101]);
+      expect(queryMock).toHaveBeenCalledTimes(2);
     });
 
     it("returns null when the target does not exist", async () => {
       queryMock.mockResolvedValueOnce({ rows: [] });
 
-      const result = await repository.update(999, {
-        targetValue: "kerala"
-      });
+      const result = await repository.update(
+        999,
+        {
+          targetValue: "kerala"
+        },
+        1
+      );
 
       expect(result).toBeNull();
+      expect(queryMock).toHaveBeenCalledTimes(1);
     });
 
     it("does not execute an UPDATE when no fields are supplied", async () => {
@@ -737,14 +841,14 @@ describe("target.repository", () => {
         rows: [createTargetRow()]
       });
 
-      const result = await repository.update(101, {});
+      const result = await repository.update(101, {}, 1);
 
       expect(result?.id).toBe(101);
       expect(queryMock).toHaveBeenCalledTimes(1);
 
       const [sql, values] = queryMock.mock.calls[0] ?? [];
 
-      expect(sql).toContain("WHERE id = $1");
+      expect(sql).toContain("WHERE target.id = $1");
       expect(sql).not.toContain("UPDATE advertisement_targets");
       expect(values).toEqual([101]);
     });
@@ -752,7 +856,7 @@ describe("target.repository", () => {
     it("returns null for an empty update when the target does not exist", async () => {
       queryMock.mockResolvedValueOnce({ rows: [] });
 
-      const result = await repository.update(999, {});
+      const result = await repository.update(999, {}, 1);
 
       expect(result).toBeNull();
       expect(queryMock).toHaveBeenCalledTimes(1);
@@ -760,31 +864,34 @@ describe("target.repository", () => {
 
     it("uses the supplied PoolClient for updates", async () => {
       const client = createClient();
-
-      client.query.mockResolvedValueOnce({
-        rows: [
-          createTargetRow({
-            target_value: "kerala"
-          })
-        ]
+      const row = createTargetRow({
+        target_value: "kerala",
+        updated_by: 1
       });
+
+      client.query
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] });
 
       const result = await repository.update(
         101,
         {
           targetValue: "kerala"
         },
+        1,
         client as never
       );
 
       expect(result?.targetValue).toBe("kerala");
-      expect(client.query).toHaveBeenCalledTimes(1);
+      expect(client.query).toHaveBeenCalledTimes(2);
       expect(queryMock).not.toHaveBeenCalled();
 
       const [sql, values] = client.query.mock.calls[0] ?? [];
 
       expect(sql).toContain("UPDATE advertisement_targets");
-      expect(values).toEqual(["kerala", 101]);
+      expect(sql).toContain("updated_by = $2");
+      expect(sql).toContain("WHERE id = $3");
+      expect(values).toEqual(["kerala", 1, 101]);
     });
 
     it("uses the supplied PoolClient for an empty update lookup", async () => {
@@ -794,20 +901,29 @@ describe("target.repository", () => {
         rows: [createTargetRow()]
       });
 
-      const result = await repository.update(101, {}, client as never);
+      const result = await repository.update(101, {}, 1, client as never);
 
       expect(result?.id).toBe(101);
       expect(client.query).toHaveBeenCalledTimes(1);
       expect(queryMock).not.toHaveBeenCalled();
+
+      const [sql, values] = client.query.mock.calls[0] ?? [];
+
+      expect(sql).toContain("WHERE target.id = $1");
+      expect(values).toEqual([101]);
     });
 
     it("propagates database errors", async () => {
       queryMock.mockRejectedValueOnce(new Error("database failure"));
 
       await expect(
-        repository.update(101, {
-          targetValue: "kerala"
-        })
+        repository.update(
+          101,
+          {
+            targetValue: "kerala"
+          },
+          1
+        )
       ).rejects.toThrow("database failure");
     });
   });

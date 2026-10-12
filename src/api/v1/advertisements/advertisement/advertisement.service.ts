@@ -62,85 +62,97 @@ interface AdvertisementFinancialCalculation {
 
 const calculateAdvertisementFinancials = (
   advertisementAmount: number | null | undefined,
-
   discountPercentage: number | undefined,
-
-  advancePercentage: number | undefined
+  advancePercentage: number | undefined,
+  standardAmount?: number | null
 ): AdvertisementFinancialCalculation => {
-  const amount =
+  const requestedAmount =
     advertisementAmount === undefined || advertisementAmount === null
       ? null
-      : advertisementAmount;
+      : Number(advertisementAmount);
+
+  const standard =
+    standardAmount === undefined || standardAmount === null
+      ? null
+      : Number(standardAmount);
 
   const discountRate = discountPercentage ?? 0;
-
   const advanceRate = advancePercentage ?? 0;
 
-  if (discountRate < 0 || discountRate > 100) {
+  if (
+    !Number.isFinite(discountRate) ||
+    discountRate < 0 ||
+    discountRate > 100
+  ) {
     throw new ApiError(400, "Discount percentage must be between 0 and 100.");
   }
 
-  if (advanceRate < 0 || advanceRate > 100) {
+  if (!Number.isFinite(advanceRate) || advanceRate < 0 || advanceRate > 100) {
     throw new ApiError(400, "Advance percentage must be between 0 and 100.");
   }
 
-  if (amount === null) {
-    if (discountRate > 0) {
-      throw new ApiError(
-        400,
-        "Advertisement amount is required when discount percentage is greater than zero."
-      );
-    }
+  if (
+    requestedAmount !== null &&
+    (!Number.isFinite(requestedAmount) || requestedAmount < 0)
+  ) {
+    throw new ApiError(
+      400,
+      "Advertisement Amount must be a valid non-negative amount."
+    );
+  }
 
-    if (advanceRate > 0) {
+  if (standard !== null && (!Number.isFinite(standard) || standard < 0)) {
+    throw new ApiError(
+      400,
+      "Standard Amount must be a valid non-negative amount."
+    );
+  }
+
+  /*
+   * Standard Amount is the system-derived rate-card reference.
+   * Advertisement Amount is a separately negotiated commercial amount.
+   * Never derive the latter merely because the former exists.
+   */
+  if (requestedAmount === null) {
+    if (discountRate > 0 || advanceRate > 0) {
       throw new ApiError(
         400,
-        "Advertisement amount is required when advance percentage is greater than zero."
+        "Advertisement Amount is required when discount or advance percentages are configured."
       );
     }
 
     return {
       advertisementAmount: null,
-
       discountPercentage: discountRate,
-
       discountAmount: 0,
-
       advancePercentage: advanceRate,
-
       advanceAmount: 0
     };
   }
 
-  const discountAmount = roundToTwo((amount * discountRate) / 100);
+  const discountAmount = roundToTwo((requestedAmount * discountRate) / 100);
 
-  const advanceAmount = roundToTwo((amount * advanceRate) / 100);
-
-  const netAdvertisementAmount = roundToTwo(amount - discountAmount);
-
-  if (discountAmount > amount) {
+  if (discountAmount > requestedAmount) {
     throw new ApiError(
       400,
-      "Calculated discount amount cannot be greater than the advertisement amount."
+      "Calculated discount amount cannot be greater than the Advertisement Amount."
     );
   }
 
-  if (advanceAmount > netAdvertisementAmount) {
+  const advanceAmount = roundToTwo((requestedAmount * advanceRate) / 100);
+
+  if (advanceAmount > requestedAmount) {
     throw new ApiError(
       400,
-      "Calculated advance amount cannot be greater than the net advertisement amount after discount."
+      "Calculated advance amount cannot be greater than the Advertisement Amount."
     );
   }
 
   return {
-    advertisementAmount: amount,
-
+    advertisementAmount: requestedAmount,
     discountPercentage: discountRate,
-
     discountAmount,
-
     advancePercentage: advanceRate,
-
     advanceAmount
   };
 };
@@ -400,10 +412,7 @@ export const createAdvertisement = async (
    * make the repository.create() call invalid even when we conditionally
    * add a valid placementId afterward.
    */
-  const {
-    placementId: inputPlacementId,
-    ...inputWithoutPlacement
-  } = input;
+  const { placementId: inputPlacementId, ...inputWithoutPlacement } = input;
 
   /*
    * Runtime placement is mandatory for every advertisement.
@@ -432,17 +441,17 @@ export const createAdvertisement = async (
     );
   }
 
-  const financials = calculateAdvertisementFinancials(
-    input.advertisementAmount,
-    input.discountPercentage,
-    input.advancePercentage
-  );
-
   /*
    * No pricing object means that the advertisement uses the explicitly
    * selected runtime placement without creating a rate-card snapshot.
    */
   if (!input.pricing) {
+    const financials = calculateAdvertisementFinancials(
+      input.advertisementAmount,
+      input.discountPercentage,
+      input.advancePercentage
+    );
+
     return repository.create(
       {
         ...inputWithoutPlacement,
@@ -452,6 +461,10 @@ export const createAdvertisement = async (
          * therefore this property is always a valid number at this point.
          */
         placementId: runtimePlacementId as number,
+
+        ...(financials.advertisementAmount !== null
+          ? { advertisementAmount: financials.advertisementAmount }
+          : {}),
 
         discountPercentage: financials.discountPercentage,
 
@@ -468,7 +481,11 @@ export const createAdvertisement = async (
   try {
     await client.query("BEGIN");
 
-    const effectiveAt = new Date();
+    const effectiveAt = input.startAt ? new Date(input.startAt) : new Date();
+
+    if (Number.isNaN(effectiveAt.getTime())) {
+      throw new ApiError(400, "Advertisement start date/time is invalid.");
+    }
 
     const rateCard = await rateCardRepository.findEffectiveRate(
       input.pricing.placementId,
@@ -500,13 +517,17 @@ export const createAdvertisement = async (
 
     const standardAmountResult = calculateStandardAmount({
       pricingUnit: rateCard.pricingUnit,
-
       rateAmount: rateCard.rateAmount,
-
       quantity: input.pricing.quantity,
-
       currencyCode: rateCard.currencyCode
     });
+
+    const pricedFinancials = calculateAdvertisementFinancials(
+      input.advertisementAmount,
+      input.discountPercentage,
+      input.advancePercentage,
+      standardAmountResult.standardAmount
+    );
 
     const advertisement = await repository.create(
       {
@@ -518,11 +539,15 @@ export const createAdvertisement = async (
          */
         placementId: runtimePlacementId as number,
 
-        discountPercentage: financials.discountPercentage,
+        ...(pricedFinancials.advertisementAmount !== null
+          ? { advertisementAmount: pricedFinancials.advertisementAmount }
+          : {}),
 
-        advancePercentage: financials.advancePercentage,
+        discountPercentage: pricedFinancials.discountPercentage,
 
-        ...toCalculatedFinancialFields(financials),
+        advancePercentage: pricedFinancials.advancePercentage,
+
+        ...toCalculatedFinancialFields(pricedFinancials),
 
         standardAmount: standardAmountResult.standardAmount,
 
@@ -669,19 +694,117 @@ export const updateAdvertisement = async (
     );
   }
 
-  const mergedAdvertisementAmount =
-    input.advertisementAmount ?? advertisement.advertisementAmount;
-
   const mergedDiscountPercentage =
     input.discountPercentage ?? advertisement.discountPercentage;
 
   const mergedAdvancePercentage =
     input.advancePercentage ?? advertisement.advancePercentage;
 
+  const scheduleChanged =
+    input.startAt !== undefined || input.endAt !== undefined;
+
+  let recalculatedStandardAmount = advertisement.standardAmount;
+  let recalculatedPricingQuantity = Number(advertisement.pricingQuantity);
+  let effectiveRateCardId: number | null = null;
+  let effectivePricingPlacementId = advertisement.pricingPlacementId;
+  let effectivePricingUnit = advertisement.pricingUnit;
+  let effectiveCurrencyCode = input.currencyCode ?? advertisement.currencyCode;
+
+  if (
+    scheduleChanged &&
+    effectivePricingPlacementId !== null &&
+    effectivePricingPlacementId !== undefined &&
+    effectivePricingUnit !== null &&
+    effectivePricingUnit !== undefined
+  ) {
+    const startDate = mergedStartAt
+      ? mergedStartAt instanceof Date
+        ? new Date(mergedStartAt.getTime())
+        : new Date(mergedStartAt)
+      : null;
+    const endDate = mergedEndAt
+      ? mergedEndAt instanceof Date
+        ? new Date(mergedEndAt.getTime())
+        : new Date(mergedEndAt)
+      : null;
+
+    if (
+      !startDate ||
+      !endDate ||
+      Number.isNaN(startDate.getTime()) ||
+      Number.isNaN(endDate.getTime())
+    ) {
+      throw new ApiError(
+        400,
+        "Valid start and end dates are required to recalculate placement pricing."
+      );
+    }
+
+    if (endDate.getTime() <= startDate.getTime()) {
+      throw new ApiError(400, "End date/time must be after start date/time.");
+    }
+
+    if (effectivePricingUnit === "DAY") {
+      const startUtc = Date.UTC(
+        startDate.getUTCFullYear(),
+        startDate.getUTCMonth(),
+        startDate.getUTCDate()
+      );
+      const endUtc = Date.UTC(
+        endDate.getUTCFullYear(),
+        endDate.getUTCMonth(),
+        endDate.getUTCDate()
+      );
+      recalculatedPricingQuantity =
+        Math.floor((endUtc - startUtc) / 86_400_000) + 1;
+    }
+
+    if (
+      !Number.isFinite(recalculatedPricingQuantity) ||
+      recalculatedPricingQuantity <= 0
+    ) {
+      throw new ApiError(
+        400,
+        "A positive pricing quantity is required to calculate Standard Amount."
+      );
+    }
+
+    const rateCard = await rateCardRepository.findEffectiveRate(
+      Number(effectivePricingPlacementId),
+      effectivePricingUnit,
+      startDate
+    );
+
+    if (!rateCard) {
+      throw new ApiError(
+        409,
+        "No active rate card is effective for the selected placement and pricing unit on the new schedule start date."
+      );
+    }
+
+    const standardAmountResult = calculateStandardAmount({
+      pricingUnit: rateCard.pricingUnit,
+      rateAmount: rateCard.rateAmount,
+      quantity: recalculatedPricingQuantity,
+      currencyCode: rateCard.currencyCode
+    });
+
+    recalculatedStandardAmount = standardAmountResult.standardAmount;
+    effectiveRateCardId = rateCard.id;
+    effectiveCurrencyCode = rateCard.currencyCode;
+  }
+
+  const mergedAdvertisementAmount =
+    input.advertisementAmount ?? advertisement.advertisementAmount;
+
   const financials = calculateAdvertisementFinancials(
     mergedAdvertisementAmount,
     mergedDiscountPercentage,
-    mergedAdvancePercentage
+    mergedAdvancePercentage,
+    recalculatedStandardAmount === null ||
+      recalculatedStandardAmount === undefined
+      ? null
+      : Number(recalculatedStandardAmount)
   );
 
   /*
@@ -694,26 +817,80 @@ export const updateAdvertisement = async (
    */
   const { placementId, ...updateInput } = input;
 
-  const updated = await repository.update(
-    id,
-    {
-      ...updateInput,
+  const updatePayload = {
+    ...updateInput,
 
-      ...(placementId !== undefined && placementId !== null
-        ? { placementId }
-        : {}),
+    ...(placementId !== undefined && placementId !== null
+      ? { placementId }
+      : {}),
 
-      discountPercentage: financials.discountPercentage,
+    ...(financials.advertisementAmount !== null
+      ? { advertisementAmount: financials.advertisementAmount }
+      : {}),
 
-      advancePercentage: financials.advancePercentage,
+    discountPercentage: financials.discountPercentage,
 
-      ...toCalculatedFinancialFields(financials)
-    },
-    updatedBy
-  );
+    advancePercentage: financials.advancePercentage,
 
-  if (!updated) {
-    throw new ApiError(404, "Advertisement not found.");
+    ...toCalculatedFinancialFields(financials),
+
+    ...(scheduleChanged && effectiveRateCardId !== null
+      ? {
+          standardAmount: Number(recalculatedStandardAmount),
+          pricingPlacementId: Number(effectivePricingPlacementId),
+          pricingUnit: effectivePricingUnit,
+          pricingQuantity: recalculatedPricingQuantity,
+          currencyCode: effectiveCurrencyCode
+        }
+      : {})
+  };
+
+  let updated: Advertisement | null;
+
+  if (scheduleChanged && effectiveRateCardId !== null) {
+    /*
+     * Keep the new schedule, calculated pricing, and pricing snapshot
+     * in one transaction. If any part fails, the entire change rolls back.
+     */
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      updated = await repository.update(id, updatePayload, updatedBy, client);
+
+      if (!updated) {
+        throw new ApiError(404, "Advertisement not found.");
+      }
+
+      if (effectivePricingPlacementId === null) {
+        throw new ApiError(
+          409,
+          "Pricing placement is required to record the rate snapshot."
+        );
+      }
+
+      await pricingSnapshotService.createFromRateCard(
+        id,
+        Number(effectivePricingPlacementId),
+        effectiveRateCardId,
+        updatedBy,
+        client
+      );
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } else {
+    updated = await repository.update(id, updatePayload, updatedBy);
+
+    if (!updated) {
+      throw new ApiError(404, "Advertisement not found.");
+    }
   }
 
   return updated;

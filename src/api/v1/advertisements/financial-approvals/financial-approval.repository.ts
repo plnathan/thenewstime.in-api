@@ -25,6 +25,8 @@ interface AdvertisementFinancialApprovalRow {
   approval_type: AdvertisementFinancialApprovalType;
   requested_amount: string | number | null;
   requested_percentage: string | number | null;
+  approved_amount: string | number | null;
+  approved_percentage: string | number | null;
   status: AdvertisementFinancialApprovalStatus;
   requested_by: number | string;
   requested_at: Date;
@@ -64,6 +66,14 @@ function mapApproval(
       row.requested_percentage === null
         ? null
         : Number(row.requested_percentage),
+    approvedAmount:
+      row.approved_amount === null || row.approved_amount === undefined
+        ? null
+        : Number(row.approved_amount),
+    approvedPercentage:
+      row.approved_percentage === null || row.approved_percentage === undefined
+        ? null
+        : Number(row.approved_percentage),
     status: row.status,
     requestedBy: Number(row.requested_by),
     requestedAt: row.requested_at,
@@ -93,6 +103,10 @@ function mapHistory(
   };
 }
 
+/**
+ * Keep every approval read consistent so approved terms are never
+ * accidentally omitted from a returned approval object.
+ */
 function buildApprovalSelect(): string {
   return `
     SELECT
@@ -103,6 +117,8 @@ function buildApprovalSelect(): string {
       approval_type,
       requested_amount,
       requested_percentage,
+      approved_amount,
+      approved_percentage,
       status,
       requested_by,
       requested_at,
@@ -125,7 +141,7 @@ export async function findById(
     `
       ${buildApprovalSelect()}
       WHERE id = $1
-      `,
+    `,
     [id]
   );
 
@@ -149,6 +165,8 @@ export async function create(
         approval_type,
         requested_amount,
         requested_percentage,
+        approved_amount,
+        approved_percentage,
         status,
         requested_by,
         requested_at,
@@ -164,6 +182,8 @@ export async function create(
         $4,
         $5,
         $6,
+        NULL,
+        NULL,
         'SUBMITTED',
         $7,
         NOW(),
@@ -179,6 +199,8 @@ export async function create(
         approval_type,
         requested_amount,
         requested_percentage,
+        approved_amount,
+        approved_percentage,
         status,
         requested_by,
         requested_at,
@@ -189,7 +211,7 @@ export async function create(
         approval_remarks,
         created_at,
         updated_at
-      `,
+    `,
     [
       data.advertisementId,
       data.clientId,
@@ -231,6 +253,8 @@ export async function updateApprovalRemarks(
         approval_type,
         requested_amount,
         requested_percentage,
+        approved_amount,
+        approved_percentage,
         status,
         requested_by,
         requested_at,
@@ -241,7 +265,7 @@ export async function updateApprovalRemarks(
         approval_remarks,
         created_at,
         updated_at
-      `,
+    `,
     [id, approvalRemarks]
   );
 
@@ -276,6 +300,8 @@ export async function hold(
         approval_type,
         requested_amount,
         requested_percentage,
+        approved_amount,
+        approved_percentage,
         status,
         requested_by,
         requested_at,
@@ -286,7 +312,7 @@ export async function hold(
         approval_remarks,
         created_at,
         updated_at
-      `,
+    `,
     [id, reviewedBy, data.holdReason]
   );
 
@@ -321,6 +347,8 @@ export async function reject(
         approval_type,
         requested_amount,
         requested_percentage,
+        approved_amount,
+        approved_percentage,
         status,
         requested_by,
         requested_at,
@@ -331,7 +359,7 @@ export async function reject(
         approval_remarks,
         created_at,
         updated_at
-      `,
+    `,
     [id, reviewedBy, data.rejectionReason]
   );
 
@@ -354,6 +382,8 @@ export async function approve(
         reviewed_by = $2,
         reviewed_at = NOW(),
         approval_remarks = $3,
+        approved_amount = $4,
+        approved_percentage = $5,
         hold_reason = NULL,
         rejection_reason = NULL,
         updated_at = NOW()
@@ -367,6 +397,8 @@ export async function approve(
         approval_type,
         requested_amount,
         requested_percentage,
+        approved_amount,
+        approved_percentage,
         status,
         requested_by,
         requested_at,
@@ -377,8 +409,14 @@ export async function approve(
         approval_remarks,
         created_at,
         updated_at
-      `,
-    [id, reviewedBy, data.approvalRemarks ?? null]
+    `,
+    [
+      id,
+      reviewedBy,
+      data.approvalRemarks ?? null,
+      data.approvedAmount ?? null,
+      data.approvedPercentage ?? null
+    ]
   );
 
   const row = result.rows[0];
@@ -401,6 +439,8 @@ export async function resubmit(
         requested_at = NOW(),
         reviewed_by = NULL,
         reviewed_at = NULL,
+        approved_amount = NULL,
+        approved_percentage = NULL,
         hold_reason = NULL,
         rejection_reason = NULL,
         approval_remarks = $3,
@@ -415,6 +455,8 @@ export async function resubmit(
         approval_type,
         requested_amount,
         requested_percentage,
+        approved_amount,
+        approved_percentage,
         status,
         requested_by,
         requested_at,
@@ -425,7 +467,7 @@ export async function resubmit(
         approval_remarks,
         created_at,
         updated_at
-      `,
+    `,
     [id, requestedBy, approvalRemarks]
   );
 
@@ -478,7 +520,7 @@ export async function createHistory(
         remarks,
         hold_reason,
         rejection_reason
-      `,
+    `,
     [
       approvalId,
       fromStatus,
@@ -520,7 +562,7 @@ export async function findHistoryByApprovalId(
       ORDER BY
         action_at ASC,
         id ASC
-      `,
+    `,
     [approvalId]
   );
 
@@ -538,7 +580,7 @@ export async function exists(
         FROM advertisement_financial_approvals
         WHERE id = $1
       ) AS exists
-      `,
+    `,
     [id]
   );
 
@@ -556,7 +598,7 @@ export async function existsForAdvertisement(
         FROM advertisement_financial_approvals
         WHERE advertisement_id = $1
       ) AS exists
-      `,
+    `,
     [advertisementId]
   );
 
@@ -575,7 +617,7 @@ export async function findLatestByAdvertisementId(
         requested_at DESC,
         id DESC
       LIMIT 1
-      `,
+    `,
     [advertisementId]
   );
 
@@ -643,14 +685,12 @@ export async function list(
       SELECT COUNT(*)::bigint AS count
       FROM advertisement_financial_approvals
       ${whereClause}
-      `,
+    `,
     values
   );
 
   const total = Number(countResult.rows[0]?.count ?? 0);
-
   const offset = (filters.page - 1) * filters.pageSize;
-
   const dataValues = [...values, filters.pageSize, offset];
 
   const result = await executor.query<AdvertisementFinancialApprovalRow>(
@@ -662,7 +702,7 @@ export async function list(
         id DESC
       LIMIT $${parameterIndex}
       OFFSET $${parameterIndex + 1}
-      `,
+    `,
     dataValues
   );
 
@@ -685,7 +725,7 @@ export async function findPendingByAdvertisementId(
         requested_at DESC,
         id DESC
       LIMIT 1
-      `,
+    `,
     [advertisementId]
   );
 
@@ -707,7 +747,7 @@ export async function findPendingByPaymentId(
         requested_at DESC,
         id DESC
       LIMIT 1
-      `,
+    `,
     [paymentId]
   );
 

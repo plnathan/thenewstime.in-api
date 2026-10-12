@@ -13,6 +13,8 @@ import type {
   UpdateAdvertisementRotationMemberInput
 } from "./rotation.types.js";
 
+const DEFAULT_MAX_ACTIVE_ROTATION_MEMBERS_PER_PLACEMENT = 10;
+
 interface RotationConfigRow {
   placement_id: number | string;
   rotation_enabled: boolean;
@@ -32,6 +34,20 @@ interface RotationMemberRow {
   status: AdvertisementRotationMemberStatus;
   created_at: Date;
   updated_at: Date;
+}
+
+interface RotationLimitsRow {
+  max_active_creatives_per_advertisement: number | string;
+  max_active_rotation_members_per_placement: number | string;
+}
+
+interface ActiveMemberCountRow {
+  active_count: number | string;
+}
+
+export interface AdvertisementRotationLimits {
+  maxActiveCreativesPerAdvertisement: number;
+  maxActiveRotationMembersPerPlacement: number;
 }
 
 const mapRotationConfig = (
@@ -59,14 +75,6 @@ const mapRotationMember = (
   updatedAt: row.updated_at
 });
 
-const rotationConfigColumns = `
-  id,
-  rotation_enabled,
-  rotation_mode,
-  rotation_interval_seconds,
-  rotation_strategy
-`;
-
 const rotationMemberColumns = `
   rm.id,
   rm.placement_id,
@@ -86,7 +94,7 @@ export const findPlacement = async (
 ): Promise<boolean> => {
   const db = client ?? pool;
 
-  const result = await db.query(
+  const result = await db.query<{ id: number | string }>(
     `
       SELECT id
       FROM advertisement_placements
@@ -103,7 +111,7 @@ export const findPlacementForUpdate = async (
   placementId: number,
   client: PoolClient
 ): Promise<boolean> => {
-  const result = await client.query(
+  const result = await client.query<{ id: number | string }>(
     `
       SELECT id
       FROM advertisement_placements
@@ -154,26 +162,16 @@ export const updateRotationConfig = async (
     `
       UPDATE advertisement_placements
       SET
-        rotation_enabled =
-          COALESCE($2, rotation_enabled),
-
-        rotation_mode =
-          COALESCE($3, rotation_mode),
-
-        rotation_interval_seconds =
-          COALESCE(
-            $4,
-            rotation_interval_seconds
-          ),
-
-        rotation_strategy =
-          COALESCE($5, rotation_strategy),
-
+        rotation_enabled = COALESCE($2, rotation_enabled),
+        rotation_mode = COALESCE($3, rotation_mode),
+        rotation_interval_seconds = COALESCE(
+          $4,
+          rotation_interval_seconds
+        ),
+        rotation_strategy = COALESCE($5, rotation_strategy),
         updated_by = $6,
         updated_at = CURRENT_TIMESTAMP
-
       WHERE id = $1
-
       RETURNING
         id AS placement_id,
         rotation_enabled,
@@ -194,6 +192,85 @@ export const updateRotationConfig = async (
   const row = result.rows[0];
 
   return row ? mapRotationConfig(row) : null;
+};
+
+/**
+ * Reads both rotation limits from the singleton configuration row.
+ *
+ * The seeded migration should create row id = 1 with defaults:
+ * - 5 active creatives per advertisement
+ * - 10 active rotation members per placement
+ *
+ * The default values here keep the repository resilient if the row is
+ * missing, while still requiring the configuration table to exist.
+ */
+export const findRotationLimits = async (
+  client?: PoolClient
+): Promise<AdvertisementRotationLimits> => {
+  const db = client ?? pool;
+
+  const result = await db.query<RotationLimitsRow>(
+    `
+      SELECT
+        max_active_creatives_per_advertisement,
+        max_active_rotation_members_per_placement
+      FROM advertisement_rotation_limits
+      WHERE id = 1
+      LIMIT 1
+    `
+  );
+
+  const row = result.rows[0];
+
+  if (!row) {
+    return {
+      maxActiveCreativesPerAdvertisement: 5,
+      maxActiveRotationMembersPerPlacement:
+        DEFAULT_MAX_ACTIVE_ROTATION_MEMBERS_PER_PLACEMENT
+    };
+  }
+
+  const maxActiveCreativesPerAdvertisement = Number(
+    row.max_active_creatives_per_advertisement
+  );
+
+  const maxActiveRotationMembersPerPlacement = Number(
+    row.max_active_rotation_members_per_placement
+  );
+
+  if (
+    !Number.isInteger(maxActiveCreativesPerAdvertisement) ||
+    maxActiveCreativesPerAdvertisement < 1 ||
+    !Number.isInteger(maxActiveRotationMembersPerPlacement) ||
+    maxActiveRotationMembersPerPlacement < 1
+  ) {
+    throw new Error("Advertisement rotation limits configuration is invalid.");
+  }
+
+  return {
+    maxActiveCreativesPerAdvertisement,
+    maxActiveRotationMembersPerPlacement
+  };
+};
+
+export const countActiveMembersByPlacement = async (
+  placementId: number,
+  client?: PoolClient
+): Promise<number> => {
+  const db = client ?? pool;
+
+  const result = await db.query<ActiveMemberCountRow>(
+    `
+      SELECT COUNT(*)::INTEGER AS active_count
+      FROM advertisement_rotation_members
+      WHERE
+        placement_id = $1
+        AND status = 'ACTIVE'
+    `,
+    [placementId]
+  );
+
+  return Number(result.rows[0]?.active_count ?? 0);
 };
 
 export const findMemberById = async (
@@ -351,7 +428,7 @@ export const hasActivePlacementRule = async (
 ): Promise<boolean> => {
   const db = client ?? pool;
 
-  const result = await db.query(
+  const result = await db.query<{ id: number | string }>(
     `
       SELECT pr.id
       FROM advertisement_placement_rules pr
@@ -374,7 +451,7 @@ export const createMember = async (
 ): Promise<AdvertisementRotationMember> => {
   const db = client ?? pool;
 
-  const result = await db.query<RotationMemberRow>(
+  const result = await db.query<{ id: number | string }>(
     `
       INSERT INTO advertisement_rotation_members
       (
@@ -383,13 +460,7 @@ export const createMember = async (
         priority,
         status
       )
-      VALUES
-      (
-        $1,
-        $2,
-        $3,
-        $4
-      )
+      VALUES ($1, $2, $3, $4)
       RETURNING id
     `,
     [
@@ -429,18 +500,12 @@ export const updateMember = async (
     `
       UPDATE advertisement_rotation_members
       SET
-        priority =
-          COALESCE($3, priority),
-
-        status =
-          COALESCE($4, status),
-
+        priority = COALESCE($3, priority),
+        status = COALESCE($4, status),
         updated_at = CURRENT_TIMESTAMP
-
       WHERE
         placement_id = $1
         AND id = $2
-
       RETURNING id
     `,
     [placementId, memberId, input.priority ?? null, input.status ?? null]

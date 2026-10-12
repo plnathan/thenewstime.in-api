@@ -763,7 +763,10 @@ describe("Advertisement Payment Controller", () => {
         verifiedPaymentAmount: 30000,
         refundedAmount: 2000,
         netPaidAmount: 28000,
-        outstandingAmount: 16000
+        outstandingAmount: 16000,
+        advanceRequiredAmount: 0,
+        advanceReceivedAmount: 0,
+        advancePendingAmount: 0
       };
 
       mockedService.getPaymentSummary.mockResolvedValue(summary);

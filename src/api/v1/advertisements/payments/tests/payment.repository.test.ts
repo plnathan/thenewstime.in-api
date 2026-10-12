@@ -479,7 +479,10 @@ describe("Advertisement Payment Repository", () => {
             adjustment_amount: "1000.00",
             verified_payment_amount: "30000.00",
             refunded_amount: "2000.00",
-            net_paid_amount: "28000.00"
+            net_paid_amount: "28000.00",
+            advance_required_amount: "10000.00",
+            advance_received_amount: "10000.00",
+            advance_pending_amount: "0.00"
           }
         ])
       );
@@ -494,7 +497,14 @@ describe("Advertisement Payment Repository", () => {
       expect(result?.verifiedPaymentAmount).toBe(30000);
       expect(result?.refundedAmount).toBe(2000);
       expect(result?.netPaidAmount).toBe(28000);
-      expect(result?.outstandingAmount).toBe(16000);
+
+      // The advertisement amount already reflects the commercial discount.
+      // Only the adjustment and net payments reduce the outstanding balance.
+      expect(result?.outstandingAmount).toBe(21000);
+
+      expect(result?.advanceRequiredAmount).toBe(10000);
+      expect(result?.advanceReceivedAmount).toBe(10000);
+      expect(result?.advancePendingAmount).toBe(0);
     });
 
     it("should return null when advertisement does not exist", async () => {

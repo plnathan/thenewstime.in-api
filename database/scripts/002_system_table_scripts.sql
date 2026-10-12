@@ -208,3 +208,40 @@ LEFT JOIN information_schema.constraint_column_usage ccu
 WHERE tc.table_name = 'advertisement_rate_cards'
 ORDER BY tc.constraint_name, kcu.ordinal_position;
 ------------------------------
+SELECT
+    table_schema,
+    table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND (
+      table_name ILIKE '%rate%card%'
+      OR table_name ILIKE '%pricing%snapshot%'
+      OR table_name IN (
+          'advertisement_placements',
+          'advertisements',
+          'users'
+      )
+  )
+ORDER BY table_name;
+--------------------------------
+SELECT
+    table_name,
+    ordinal_position,
+    column_name,
+    data_type,
+    udt_name,
+    is_nullable,
+    column_default
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+      table_name ILIKE '%rate%card%'
+      OR table_name ILIKE '%pricing%snapshot%'
+      OR table_name IN (
+          'advertisement_placements',
+          'advertisements',
+          'users'
+      )
+  )
+ORDER BY table_name, ordinal_position;
+--------------------------------

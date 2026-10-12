@@ -114,6 +114,8 @@ describe("Advertisement Financial Approval Repository", () => {
         approvalType: "DISCOUNT",
         requestedAmount: 5000,
         requestedPercentage: 10,
+        approvedAmount: null,
+        approvedPercentage: null,
         status: "SUBMITTED",
         requestedBy: 11,
         requestedAt: expect.any(Date),

@@ -1,6 +1,7 @@
+import type { PoolClient } from "pg";
+
 import { pool } from "../../../../shared/config/db.js";
 import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
-
 import * as repository from "./rotation.repository.js";
 
 import type {
@@ -11,62 +12,249 @@ import type {
   UpdateAdvertisementRotationMemberInput
 } from "./rotation.types.js";
 
-const validateId = (value: number, name: string): void => {
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new ApiError(400, `${name} must be a positive integer.`);
+type DatabaseClient = PoolClient;
+
+const DEFAULT_MAX_ACTIVE_ROTATION_MEMBERS_PER_PLACEMENT = 10;
+const MIN_ROTATION_INTERVAL_SECONDS = 1;
+const MAX_ROTATION_INTERVAL_SECONDS = 3600;
+
+const isPositiveInteger = (value: number): boolean =>
+  Number.isInteger(value) && value > 0;
+
+const validateId = (value: number, label: string): void => {
+  if (!isPositiveInteger(value)) {
+    throw new ApiError(400, `${label} must be a positive integer.`);
   }
 };
 
-const validateRotationConfiguration = (
+const validateActorId = (value: number, label: string): void => {
+  validateId(value, label);
+};
+
+const validateRotationConfigInput = (
   input: UpdateAdvertisementRotationConfigInput
 ): void => {
+  if (
+    input.rotationEnabled !== undefined &&
+    typeof input.rotationEnabled !== "boolean"
+  ) {
+    throw new ApiError(400, "Rotation enabled must be a boolean.");
+  }
+
   if (input.rotationMode !== undefined && input.rotationMode !== "TIME_BASED") {
-    throw new ApiError(400, "Unsupported rotation mode.");
+    throw new ApiError(400, "The supported rotation mode is TIME_BASED.");
   }
 
   if (
     input.rotationStrategy !== undefined &&
     input.rotationStrategy !== "ROUND_ROBIN"
   ) {
-    throw new ApiError(400, "Unsupported rotation strategy.");
+    throw new ApiError(400, "The supported rotation strategy is ROUND_ROBIN.");
   }
 
+  if (input.rotationIntervalSeconds !== undefined) {
+    const interval = input.rotationIntervalSeconds;
+
+    if (
+      !Number.isInteger(interval) ||
+      interval < MIN_ROTATION_INTERVAL_SECONDS ||
+      interval > MAX_ROTATION_INTERVAL_SECONDS
+    ) {
+      throw new ApiError(
+        400,
+        `Rotation interval must be between ${MIN_ROTATION_INTERVAL_SECONDS} and ${MAX_ROTATION_INTERVAL_SECONDS} seconds.`
+      );
+    }
+  }
+};
+
+const validateMemberInput = (
+  input: CreateAdvertisementRotationMemberInput
+): void => {
+  validateId(input.advertisementId, "Advertisement ID");
+
   if (
-    input.rotationIntervalSeconds !== undefined &&
-    (!Number.isInteger(input.rotationIntervalSeconds) ||
-      input.rotationIntervalSeconds <= 0)
+    input.priority !== undefined &&
+    (!Number.isInteger(input.priority) || input.priority < 0)
   ) {
     throw new ApiError(
       400,
-      "rotationIntervalSeconds must be a positive integer."
+      "Rotation priority must be a non-negative integer."
+    );
+  }
+
+  if (
+    input.status !== undefined &&
+    input.status !== "ACTIVE" &&
+    input.status !== "INACTIVE"
+  ) {
+    throw new ApiError(
+      400,
+      "Rotation member status must be ACTIVE or INACTIVE."
     );
   }
 };
 
-const validateAdvertisementEligibility = (advertisement: {
-  status: string;
-  workflowStatus: string;
-}): void => {
+const validateMemberUpdateInput = (
+  input: UpdateAdvertisementRotationMemberInput
+): void => {
+  if (Object.keys(input).length === 0) {
+    throw new ApiError(400, "At least one rotation member field is required.");
+  }
+
   if (
-    advertisement.status === "ARCHIVED" ||
-    advertisement.workflowStatus === "ARCHIVED"
+    input.priority !== undefined &&
+    (!Number.isInteger(input.priority) || input.priority < 0)
   ) {
     throw new ApiError(
-      409,
-      "Archived advertisements cannot participate in rotation."
+      400,
+      "Rotation priority must be a non-negative integer."
     );
+  }
+
+  if (
+    input.status !== undefined &&
+    input.status !== "ACTIVE" &&
+    input.status !== "INACTIVE"
+  ) {
+    throw new ApiError(
+      400,
+      "Rotation member status must be ACTIVE or INACTIVE."
+    );
+  }
+};
+
+const getMaxActiveRotationMembers = async (
+  client: DatabaseClient
+): Promise<number> => {
+  const limits = await repository.findRotationLimits(client);
+  const limit =
+    limits.maxActiveRotationMembersPerPlacement ??
+    DEFAULT_MAX_ACTIVE_ROTATION_MEMBERS_PER_PLACEMENT;
+
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new ApiError(
+      500,
+      "The configured active rotation-member limit is invalid."
+    );
+  }
+
+  return limit;
+};
+
+const assertActiveMemberCapacity = async (
+  placementId: number,
+  client: DatabaseClient
+): Promise<void> => {
+  const maxActiveMembers = await getMaxActiveRotationMembers(client);
+  const activeMemberCount = await repository.countActiveMembersByPlacement(
+    placementId,
+    client
+  );
+
+  if (activeMemberCount >= maxActiveMembers) {
+    throw new ApiError(
+      409,
+      `This placement already has the maximum of ${maxActiveMembers} active rotation members. Increase the configured limit or deactivate an existing member before adding or activating another member.`
+    );
+  }
+};
+
+const lockPlacement = async (
+  placementId: number,
+  client: DatabaseClient
+): Promise<void> => {
+  const placement = await repository.findPlacementForUpdate(
+    placementId,
+    client
+  );
+
+  if (!placement) {
+    throw new ApiError(404, "Advertisement placement was not found.");
+  }
+};
+
+const validateAdvertisementForPlacement = async (
+  placementId: number,
+  advertisementId: number,
+  client: DatabaseClient
+): Promise<void> => {
+  const advertisement = await repository.findAdvertisement(
+    advertisementId,
+    client
+  );
+
+  if (!advertisement) {
+    throw new ApiError(404, "Advertisement was not found.");
+  }
+
+  const status = String(
+    (advertisement as { status?: unknown }).status ?? ""
+  ).toUpperCase();
+
+  const workflowStatus = String(
+    (advertisement as { workflowStatus?: unknown }).workflowStatus ?? ""
+  ).toUpperCase();
+
+  if (status === "ARCHIVED" || workflowStatus === "ARCHIVED") {
+    throw new ApiError(
+      409,
+      "Archived advertisements cannot be added to an active rotation."
+    );
+  }
+
+  const hasActiveRule = await repository.hasActivePlacementRule(
+    advertisementId,
+    placementId,
+    client
+  );
+
+  if (!hasActiveRule) {
+    throw new ApiError(
+      409,
+      "The advertisement must have an active rule for this placement before it can be added to the rotation."
+    );
+  }
+};
+
+const withTransaction = async <T>(
+  operation: (client: DatabaseClient) => Promise<T>
+): Promise<T> => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await operation(client);
+
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 };
 
 export const getRotationConfig = async (
   placementId: number
 ): Promise<AdvertisementRotationConfig> => {
-  validateId(placementId, "placementId");
+  validateId(placementId, "Placement ID");
+
+  const placement = await repository.findPlacement(placementId);
+
+  if (!placement) {
+    throw new ApiError(404, "Advertisement placement was not found.");
+  }
 
   const config = await repository.findRotationConfig(placementId);
 
   if (!config) {
-    throw new ApiError(404, "Advertisement placement not found.");
+    throw new ApiError(
+      404,
+      "Rotation configuration was not found for this placement."
+    );
   }
 
   return config;
@@ -77,59 +265,59 @@ export const updateRotationConfig = async (
   input: UpdateAdvertisementRotationConfigInput,
   updatedBy: number
 ): Promise<AdvertisementRotationConfig> => {
-  validateId(placementId, "placementId");
-  validateId(updatedBy, "updatedBy");
+  validateId(placementId, "Placement ID");
+  validateActorId(updatedBy, "Updated by");
+  validateRotationConfigInput(input);
 
-  validateRotationConfiguration(input);
-
-  const existing = await repository.findRotationConfig(placementId);
-
-  if (!existing) {
-    throw new ApiError(404, "Advertisement placement not found.");
+  if (Object.keys(input).length === 0) {
+    throw new ApiError(
+      400,
+      "At least one rotation configuration field is required."
+    );
   }
 
-  const client = await pool.connect();
+  return withTransaction(async (client) => {
+    await lockPlacement(placementId, client);
 
-  try {
-    await client.query("BEGIN");
+    const existingConfig = await repository.findRotationConfig(
+      placementId,
+      client
+    );
 
-    const locked = await repository.findPlacementForUpdate(placementId, client);
-
-    if (!locked) {
-      throw new ApiError(404, "Advertisement placement not found.");
+    if (!existingConfig) {
+      throw new ApiError(
+        404,
+        "Rotation configuration was not found for this placement."
+      );
     }
 
-    const updated = await repository.updateRotationConfig(
+    const updatedConfig = await repository.updateRotationConfig(
       placementId,
       input,
       updatedBy,
       client
     );
 
-    if (!updated) {
-      throw new ApiError(404, "Advertisement placement not found.");
+    if (!updatedConfig) {
+      throw new ApiError(
+        500,
+        "The rotation configuration could not be updated."
+      );
     }
 
-    await client.query("COMMIT");
-
-    return updated;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+    return updatedConfig;
+  });
 };
 
 export const getMembers = async (
   placementId: number
 ): Promise<AdvertisementRotationMember[]> => {
-  validateId(placementId, "placementId");
+  validateId(placementId, "Placement ID");
 
-  const exists = await repository.findPlacement(placementId);
+  const placement = await repository.findPlacement(placementId);
 
-  if (!exists) {
-    throw new ApiError(404, "Advertisement placement not found.");
+  if (!placement) {
+    throw new ApiError(404, "Advertisement placement was not found.");
   }
 
   return repository.findMembersByPlacement(placementId);
@@ -140,79 +328,54 @@ export const addMember = async (
   input: CreateAdvertisementRotationMemberInput,
   createdBy: number
 ): Promise<AdvertisementRotationMember> => {
-  validateId(placementId, "placementId");
-  validateId(input.advertisementId, "advertisementId");
-  validateId(createdBy, "createdBy");
+  validateId(placementId, "Placement ID");
+  validateActorId(createdBy, "Created by");
+  validateMemberInput(input);
 
-  if (
-    input.priority !== undefined &&
-    (!Number.isInteger(input.priority) || input.priority < 0)
-  ) {
-    throw new ApiError(400, "priority must be a non-negative integer.");
-  }
+  const requestedStatus = input.status ?? "ACTIVE";
 
-  const client = await pool.connect();
+  return withTransaction(async (client) => {
+    // Serializes additions and reactivations for this placement.
+    await lockPlacement(placementId, client);
 
-  try {
-    await client.query("BEGIN");
-
-    const placementExists = await repository.findPlacementForUpdate(
+    await validateAdvertisementForPlacement(
       placementId,
-      client
-    );
-
-    if (!placementExists) {
-      throw new ApiError(404, "Advertisement placement not found.");
-    }
-
-    const advertisement = await repository.findAdvertisement(
       input.advertisementId,
       client
     );
 
-    if (!advertisement) {
-      throw new ApiError(404, "Advertisement not found.");
-    }
-
-    validateAdvertisementEligibility(advertisement);
-
-    const hasPlacementRule = await repository.hasActivePlacementRule(
-      input.advertisementId,
+    const existingMember = await repository.findMemberByAdvertisement(
       placementId,
+      input.advertisementId,
       client
     );
 
-    if (!hasPlacementRule) {
+    if (existingMember) {
       throw new ApiError(
         409,
-        "Advertisement does not have an active placement rule for this placement."
+        "This advertisement is already a member of the placement rotation."
       );
     }
 
-    const existing = await repository.findMemberByAdvertisement(
+    if (requestedStatus === "ACTIVE") {
+      await assertActiveMemberCapacity(placementId, client);
+    }
+
+    const createdMember = await repository.createMember(
       placementId,
-      input.advertisementId,
+      {
+        ...input,
+        status: requestedStatus
+      },
       client
     );
 
-    if (existing) {
-      throw new ApiError(
-        409,
-        "Advertisement is already a rotation member for this placement."
-      );
+    if (!createdMember) {
+      throw new ApiError(500, "The rotation member could not be created.");
     }
 
-    const member = await repository.createMember(placementId, input, client);
-
-    await client.query("COMMIT");
-
-    return member;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+    return createdMember;
+  });
 };
 
 export const updateMember = async (
@@ -221,30 +384,50 @@ export const updateMember = async (
   input: UpdateAdvertisementRotationMemberInput,
   updatedBy: number
 ): Promise<AdvertisementRotationMember> => {
-  validateId(placementId, "placementId");
-  validateId(memberId, "memberId");
-  validateId(updatedBy, "updatedBy");
+  validateId(placementId, "Placement ID");
+  validateId(memberId, "Rotation member ID");
+  validateActorId(updatedBy, "Updated by");
+  validateMemberUpdateInput(input);
 
-  if (
-    input.priority !== undefined &&
-    (!Number.isInteger(input.priority) || input.priority < 0)
-  ) {
-    throw new ApiError(400, "priority must be a non-negative integer.");
-  }
+  return withTransaction(async (client) => {
+    await lockPlacement(placementId, client);
 
-  const existing = await repository.findMemberById(placementId, memberId);
+    const existingMember = await repository.findMemberById(
+      placementId,
+      memberId,
+      client
+    );
 
-  if (!existing) {
-    throw new ApiError(404, "Advertisement rotation member not found.");
-  }
+    if (!existingMember) {
+      throw new ApiError(404, "Rotation member was not found.");
+    }
 
-  const updated = await repository.updateMember(placementId, memberId, input);
+    const isActivating =
+      input.status === "ACTIVE" && existingMember.status !== "ACTIVE";
 
-  if (!updated) {
-    throw new ApiError(404, "Advertisement rotation member not found.");
-  }
+    if (isActivating) {
+      await validateAdvertisementForPlacement(
+        placementId,
+        existingMember.advertisementId,
+        client
+      );
 
-  return updated;
+      await assertActiveMemberCapacity(placementId, client);
+    }
+
+    const updatedMember = await repository.updateMember(
+      placementId,
+      memberId,
+      input,
+      client
+    );
+
+    if (!updatedMember) {
+      throw new ApiError(500, "The rotation member could not be updated.");
+    }
+
+    return updatedMember;
+  });
 };
 
 export const removeMember = async (
@@ -252,21 +435,33 @@ export const removeMember = async (
   memberId: number,
   updatedBy: number
 ): Promise<AdvertisementRotationMember> => {
-  validateId(placementId, "placementId");
-  validateId(memberId, "memberId");
-  validateId(updatedBy, "updatedBy");
+  validateId(placementId, "Placement ID");
+  validateId(memberId, "Rotation member ID");
+  validateActorId(updatedBy, "Updated by");
 
-  const existing = await repository.findMemberById(placementId, memberId);
+  return withTransaction(async (client) => {
+    await lockPlacement(placementId, client);
 
-  if (!existing) {
-    throw new ApiError(404, "Advertisement rotation member not found.");
-  }
+    const existingMember = await repository.findMemberById(
+      placementId,
+      memberId,
+      client
+    );
 
-  const updated = await repository.deactivateMember(placementId, memberId);
+    if (!existingMember) {
+      throw new ApiError(404, "Rotation member was not found.");
+    }
 
-  if (!updated) {
-    throw new ApiError(404, "Advertisement rotation member not found.");
-  }
+    const deactivatedMember = await repository.deactivateMember(
+      placementId,
+      memberId,
+      client
+    );
 
-  return updated;
+    if (!deactivatedMember) {
+      throw new ApiError(500, "The rotation member could not be deactivated.");
+    }
+
+    return deactivatedMember;
+  });
 };

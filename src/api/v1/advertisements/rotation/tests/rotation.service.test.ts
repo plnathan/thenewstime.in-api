@@ -28,10 +28,12 @@ vi.mock("../rotation.repository.js", () => ({
   findAdvertisement: vi.fn(),
   hasActivePlacementRule: vi.fn(),
   findMemberByAdvertisement: vi.fn(),
-  createMember: vi.fn(),
   findMemberById: vi.fn(),
+  createMember: vi.fn(),
   updateMember: vi.fn(),
-  deactivateMember: vi.fn()
+  deactivateMember: vi.fn(),
+  findRotationLimits: vi.fn(),
+  countActiveMembersByPlacement: vi.fn()
 }));
 
 const mockedRepository = vi.mocked(repository);
@@ -63,25 +65,44 @@ const createMember = () => ({
   updatedAt: new Date()
 });
 
+const expectTransactionClient = (client: ReturnType<typeof createMockClient>) =>
+  expect.objectContaining({
+    query: client.query,
+    release: client.release
+  });
+
 describe("rotation.service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockedRepository.findRotationLimits.mockResolvedValue({
+      maxActiveRotationMembersPerPlacement: 10,
+      maxActiveCreativesPerAdvertisement: 10
+    });
+
+    mockedRepository.countActiveMembersByPlacement.mockResolvedValue(0);
   });
 
   it("should retrieve rotation configuration", async () => {
+    mockedRepository.findPlacement.mockResolvedValue(true);
     mockedRepository.findRotationConfig.mockResolvedValue(createConfig());
 
     const result = await getRotationConfig(10);
 
     expect(result).toEqual(createConfig());
+
+    expect(mockedRepository.findPlacement).toHaveBeenCalledWith(10);
+    expect(mockedRepository.findRotationConfig).toHaveBeenCalledWith(10);
   });
 
   it("should reject a missing placement", async () => {
-    mockedRepository.findRotationConfig.mockResolvedValue(null);
+    mockedRepository.findPlacement.mockResolvedValue(false);
 
     await expect(getRotationConfig(999)).rejects.toMatchObject({
       statusCode: 404
     });
+
+    expect(mockedRepository.findRotationConfig).not.toHaveBeenCalled();
   });
 
   it("should reject invalid placement id", async () => {
@@ -89,6 +110,7 @@ describe("rotation.service", () => {
       statusCode: 400
     });
 
+    expect(mockedRepository.findPlacement).not.toHaveBeenCalled();
     expect(mockedRepository.findRotationConfig).not.toHaveBeenCalled();
   });
 
@@ -97,9 +119,8 @@ describe("rotation.service", () => {
 
     mockedPool.connect.mockResolvedValue(client as never);
 
-    mockedRepository.findRotationConfig.mockResolvedValue(createConfig());
-
     mockedRepository.findPlacementForUpdate.mockResolvedValue(true);
+    mockedRepository.findRotationConfig.mockResolvedValue(createConfig());
 
     mockedRepository.updateRotationConfig.mockResolvedValue({
       ...createConfig(),
@@ -116,10 +137,23 @@ describe("rotation.service", () => {
 
     expect(result.rotationIntervalSeconds).toBe(20);
 
+    expect(mockedRepository.findPlacementForUpdate).toHaveBeenCalledWith(
+      10,
+      client
+    );
+
+    expect(mockedRepository.updateRotationConfig).toHaveBeenCalledWith(
+      10,
+      {
+        rotationIntervalSeconds: 20
+      },
+      100,
+      client
+    );
+
     expect(client.query).toHaveBeenCalledWith("BEGIN");
-
     expect(client.query).toHaveBeenCalledWith("COMMIT");
-
+    expect(client.query).not.toHaveBeenCalledWith("ROLLBACK");
     expect(client.release).toHaveBeenCalled();
   });
 
@@ -132,6 +166,9 @@ describe("rotation.service", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.advertisementId).toBe(30);
+
+    expect(mockedRepository.findPlacement).toHaveBeenCalledWith(10);
+    expect(mockedRepository.findMembersByPlacement).toHaveBeenCalledWith(10);
   });
 
   it("should reject members for a missing placement", async () => {
@@ -140,6 +177,8 @@ describe("rotation.service", () => {
     await expect(getMembers(999)).rejects.toMatchObject({
       statusCode: 404
     });
+
+    expect(mockedRepository.findMembersByPlacement).not.toHaveBeenCalled();
   });
 
   it("should add an eligible advertisement to rotation", async () => {
@@ -157,9 +196,8 @@ describe("rotation.service", () => {
     });
 
     mockedRepository.hasActivePlacementRule.mockResolvedValue(true);
-
     mockedRepository.findMemberByAdvertisement.mockResolvedValue(null);
-
+    mockedRepository.countActiveMembersByPlacement.mockResolvedValue(2);
     mockedRepository.createMember.mockResolvedValue(createMember());
 
     const result = await addMember(
@@ -173,13 +211,33 @@ describe("rotation.service", () => {
 
     expect(result.advertisementId).toBe(30);
 
+    expect(mockedRepository.findRotationLimits).toHaveBeenCalledWith(client);
+
+    expect(mockedRepository.countActiveMembersByPlacement).toHaveBeenCalledWith(
+      10,
+      client
+    );
+
     expect(mockedRepository.hasActivePlacementRule).toHaveBeenCalledWith(
       30,
       10,
       client
     );
 
+    expect(mockedRepository.createMember).toHaveBeenCalledWith(
+      10,
+      {
+        advertisementId: 30,
+        priority: 100,
+        status: "ACTIVE"
+      },
+      client
+    );
+
+    expect(client.query).toHaveBeenCalledWith("BEGIN");
     expect(client.query).toHaveBeenCalledWith("COMMIT");
+    expect(client.query).not.toHaveBeenCalledWith("ROLLBACK");
+    expect(client.release).toHaveBeenCalled();
   });
 
   it("should reject an advertisement without an active placement rule", async () => {
@@ -210,7 +268,11 @@ describe("rotation.service", () => {
       statusCode: 409
     });
 
+    expect(client.query).toHaveBeenCalledWith("BEGIN");
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+    expect(client.release).toHaveBeenCalled();
+
+    expect(mockedRepository.createMember).not.toHaveBeenCalled();
   });
 
   it("should reject duplicate rotation membership", async () => {
@@ -244,6 +306,9 @@ describe("rotation.service", () => {
     ).rejects.toMatchObject({
       statusCode: 409
     });
+
+    expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+    expect(mockedRepository.createMember).not.toHaveBeenCalled();
   });
 
   it("should reject archived advertisements", async () => {
@@ -271,9 +336,18 @@ describe("rotation.service", () => {
     ).rejects.toMatchObject({
       statusCode: 409
     });
+
+    expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+    expect(mockedRepository.hasActivePlacementRule).not.toHaveBeenCalled();
+    expect(mockedRepository.createMember).not.toHaveBeenCalled();
   });
 
   it("should update an existing rotation member", async () => {
+    const client = createMockClient();
+
+    mockedPool.connect.mockResolvedValue(client as never);
+    mockedRepository.findPlacementForUpdate.mockResolvedValue(true);
+
     const existingMember = createMember();
 
     const updatedMember = {
@@ -282,7 +356,6 @@ describe("rotation.service", () => {
     };
 
     mockedRepository.findMemberById.mockResolvedValue(existingMember);
-
     mockedRepository.updateMember.mockResolvedValue(updatedMember);
 
     const result = await updateMember(
@@ -304,22 +377,55 @@ describe("rotation.service", () => {
       })
     );
 
-    expect(mockedRepository.findMemberById).toHaveBeenCalledWith(10, 20);
+    expect(mockedRepository.findMemberById).toHaveBeenCalledWith(
+      10,
+      20,
+      expectTransactionClient(client)
+    );
 
-    expect(mockedRepository.updateMember).toHaveBeenCalledWith(10, 20, {
-      priority: 200
-    });
+    expect(mockedRepository.updateMember).toHaveBeenCalledWith(
+      10,
+      20,
+      {
+        priority: 200
+      },
+      client
+    );
+
+    expect(client.query).toHaveBeenCalledWith("BEGIN");
+    expect(client.query).toHaveBeenCalledWith("COMMIT");
+    expect(client.release).toHaveBeenCalled();
   });
 
   it("should reject removing an unknown member", async () => {
+    const client = createMockClient();
+
+    mockedPool.connect.mockResolvedValue(client as never);
+    mockedRepository.findPlacementForUpdate.mockResolvedValue(true);
     mockedRepository.findMemberById.mockResolvedValue(null);
 
     await expect(removeMember(10, 999, 100)).rejects.toMatchObject({
       statusCode: 404
     });
+
+    expect(mockedRepository.findMemberById).toHaveBeenCalledWith(
+      10,
+      999,
+      expectTransactionClient(client)
+    );
+
+    expect(client.query).toHaveBeenCalledWith("BEGIN");
+    expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+    expect(client.release).toHaveBeenCalled();
+
+    expect(mockedRepository.deactivateMember).not.toHaveBeenCalled();
   });
 
   it("should deactivate an existing member", async () => {
+    const client = createMockClient();
+
+    mockedPool.connect.mockResolvedValue(client as never);
+    mockedRepository.findPlacementForUpdate.mockResolvedValue(true);
     mockedRepository.findMemberById.mockResolvedValue(createMember());
 
     mockedRepository.deactivateMember.mockResolvedValue({
@@ -331,6 +437,20 @@ describe("rotation.service", () => {
 
     expect(result.status).toBe("INACTIVE");
 
-    expect(mockedRepository.deactivateMember).toHaveBeenCalledWith(10, 20);
+    expect(mockedRepository.findMemberById).toHaveBeenCalledWith(
+      10,
+      20,
+      expectTransactionClient(client)
+    );
+
+    expect(mockedRepository.deactivateMember).toHaveBeenCalledWith(
+      10,
+      20,
+      client
+    );
+
+    expect(client.query).toHaveBeenCalledWith("BEGIN");
+    expect(client.query).toHaveBeenCalledWith("COMMIT");
+    expect(client.release).toHaveBeenCalled();
   });
 });

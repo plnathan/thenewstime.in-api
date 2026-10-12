@@ -48,6 +48,8 @@ function createApproval(
     approvalType: "DISCOUNT",
     requestedAmount: 5000,
     requestedPercentage: null,
+    approvedAmount: null,
+    approvedPercentage: null,
     status: "SUBMITTED",
     requestedBy: TEST_USER_ID,
     requestedAt: new Date("2026-09-23T10:00:00.000Z"),
@@ -1059,7 +1061,9 @@ describe("Advertisement Financial Approval Service", () => {
       expect(mockedRepository.approve).toHaveBeenCalledWith(
         TEST_APPROVAL_ID,
         {
-          approvalRemarks: "Approved after financial verification."
+          approvalRemarks: "Approved after financial verification.",
+          approvedAmount: 5000,
+          approvedPercentage: null
         },
         TEST_REVIEWER_ID
       );
@@ -1127,7 +1131,9 @@ describe("Advertisement Financial Approval Service", () => {
       expect(mockedRepository.approve).toHaveBeenCalledWith(
         TEST_APPROVAL_ID,
         {
-          approvalRemarks: null
+          approvalRemarks: null,
+          approvedAmount: 5000,
+          approvedPercentage: null
         },
         TEST_REVIEWER_ID
       );

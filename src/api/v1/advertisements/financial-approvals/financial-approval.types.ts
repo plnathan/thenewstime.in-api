@@ -16,6 +16,13 @@ export interface AdvertisementFinancialApproval {
   requestedAmount: number | null;
   requestedPercentage: number | null;
 
+  /**
+   * Final values authorized by the financial approver.
+   * These are distinct from the values originally requested.
+   */
+  approvedAmount: number | null;
+  approvedPercentage: number | null;
+
   status: AdvertisementFinancialApprovalStatus;
 
   requestedBy: number;
@@ -73,6 +80,8 @@ export interface RejectAdvertisementFinancialApprovalInput {
 
 export interface ApproveAdvertisementFinancialApprovalInput {
   approvalRemarks?: string | null;
+  approvedAmount?: number | null;
+  approvedPercentage?: number | null;
 }
 
 export interface ResubmitAdvertisementFinancialApprovalInput {

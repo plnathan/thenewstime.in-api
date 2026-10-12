@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   AdvertisementCreative,
-  AdvertisementCreativePreview,
-  AdvertisementCreativePreviewResponse,
   CreateAdvertisementCreativeInput
 } from "../creative.types.js";
 
@@ -59,9 +57,83 @@ function createCreative(
   };
 }
 
+/**
+ * Returns a transaction-client mock with PostgreSQL-compatible query results.
+ *
+ * The service executes several queries inside the transaction:
+ * - BEGIN / COMMIT / ROLLBACK
+ * - SELECT ... FOR UPDATE to lock the advertisement
+ * - Read the configured active-creative limit
+ * - Count active creatives
+ *
+ * Every query must return an object containing a rows array, just as
+ * node-postgres does. The defaults below represent an existing advertisement
+ * with a configured limit of five and no active creatives.
+ */
 function createClient() {
+  const query = vi.fn(
+    async (
+      sql: string
+    ): Promise<{
+      rows: Array<Record<string, number | string>>;
+      rowCount: number;
+    }> => {
+      const normalizedSql = sql.replace(/\s+/g, " ").trim().toUpperCase();
+
+      if (
+        normalizedSql === "BEGIN" ||
+        normalizedSql === "COMMIT" ||
+        normalizedSql === "ROLLBACK"
+      ) {
+        return {
+          rows: [],
+          rowCount: 0
+        };
+      }
+
+      if (
+        normalizedSql.includes("FROM ADVERTISEMENTS") &&
+        normalizedSql.includes("FOR UPDATE")
+      ) {
+        return {
+          rows: [{ id: 10 }],
+          rowCount: 1
+        };
+      }
+
+      if (
+        normalizedSql.includes("MAX_ACTIVE_CREATIVES_PER_ADVERTISEMENT") &&
+        normalizedSql.includes("ADVERTISEMENT_ROTATION_LIMITS")
+      ) {
+        return {
+          rows: [
+            {
+              max_active_creatives_per_advertisement: 5
+            }
+          ],
+          rowCount: 1
+        };
+      }
+
+      if (
+        normalizedSql.includes("COUNT(*)") &&
+        normalizedSql.includes("ADVERTISEMENT_CREATIVES")
+      ) {
+        return {
+          rows: [{ active_count: 0 }],
+          rowCount: 1
+        };
+      }
+
+      return {
+        rows: [],
+        rowCount: 0
+      };
+    }
+  );
+
   return {
-    query: vi.fn(),
+    query,
     release: vi.fn()
   };
 }
@@ -248,8 +320,8 @@ describe("Advertisement Creative Service", () => {
         client
       );
 
-      expect(client.query).toHaveBeenNthCalledWith(1, "BEGIN");
-      expect(client.query).toHaveBeenNthCalledWith(2, "COMMIT");
+      expect(client.query).toHaveBeenCalledWith("BEGIN");
+      expect(client.query).toHaveBeenCalledWith("COMMIT");
       expect(client.release).toHaveBeenCalled();
     });
 
@@ -442,8 +514,8 @@ describe("Advertisement Creative Service", () => {
         )
       ).rejects.toThrow("Insert failed");
 
-      expect(client.query).toHaveBeenNthCalledWith(1, "BEGIN");
-      expect(client.query).toHaveBeenNthCalledWith(2, "ROLLBACK");
+      expect(client.query).toHaveBeenCalledWith("BEGIN");
+      expect(client.query).toHaveBeenCalledWith("ROLLBACK");
       expect(client.release).toHaveBeenCalled();
     });
   });
@@ -490,8 +562,8 @@ describe("Advertisement Creative Service", () => {
         client
       );
 
-      expect(client.query).toHaveBeenNthCalledWith(1, "BEGIN");
-      expect(client.query).toHaveBeenNthCalledWith(2, "COMMIT");
+      expect(client.query).toHaveBeenCalledWith("BEGIN");
+      expect(client.query).toHaveBeenCalledWith("COMMIT");
     });
 
     it("should clear primary when updating a creative to primary", async () => {
@@ -655,8 +727,8 @@ describe("Advertisement Creative Service", () => {
         )
       ).rejects.toThrow("Update failed");
 
-      expect(client.query).toHaveBeenNthCalledWith(1, "BEGIN");
-      expect(client.query).toHaveBeenNthCalledWith(2, "ROLLBACK");
+      expect(client.query).toHaveBeenCalledWith("BEGIN");
+      expect(client.query).toHaveBeenCalledWith("ROLLBACK");
       expect(client.release).toHaveBeenCalled();
     });
   });

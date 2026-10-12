@@ -98,4 +98,10 @@ export interface AdvertisementPaymentSummaryRow {
   refunded_amount: string;
 
   net_paid_amount: string;
+
+  advance_required_amount: string;
+
+  advance_received_amount: string;
+
+  advance_pending_amount: string;
 }

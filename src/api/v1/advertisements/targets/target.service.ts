@@ -62,7 +62,8 @@ export async function listTargets(
 
 export async function addTarget(
   advertisementId: number,
-  input: CreateAdvertisementTargetInput
+  input: CreateAdvertisementTargetInput,
+  actorId: number
 ): Promise<AdvertisementTarget> {
   await assertAdvertisementExists(advertisementId);
 
@@ -70,18 +71,21 @@ export async function addTarget(
     advertisementId,
     targetType: input.targetType,
     targetValue: input.targetValue,
-    isInclude: input.isInclude ?? true
+    isInclude: input.isInclude ?? true,
+    createdBy: actorId,
+    updatedBy: actorId
   });
 }
 
 export async function editTarget(
   advertisementId: number,
   targetId: number,
-  input: UpdateAdvertisementTargetInput
+  input: UpdateAdvertisementTargetInput,
+  actorId: number
 ): Promise<AdvertisementTarget> {
   await assertTargetBelongsToAdvertisement(advertisementId, targetId);
 
-  const updated = await targetRepository.update(targetId, input);
+  const updated = await targetRepository.update(targetId, input, actorId);
 
   if (!updated) {
     throw new AdvertisementTargetServiceError(
@@ -111,7 +115,8 @@ export async function removeTarget(
 
 export async function replaceTargets(
   advertisementId: number,
-  targets: CreateAdvertisementTargetInput[]
+  targets: CreateAdvertisementTargetInput[],
+  actorId: number
 ): Promise<AdvertisementTarget[]> {
   await assertAdvertisementExists(advertisementId);
 
@@ -120,7 +125,13 @@ export async function replaceTargets(
   try {
     await client.query("BEGIN");
 
-    const advertisementResult = await client.query<{ id: string | number }>(
+    /*
+     * Lock the advertisement row so concurrent replacement requests for the
+     * same advertisement do not interleave their delete-and-insert operations.
+     */
+    const advertisementResult = await client.query<{
+      id: string | number;
+    }>(
       `
         SELECT id
         FROM advertisements
@@ -147,7 +158,9 @@ export async function replaceTargets(
           advertisementId,
           targetType: target.targetType,
           targetValue: target.targetValue,
-          isInclude: target.isInclude ?? true
+          isInclude: target.isInclude ?? true,
+          createdBy: actorId,
+          updatedBy: actorId
         },
         client
       );

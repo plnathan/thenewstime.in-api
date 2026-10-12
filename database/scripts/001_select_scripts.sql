@@ -644,3 +644,43 @@ FROM advertisement_placement_rules
 WHERE advertisement_id = 1688
 ORDER BY id DESC;
 -------------------------------
+SELECT
+    id,
+    advertisement_id,
+    placement_id,
+    placement_rule_id,
+    start_at,
+    end_at,
+    status,
+    priority,
+    created_at,
+    updated_at
+FROM advertisement_schedules
+WHERE advertisement_id = 1692
+ORDER BY id DESC;
+
+SELECT
+    id,
+    advertisement_id,
+    amount,
+    payment_type,
+    payment_method,
+    transaction_reference,
+    payment_status,
+    payment_date,
+    created_at
+FROM advertisement_payments
+WHERE BTRIM(transaction_reference) = BTRIM('cash')
+ORDER BY created_at DESC;
+------------------------------------
+SELECT
+    id,
+    name,
+    pricing_placement_id,
+    pricing_unit,
+    pricing_quantity,
+    standard_amount,
+    advertisement_amount
+FROM advertisements
+WHERE id = 1525;
+------------------------------------

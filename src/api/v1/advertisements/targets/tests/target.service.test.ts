@@ -34,15 +34,20 @@ import {
   removeTarget,
   replaceTargets
 } from "../target.service.js";
+import type { AdvertisementTarget } from "../target.types.js";
 
-const sampleTarget = {
+const sampleTarget: AdvertisementTarget = {
   id: 101,
   advertisementId: 202,
-  targetType: "STATE" as const,
+  targetType: "STATE",
   targetValue: "tamil-nadu",
   isInclude: true,
-  createdAt: new Date("2026-09-19T10:00:00.000Z"),
-  updatedAt: new Date("2026-09-19T11:00:00.000Z")
+  createdAt: new Date("2026-10-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-10-01T00:00:00.000Z"),
+  createdBy: 1,
+  updatedBy: 1,
+  createdByName: "Test Creator",
+  updatedByName: "Test User"
 };
 
 const transactionClient = {
@@ -111,14 +116,16 @@ describe("target.service", () => {
       const result = await addTarget(202, {
         targetType: "STATE",
         targetValue: "tamil-nadu",
-        isInclude: false
-      });
+        isInclude: false,
+      },1);
 
       expect(targetRepository.create).toHaveBeenCalledWith({
         advertisementId: 202,
         targetType: "STATE",
         targetValue: "tamil-nadu",
-        isInclude: false
+        isInclude: false,
+        createdBy: 1,
+        updatedBy: 1
       });
       expect(result).toEqual(sampleTarget);
     });
@@ -130,13 +137,15 @@ describe("target.service", () => {
       await addTarget(202, {
         targetType: "STATE",
         targetValue: "tamil-nadu"
-      });
+      },1);
 
       expect(targetRepository.create).toHaveBeenCalledWith({
         advertisementId: 202,
         targetType: "STATE",
         targetValue: "tamil-nadu",
-        isInclude: true
+        isInclude: true,
+        createdBy: 1,
+        updatedBy: 1
       });
     });
 
@@ -147,7 +156,7 @@ describe("target.service", () => {
         addTarget(202, {
           targetType: "STATE",
           targetValue: "tamil-nadu"
-        })
+        },1)
       ).rejects.toMatchObject({
         statusCode: 404,
         message: "Advertisement not found."
@@ -167,12 +176,12 @@ describe("target.service", () => {
 
       const result = await editTarget(202, 101, {
         targetValue: "kerala"
-      });
+      },1);
 
       expect(targetRepository.findById).toHaveBeenCalledWith(101);
       expect(targetRepository.update).toHaveBeenCalledWith(101, {
         targetValue: "kerala"
-      });
+      },1);
       expect(result.targetValue).toBe("kerala");
     });
 
@@ -182,7 +191,7 @@ describe("target.service", () => {
       await expect(
         editTarget(202, 101, {
           targetValue: "kerala"
-        })
+        },1)
       ).rejects.toMatchObject({
         statusCode: 404,
         message: "Targeting rule not found for this advertisement."
@@ -200,7 +209,7 @@ describe("target.service", () => {
       await expect(
         editTarget(202, 101, {
           targetValue: "kerala"
-        })
+        },1)
       ).rejects.toMatchObject({
         statusCode: 404,
         message: "Targeting rule not found for this advertisement."
@@ -216,7 +225,7 @@ describe("target.service", () => {
       await expect(
         editTarget(202, 101, {
           targetValue: "kerala"
-        })
+        },1)
       ).rejects.toMatchObject({
         statusCode: 404,
         message: "Targeting rule could not be updated."
@@ -232,7 +241,7 @@ describe("target.service", () => {
       await expect(
         editTarget(202, 101, {
           targetValue: "kerala"
-        })
+        },1)
       ).rejects.toBe(error);
     });
   });
@@ -301,7 +310,7 @@ describe("target.service", () => {
           targetType: "STATE",
           targetValue: "tamil-nadu"
         }
-      ]);
+      ],1);
 
       expect(poolConnectMock).toHaveBeenCalledTimes(1);
       expect(clientQueryMock).toHaveBeenNthCalledWith(1, "BEGIN");
@@ -315,7 +324,9 @@ describe("target.service", () => {
           advertisementId: 202,
           targetType: "STATE",
           targetValue: "tamil-nadu",
-          isInclude: true
+          isInclude: true,
+          createdBy: 1,
+          updatedBy: 1
         },
         transactionClient
       );
@@ -336,7 +347,7 @@ describe("target.service", () => {
         3
       );
 
-      const result = await replaceTargets(202, []);
+      const result = await replaceTargets(202, [],1);
 
       expect(targetRepository.deleteByAdvertisementId).toHaveBeenCalledWith(
         202,
@@ -351,7 +362,7 @@ describe("target.service", () => {
     it("throws 404 when the advertisement does not exist", async () => {
       mockAdvertisementExists(false);
 
-      await expect(replaceTargets(202, [])).rejects.toMatchObject({
+      await expect(replaceTargets(202, [], 1)).rejects.toMatchObject({
         statusCode: 404,
         message: "Advertisement not found."
       });
@@ -367,7 +378,7 @@ describe("target.service", () => {
         .mockResolvedValueOnce({ rows: [] }) // SELECT FOR UPDATE
         .mockResolvedValueOnce({ rows: [] }); // ROLLBACK
 
-      await expect(replaceTargets(202, [])).rejects.toMatchObject({
+      await expect(replaceTargets(202, [], 1)).rejects.toMatchObject({
         statusCode: 404,
         message: "Advertisement not found."
       });
@@ -397,7 +408,7 @@ describe("target.service", () => {
             targetType: "STATE",
             targetValue: "tamil-nadu"
           }
-        ])
+        ],1)
       ).rejects.toBe(error);
 
       expect(clientQueryMock).toHaveBeenLastCalledWith("ROLLBACK");

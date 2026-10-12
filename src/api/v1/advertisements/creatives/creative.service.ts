@@ -1,6 +1,8 @@
 import { pool } from "../../../../shared/config/db.js";
 import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
 
+import type { PoolClient } from "pg";
+
 import * as repository from "./creative.repository.js";
 
 import type {
@@ -13,6 +15,25 @@ import type {
 
 const DIMENSION_SLIGHT_TOLERANCE_PERCENT = 10;
 const ASPECT_RATIO_SLIGHT_TOLERANCE_PERCENT = 5;
+const DEFAULT_MAX_ACTIVE_CREATIVES_PER_ADVERTISEMENT = 5;
+
+type CreativeLimitRow = {
+  max_active_creatives_per_advertisement: number | string;
+};
+
+type CountRow = {
+  active_count: number | string;
+};
+
+type AdvertisementLockRow = {
+  id: number;
+};
+
+type CreativeStatusInput = {
+  status?: string | null;
+};
+
+type DatabaseClient = PoolClient;
 
 const validateId = (value: number, fieldName: string): void => {
   if (!Number.isInteger(value) || value <= 0) {
@@ -105,6 +126,117 @@ const validateFormat = async (
   if (format.status !== "ACTIVE") {
     throw new ApiError(409, "Advertisement format is inactive.");
   }
+};
+
+/**
+ * Reads the configurable creative limit.
+ *
+ * The advertisement_rotation_limits table should contain a singleton row
+ * whose default max_active_creatives_per_advertisement is 5.
+ *
+ * If the row has not been seeded, the service uses the default limit.
+ * The table itself must exist.
+ */
+const getMaxActiveCreatives = async (
+  client: DatabaseClient
+): Promise<number> => {
+  const result = await client.query<CreativeLimitRow>(
+    `
+      SELECT max_active_creatives_per_advertisement
+      FROM advertisement_rotation_limits
+      WHERE id = 1
+    `
+  );
+
+  const configuredValue =
+    result.rows[0]?.max_active_creatives_per_advertisement;
+
+  if (configuredValue === undefined || configuredValue === null) {
+    return DEFAULT_MAX_ACTIVE_CREATIVES_PER_ADVERTISEMENT;
+  }
+
+  const limit = Number(configuredValue);
+
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new ApiError(
+      500,
+      "The configured maximum active creatives limit is invalid."
+    );
+  }
+
+  return limit;
+};
+
+/**
+ * Serializes creative writes for an advertisement.
+ *
+ * Creation and activation acquire this lock before checking capacity.
+ * This prevents concurrent requests for the same advertisement from both
+ * passing the capacity check and exceeding the configured limit.
+ */
+const lockAdvertisement = async (
+  client: DatabaseClient,
+  advertisementId: number
+): Promise<void> => {
+  const result = await client.query<AdvertisementLockRow>(
+    `
+      SELECT id
+      FROM advertisements
+      WHERE id = $1
+      FOR UPDATE
+    `,
+    [advertisementId]
+  );
+
+  if (result.rows.length === 0) {
+    throw new ApiError(404, "Advertisement not found.");
+  }
+};
+
+const getActiveCreativeCount = async (
+  client: DatabaseClient,
+  advertisementId: number
+): Promise<number> => {
+  const result = await client.query<CountRow>(
+    `
+      SELECT COUNT(*)::int AS active_count
+      FROM advertisement_creatives
+      WHERE advertisement_id = $1
+        AND status = 'ACTIVE'
+    `,
+    [advertisementId]
+  );
+
+  return Number(result.rows[0]?.active_count ?? 0);
+};
+
+/**
+ * Must be called after lockAdvertisement() inside the write transaction.
+ *
+ * Queries are deliberately sequential because both use the same PostgreSQL
+ * transaction client.
+ */
+const validateActiveCreativeCapacity = async (
+  client: DatabaseClient,
+  advertisementId: number
+): Promise<void> => {
+  const limit = await getMaxActiveCreatives(client);
+  const activeCount = await getActiveCreativeCount(client, advertisementId);
+
+  if (activeCount >= limit) {
+    throw new ApiError(
+      409,
+      `This advertisement already has ${activeCount} active creatives. The configured maximum is ${limit}. Deactivate an existing creative or increase the configured limit before adding or activating another creative.`
+    );
+  }
+};
+
+const getRequestedStatus = (
+  input: CreateAdvertisementCreativeInput | UpdateAdvertisementCreativeInput
+): string | undefined => {
+  const status = (input as CreativeStatusInput).status;
+
+  return typeof status === "string" ? status.toUpperCase() : undefined;
 };
 
 const calculateAspectRatio = (
@@ -296,6 +428,16 @@ export const create = async (
   try {
     await client.query("BEGIN");
 
+    await lockAdvertisement(client, advertisementId);
+
+    const requestedStatus = getRequestedStatus(input);
+    const willBeActive =
+      requestedStatus === undefined || requestedStatus === "ACTIVE";
+
+    if (willBeActive) {
+      await validateActiveCreativeCapacity(client, advertisementId);
+    }
+
     if (input.isPrimary === true) {
       await repository.clearPrimaryForVariant(
         advertisementId,
@@ -360,11 +502,20 @@ export const update = async (
   }
 
   const nextVariant = input.variant ?? existing.variant;
+  const requestedStatus = getRequestedStatus(input);
+  const isActivating =
+    existing.status !== "ACTIVE" && requestedStatus === "ACTIVE";
 
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
+
+    await lockAdvertisement(client, advertisementId);
+
+    if (isActivating) {
+      await validateActiveCreativeCapacity(client, advertisementId);
+    }
 
     if (
       input.isPrimary === true ||

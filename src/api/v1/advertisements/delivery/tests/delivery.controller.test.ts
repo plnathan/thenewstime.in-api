@@ -51,6 +51,7 @@ const mockResponseData: AdvertisementDeliveryResponse = {
     placementType: "NEWS_DETAIL_TOP",
     insertionType: "FIXED",
     displayOrder: 1,
+    isEnabled: true,
     collapseWhenEmpty: true,
     fallbackBehavior: "HIDE",
     displayFrequency: null,
@@ -58,7 +59,11 @@ const mockResponseData: AdvertisementDeliveryResponse = {
     autoCloseEnabled: false,
     autoCloseSeconds: null,
     closeButtonEnabled: true,
-    closeOnOverlayClick: true
+    closeOnOverlayClick: true,
+    rotationEnabled: false,
+    rotationMode: "TIME_BASED",
+    rotationIntervalSeconds: 10,
+    rotationStrategy: "ROUND_ROBIN"
   },
   advertisements: [],
   fallbackApplied: false

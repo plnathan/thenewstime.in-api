@@ -90,6 +90,8 @@ function createFinancialApprovalFixture() {
     holdReason: null,
     rejectionReason: null,
     approvalRemarks: "Discount approval requested",
+    approvedAmount: null,
+    approvedPercentage: null,
     createdAt: new Date("2026-09-23T10:00:00.000Z"),
     updatedAt: new Date("2026-09-23T10:00:00.000Z")
   };

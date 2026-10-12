@@ -6,12 +6,15 @@ import * as deliveryRepository from "./delivery.repository.js";
 
 import type {
   AdvertisementDeliveryContext,
+  AdvertisementDeliveryCreative,
+  AdvertisementDeliveryFormat,
   AdvertisementDeliveryItem,
   AdvertisementDeliveryPageType,
   AdvertisementDeliveryPlacement,
   AdvertisementDeliveryPlacementType,
   AdvertisementDeliveryRequest,
-  AdvertisementDeliveryResponse
+  AdvertisementDeliveryResponse,
+  AdvertisementDeliveryTargeting
 } from "./delivery.types.js";
 
 import * as placementRepository from "../placements/placement.repository.js";
@@ -37,6 +40,17 @@ const placementTypeByPage: Record<
     "NEWS_DETAIL_MODAL"
   ]
 };
+
+type PlacementRotationSettings = {
+  rotationEnabled?: boolean;
+  rotationMode?: AdvertisementDeliveryPlacement["rotationMode"];
+  rotationIntervalSeconds?: number;
+  rotationStrategy?: AdvertisementDeliveryPlacement["rotationStrategy"];
+};
+
+type CandidateCreative = NonNullable<
+  AdvertisementDeliveryCandidate["creatives"]
+>[number];
 
 function normalizeValue(value: string): string {
   return value.trim().toLowerCase();
@@ -134,11 +148,7 @@ function matchesTargeting(
   const includeTargets = targets.filter((target) => target.isInclude);
   const excludeTargets = targets.filter((target) => !target.isInclude);
 
-  const hasMatchingExclude = excludeTargets.some((target) =>
-    targetMatches(target, context)
-  );
-
-  if (hasMatchingExclude) {
+  if (excludeTargets.some((target) => targetMatches(target, context))) {
     return false;
   }
 
@@ -157,11 +167,17 @@ function isValidPlacementForPage(
 }
 
 function hasUsableCreative(candidate: AdvertisementDeliveryCandidate): boolean {
-  if (!candidate.creative) {
-    return false;
+  const activeCreatives = candidate.creatives ?? [];
+
+  if (activeCreatives.length > 0) {
+    return activeCreatives.some(
+      (creative) => creative.mediaUrl.trim().length > 0
+    );
   }
 
-  if (candidate.creative.mediaUrl.trim().length === 0) {
+  // Preserve compatibility with repository results that only include
+  // the legacy singular creative field.
+  if (!candidate.creative || candidate.creative.mediaUrl.trim().length === 0) {
     return false;
   }
 
@@ -173,7 +189,8 @@ function hasUsableCreative(candidate: AdvertisementDeliveryCandidate): boolean {
 }
 
 function deduplicateCandidates(
-  candidates: AdvertisementDeliveryCandidate[]
+  candidates: AdvertisementDeliveryCandidate[],
+  rotationEnabled: boolean
 ): AdvertisementDeliveryCandidate[] {
   const selected = new Map<number, AdvertisementDeliveryCandidate>();
 
@@ -185,6 +202,23 @@ function deduplicateCandidates(
       continue;
     }
 
+    if (rotationEnabled) {
+      // For rotating advertisements, keep the earliest placement rule
+      // for duplicate rows belonging to the same advertisement.
+      if (
+        candidate.placementRuleDisplayOrder <
+          existing.placementRuleDisplayOrder ||
+        (candidate.placementRuleDisplayOrder ===
+          existing.placementRuleDisplayOrder &&
+          candidate.placementRuleId < existing.placementRuleId)
+      ) {
+        selected.set(candidate.advertisementId, candidate);
+      }
+
+      continue;
+    }
+
+    // Preserve the existing non-rotation selection behaviour.
     if (
       candidate.schedulePriority > existing.schedulePriority ||
       (candidate.schedulePriority === existing.schedulePriority &&
@@ -197,9 +231,42 @@ function deduplicateCandidates(
   return Array.from(selected.values());
 }
 
+function getRotationSettings(
+  placement: AdvertisementDeliveryPlacement | null,
+  candidate?: AdvertisementDeliveryCandidate
+): Pick<
+  AdvertisementDeliveryPlacement,
+  | "rotationEnabled"
+  | "rotationMode"
+  | "rotationIntervalSeconds"
+  | "rotationStrategy"
+> {
+  const candidateSettings = candidate as
+    (AdvertisementDeliveryCandidate & PlacementRotationSettings) | undefined;
+
+  return {
+    rotationEnabled:
+      candidateSettings?.rotationEnabled ?? placement?.rotationEnabled ?? false,
+    rotationMode:
+      candidateSettings?.rotationMode ??
+      placement?.rotationMode ??
+      "TIME_BASED",
+    rotationIntervalSeconds:
+      candidateSettings?.rotationIntervalSeconds ??
+      placement?.rotationIntervalSeconds ??
+      10,
+    rotationStrategy:
+      candidateSettings?.rotationStrategy ??
+      placement?.rotationStrategy ??
+      "ROUND_ROBIN"
+  };
+}
+
 function mapPlacement(
   candidate: AdvertisementDeliveryCandidate
 ): AdvertisementDeliveryPlacement {
+  const rotation = getRotationSettings(null, candidate);
+
   return {
     id: candidate.placementId,
     code: candidate.placementCode,
@@ -216,13 +283,42 @@ function mapPlacement(
     autoCloseEnabled: candidate.autoCloseEnabled,
     autoCloseSeconds: candidate.autoCloseSeconds,
     closeButtonEnabled: candidate.closeButtonEnabled,
-    closeOnOverlayClick: candidate.closeOnOverlayClick
+    closeOnOverlayClick: candidate.closeOnOverlayClick,
+    isEnabled: true,
+    ...rotation
   };
 }
 
 function mapPlacementEntity(
   placement: AdvertisementPlacement
 ): AdvertisementDeliveryPlacement {
+  const rotationSource = placement as AdvertisementPlacement &
+    PlacementRotationSettings;
+
+  const rotation = getRotationSettings({
+    id: placement.id,
+    code: placement.code,
+    displayName: placement.displayName,
+    description: placement.description,
+    pageType: placement.pageType,
+    placementType: placement.placementType,
+    insertionType: placement.insertionType,
+    displayOrder: placement.displayOrder,
+    collapseWhenEmpty: placement.collapseWhenEmpty,
+    fallbackBehavior: placement.fallbackBehavior,
+    displayFrequency: placement.displayFrequency,
+    frequencyValue: placement.frequencyValue,
+    autoCloseEnabled: placement.autoCloseEnabled,
+    autoCloseSeconds: placement.autoCloseSeconds,
+    closeButtonEnabled: placement.closeButtonEnabled,
+    closeOnOverlayClick: placement.closeOnOverlayClick,
+    isEnabled: placement.isEnabled,
+    rotationEnabled: rotationSource.rotationEnabled ?? false,
+    rotationMode: rotationSource.rotationMode ?? "TIME_BASED",
+    rotationIntervalSeconds: rotationSource.rotationIntervalSeconds ?? 10,
+    rotationStrategy: rotationSource.rotationStrategy ?? "ROUND_ROBIN"
+  });
+
   return {
     id: placement.id,
     code: placement.code,
@@ -239,13 +335,103 @@ function mapPlacementEntity(
     autoCloseEnabled: placement.autoCloseEnabled,
     autoCloseSeconds: placement.autoCloseSeconds,
     closeButtonEnabled: placement.closeButtonEnabled,
-    closeOnOverlayClick: placement.closeOnOverlayClick
+    closeOnOverlayClick: placement.closeOnOverlayClick,
+    isEnabled: placement.isEnabled,
+    ...rotation
   };
+}
+
+function mapCreative(
+  creative: CandidateCreative
+): AdvertisementDeliveryCreative {
+  return {
+    id: creative.id,
+    formatId: creative.format?.id ?? null,
+    creativeType: creative.creativeType,
+    variant: creative.variant,
+    title: creative.title,
+    altText: creative.altText,
+    mediaUrl: creative.mediaUrl,
+    thumbnailUrl: creative.thumbnailUrl,
+    widthPx: creative.widthPx,
+    heightPx: creative.heightPx,
+    displayOrder: creative.displayOrder,
+    isPrimary: creative.isPrimary
+  };
+}
+
+function mapLegacyCreative(
+  candidate: AdvertisementDeliveryCandidate
+): AdvertisementDeliveryCreative | null {
+  if (candidate.creative === null) {
+    return null;
+  }
+
+  return {
+    id: candidate.creative.id,
+    formatId: candidate.format?.id ?? null,
+    creativeType: candidate.creative.creativeType,
+    variant: candidate.creative.variant,
+    title: candidate.creative.title,
+    altText: candidate.creative.altText,
+    mediaUrl: candidate.creative.mediaUrl,
+    thumbnailUrl: candidate.creative.thumbnailUrl,
+    widthPx: candidate.creative.widthPx,
+    heightPx: candidate.creative.heightPx,
+    displayOrder: candidate.creative.displayOrder,
+    isPrimary: candidate.creative.isPrimary
+  };
+}
+
+function mapFormat(
+  candidate: AdvertisementDeliveryCandidate
+): AdvertisementDeliveryFormat | null {
+  if (candidate.format === null) {
+    return null;
+  }
+
+  return {
+    id: candidate.format.id,
+    code: candidate.format.code,
+    displayName: candidate.format.displayName,
+    description: null,
+    widthPx: candidate.format.widthPx,
+    heightPx: candidate.format.heightPx,
+    mobileWidthPx: candidate.format.mobileWidthPx,
+    mobileHeightPx: candidate.format.mobileHeightPx,
+    isResponsive: candidate.format.isResponsive
+  };
+}
+
+function mapTargeting(
+  targets: AdvertisementDeliveryTargetRow[]
+): AdvertisementDeliveryTargeting[] {
+  return targets.map((target) => ({
+    id: target.id,
+    targetType: target.targetType,
+    targetValue: target.targetValue,
+    isInclude: target.isInclude
+  }));
 }
 
 function mapAdvertisement(
   candidate: AdvertisementDeliveryCandidate
 ): AdvertisementDeliveryItem {
+  const aggregatedCreatives = (candidate.creatives ?? [])
+    .filter((creative) => creative.mediaUrl.trim().length > 0)
+    .map(mapCreative);
+
+  const legacyCreative = mapLegacyCreative(candidate);
+
+  // Preserve compatibility with repository results that only populate
+  // the legacy singular creative field.
+  const creatives =
+    aggregatedCreatives.length > 0
+      ? aggregatedCreatives
+      : legacyCreative === null
+        ? []
+        : [legacyCreative];
+
   return {
     advertisementId: candidate.advertisementId,
     name: candidate.advertisementName,
@@ -257,41 +443,14 @@ function mapAdvertisement(
     isHouseAd: candidate.isHouseAd,
     schedulePriority: candidate.schedulePriority,
     placementRuleId: candidate.placementRuleId,
-    placementDisplayOrder: candidate.placementRuleDisplayOrder,
-    insertionType:
-      candidate.placementRuleInsertionType ?? candidate.placementInsertionType,
+    placementRuleDisplayOrder: candidate.placementRuleDisplayOrder,
+    placementRuleInsertionType: candidate.placementRuleInsertionType,
     insertionPosition: candidate.insertionPosition,
     maxImpressions: candidate.maxImpressions,
-    creative:
-      candidate.creative === null
-        ? null
-        : {
-            id: candidate.creative.id,
-            formatId: candidate.format?.id ?? null,
-            creativeType: candidate.creative.creativeType,
-            variant: candidate.creative.variant,
-            title: candidate.creative.title,
-            altText: candidate.creative.altText,
-            mediaUrl: candidate.creative.mediaUrl,
-            thumbnailUrl: candidate.creative.thumbnailUrl,
-            widthPx: candidate.creative.widthPx,
-            heightPx: candidate.creative.heightPx,
-            displayOrder: candidate.creative.displayOrder,
-            isPrimary: candidate.creative.isPrimary
-          },
-    format:
-      candidate.format === null
-        ? null
-        : {
-            id: candidate.format.id,
-            code: candidate.format.code,
-            displayName: candidate.format.displayName,
-            widthPx: candidate.format.widthPx,
-            heightPx: candidate.format.heightPx,
-            mobileWidthPx: candidate.format.mobileWidthPx,
-            mobileHeightPx: candidate.format.mobileHeightPx,
-            isResponsive: candidate.format.isResponsive
-          }
+    creative: legacyCreative,
+    format: mapFormat(candidate),
+    creatives,
+    targeting: mapTargeting(candidate.targets)
   };
 }
 
@@ -316,7 +475,12 @@ function createEmptyResponse(
       autoCloseEnabled: false,
       autoCloseSeconds: null,
       closeButtonEnabled: true,
-      closeOnOverlayClick: true
+      closeOnOverlayClick: true,
+      isEnabled: false,
+      rotationEnabled: false,
+      rotationMode: "TIME_BASED",
+      rotationIntervalSeconds: 10,
+      rotationStrategy: "ROUND_ROBIN"
     },
     advertisements: [],
     fallbackApplied: false
@@ -417,6 +581,11 @@ export async function getEligibleAdvertisements(
       };
     }
 
+    const placementRotation = getRotationSettings(
+      requestedPlacement,
+      placementCandidate
+    );
+
     const targetedCandidates = placementCandidates.filter((candidate) =>
       matchesTargeting(candidate.targets, context)
     );
@@ -430,27 +599,56 @@ export async function getEligibleAdvertisements(
       };
     }
 
-    const uniqueCandidates = deduplicateCandidates(creativeCandidates);
+    let eligibleCandidates: AdvertisementDeliveryCandidate[];
 
-    uniqueCandidates.sort((a, b) => {
-      if (b.schedulePriority !== a.schedulePriority) {
-        return b.schedulePriority - a.schedulePriority;
-      }
+    if (placementRotation.rotationEnabled) {
+      // Only explicitly active rotation members can be delivered when
+      // advertisement rotation is enabled.
+      const activeMemberCandidates = creativeCandidates.filter(
+        (candidate) =>
+          candidate.rotationMemberId !== null &&
+          candidate.rotationMemberId !== undefined
+      );
 
-      if (b.priority !== a.priority) {
-        return b.priority - a.priority;
-      }
+      eligibleCandidates = deduplicateCandidates(activeMemberCandidates, true);
 
-      if (a.placementRuleDisplayOrder !== b.placementRuleDisplayOrder) {
-        return a.placementRuleDisplayOrder - b.placementRuleDisplayOrder;
-      }
+      // Membership priority controls rotation ordering; schedule priority
+      // must not reorder rotation members.
+      eligibleCandidates.sort((a, b) => {
+        const priorityDifference =
+          (a.rotationPriority ?? Number.MAX_SAFE_INTEGER) -
+          (b.rotationPriority ?? Number.MAX_SAFE_INTEGER);
 
-      return a.advertisementId - b.advertisementId;
-    });
+        if (priorityDifference !== 0) {
+          return priorityDifference;
+        }
+
+        return a.advertisementId - b.advertisementId;
+      });
+    } else {
+      eligibleCandidates = deduplicateCandidates(creativeCandidates, false);
+
+      // Preserve the existing ordering when rotation is disabled.
+      eligibleCandidates.sort((a, b) => {
+        if (b.schedulePriority !== a.schedulePriority) {
+          return b.schedulePriority - a.schedulePriority;
+        }
+
+        if (b.priority !== a.priority) {
+          return b.priority - a.priority;
+        }
+
+        if (a.placementRuleDisplayOrder !== b.placementRuleDisplayOrder) {
+          return a.placementRuleDisplayOrder - b.placementRuleDisplayOrder;
+        }
+
+        return a.advertisementId - b.advertisementId;
+      });
+    }
 
     return {
       placementCandidate,
-      candidates: uniqueCandidates
+      candidates: eligibleCandidates
     };
   };
 

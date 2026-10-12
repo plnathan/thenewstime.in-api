@@ -42,26 +42,39 @@ const optionalNullableRemarksSchema = z
   .nullable()
   .optional();
 
-/*
- * Workflow remarks support both:
- *
- *   approvalRemarks
- *
- * and:
- *
- *   remarks
- *
- * `approvalRemarks` remains the canonical field returned by validation.
- *
- * This preserves the existing API/tests while also supporting the workflow
- * request payload used by the integration tests.
- */
-const workflowRemarksSchema = z
-  .object({
-    approvalRemarks: optionalNullableRemarksSchema,
+const approvedAmountSchema = z.coerce
+  .number()
+  .nonnegative("Approved amount cannot be negative.")
+  .finite("Approved amount must be a valid number.")
+  .refine(
+    (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-9,
+    "Approved amount must have at most two decimal places."
+  );
 
-    remarks: optionalNullableRemarksSchema
-  })
+const approvedPercentageSchema = z.coerce
+  .number()
+  .min(0, "Approved percentage cannot be negative.")
+  .max(100, "Approved percentage cannot exceed 100.")
+  .finite("Approved percentage must be a valid number.")
+  .refine(
+    (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-9,
+    "Approved percentage must have at most two decimal places."
+  );
+
+/*
+ * Keep the remarks fields as an object schema so approval-specific fields
+ * can be added with .extend() before any transformation takes place.
+ */
+const workflowRemarksObjectSchema = z.object({
+  approvalRemarks: optionalNullableRemarksSchema,
+  remarks: optionalNullableRemarksSchema
+});
+
+/*
+ * Validate the two supported remarks fields and then normalize them to
+ * approvalRemarks for the service layer.
+ */
+const workflowRemarksSchema = workflowRemarksObjectSchema
   .superRefine((value, context) => {
     if (value.approvalRemarks !== undefined && value.remarks !== undefined) {
       context.addIssue({
@@ -93,19 +106,13 @@ export const advertisementFinancialApprovalPaymentIdSchema = z.object({
 export const createAdvertisementFinancialApprovalSchema = z
   .object({
     advertisementId: positiveIntegerSchema,
-
     clientId: positiveIntegerSchema,
-
     paymentId: positiveIntegerSchema.nullable().optional(),
-
     approvalType: financialApprovalTypeSchema,
-
     requestedAmount: financialApprovalAmountSchema.nullable().optional(),
-
     requestedPercentage: financialApprovalPercentageSchema
       .nullable()
       .optional(),
-
     approvalRemarks: optionalNullableRemarksSchema
   })
   .superRefine((value, context) => {
@@ -159,28 +166,57 @@ export const rejectAdvertisementFinancialApprovalSchema = z.object({
 });
 
 export const approveAdvertisementFinancialApprovalSchema =
-  workflowRemarksSchema;
+  workflowRemarksObjectSchema
+    .extend({
+      approvedAmount: approvedAmountSchema.nullable().optional(),
+      approvedPercentage: approvedPercentageSchema.nullable().optional()
+    })
+    .superRefine((value, context) => {
+      if (value.approvalRemarks !== undefined && value.remarks !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["remarks"],
+          message: "Provide either approvalRemarks or remarks, not both."
+        });
+      }
+
+      const hasAmount =
+        value.approvedAmount !== undefined && value.approvedAmount !== null;
+
+      const hasPercentage =
+        value.approvedPercentage !== undefined &&
+        value.approvedPercentage !== null;
+
+      if (hasAmount && hasPercentage) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["approvedAmount"],
+          message:
+            "Provide either approvedAmount or approvedPercentage, not both."
+        });
+      }
+    })
+    .transform((value) => ({
+      approvalRemarks:
+        value.approvalRemarks !== undefined
+          ? value.approvalRemarks
+          : value.remarks,
+      approvedAmount: value.approvedAmount,
+      approvedPercentage: value.approvedPercentage
+    }));
 
 export const resubmitAdvertisementFinancialApprovalSchema =
   workflowRemarksSchema;
 
 export const advertisementFinancialApprovalQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-
   advertisementId: positiveIntegerSchema.optional(),
-
   clientId: positiveIntegerSchema.optional(),
-
   paymentId: positiveIntegerSchema.optional(),
-
   approvalType: financialApprovalTypeSchema.optional(),
-
   status: financialApprovalStatusSchema.optional(),
-
   requestedBy: positiveIntegerSchema.optional(),
-
   reviewedBy: positiveIntegerSchema.optional()
 });
 

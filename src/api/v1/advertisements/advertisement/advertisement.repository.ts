@@ -1208,7 +1208,8 @@ export const create = async (
 export const update = async (
   id: number,
   input: UpdateAdvertisementInput &
-    AdvertisementCalculatedFinancialFields & {
+    AdvertisementCalculatedFinancialFields &
+    AdvertisementCalculatedPricingFields & {
       placementId?: number;
     },
   updatedBy: number,
@@ -1254,18 +1255,14 @@ export const update = async (
     if (input.startAt !== undefined) {
       addField(
         "start_at",
-        input.startAt instanceof Date
-          ? input.startAt
-          : new Date(input.startAt)
+        input.startAt instanceof Date ? input.startAt : new Date(input.startAt)
       );
     }
 
     if (input.endAt !== undefined) {
       addField(
         "end_at",
-        input.endAt instanceof Date
-          ? input.endAt
-          : new Date(input.endAt)
+        input.endAt instanceof Date ? input.endAt : new Date(input.endAt)
       );
     }
 
@@ -1283,6 +1280,22 @@ export const update = async (
 
     if (input.advertisementAmount !== undefined) {
       addField("advertisement_amount", input.advertisementAmount);
+    }
+
+    if (input.standardAmount !== undefined) {
+      addField("standard_amount", input.standardAmount);
+    }
+
+    if (input.pricingPlacementId !== undefined) {
+      addField("pricing_placement_id", input.pricingPlacementId);
+    }
+
+    if (input.pricingUnit !== undefined) {
+      addField("pricing_unit", input.pricingUnit);
+    }
+
+    if (input.pricingQuantity !== undefined) {
+      addField("pricing_quantity", input.pricingQuantity);
     }
 
     if (input.discountPercentage !== undefined) {
@@ -1362,12 +1375,7 @@ export const update = async (
      * Persist a newly selected runtime placement.
      */
     if (input.placementId !== undefined) {
-      await saveRuntimePlacementRule(
-        id,
-        input.placementId,
-        updatedBy,
-        db
-      );
+      await saveRuntimePlacementRule(id, input.placementId, updatedBy, db);
     }
 
     /*

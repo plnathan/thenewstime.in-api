@@ -413,9 +413,7 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
     const row = result.rows[0];
 
     if (row === undefined) {
-      throw new Error(
-        "Failed to create financial interaction test placement."
-      );
+      throw new Error("Failed to create financial interaction test placement.");
     }
 
     const id = Number(row.id);
@@ -454,6 +452,21 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
     expect(data.id).toBeDefined();
 
     return Number(data.id);
+  };
+
+  const configureAdvanceRequirement = async (
+    advanceAmount: number
+  ): Promise<void> => {
+    const result = await pool.query(
+      `
+        UPDATE advertisements
+        SET advance_amount = $2
+        WHERE id = $1
+      `,
+      [advertisementId, advanceAmount]
+    );
+
+    expect(result.rowCount).toBe(1);
   };
 
   const createPayment = async (
@@ -697,7 +710,17 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
         [advertisementId]
       );
     }
-
+    /*
+     * Each test starts with no advance requirement by default.
+     * Tests specifically exercising ADVANCE payments configure their
+     * own requirement before recording the payment.
+     *
+     * This prevents one scenario's advance settings from blocking
+     * REGULAR or FINAL payments in another scenario.
+     */
+    if (advertisementId > 0) {
+      await configureAdvanceRequirement(0);
+    }
     /*
      * Reset the fixture variable as well so no previous test's payment
      * identifier is accidentally reused.
@@ -898,6 +921,8 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
   });
 
   it("should approve a REFUND financial approval without changing the payment status", async () => {
+    await configureAdvanceRequirement(25000);
+
     paymentId = await createPayment(
       25000,
       "ADVANCE",
@@ -1378,6 +1403,8 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
   });
 
   it("should keep payment state unchanged when a financial approval is held", async () => {
+    await configureAdvanceRequirement(30000);
+
     paymentId = await createPayment(
       30000,
       "ADVANCE",

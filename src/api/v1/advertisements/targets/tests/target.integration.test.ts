@@ -32,16 +32,28 @@ const {
   };
 });
 
+const authenticatedUserId = 1;
+
 vi.mock("../../../security/middleware/authorize.middleware.js", () => ({
   authorize: (...args: unknown[]) => {
     authorizationConfigurations.push(args);
     authorizeMock(...args);
 
     return (
-      _request: express.Request,
+      request: express.Request,
       _response: express.Response,
       next: express.NextFunction
-    ) => next();
+    ) => {
+      // Simulate the authenticated request context supplied by the
+      // real authentication middleware before the controller executes.
+      Object.assign(request, {
+        user: {
+          id: authenticatedUserId
+        }
+      });
+
+      next();
+    };
   }
 }));
 
@@ -92,8 +104,8 @@ describe("Advertisement Targeting routes", () => {
 
   beforeEach(() => {
     // Reset service behavior and call history between tests.
-    // Do not clear authorizeMock: authorize() is called when the router
-    // is initialized, before the individual tests execute.
+    // Authorization configurations are recorded when the router
+    // initializes, so retain those registration records.
     serviceMocks.listTargets.mockReset();
     serviceMocks.addTarget.mockReset();
     serviceMocks.editTarget.mockReset();
@@ -118,6 +130,7 @@ describe("Advertisement Targeting routes", () => {
       });
 
       expect(serviceMocks.listTargets).toHaveBeenCalledWith(202);
+
       expect(authorizationConfigurations).toContainEqual([
         "ADVERTISEMENT",
         "advertisements.targets",
@@ -168,11 +181,15 @@ describe("Advertisement Targeting routes", () => {
         data: sampleTarget
       });
 
-      expect(serviceMocks.addTarget).toHaveBeenCalledWith(202, {
-        targetType: "STATE",
-        targetValue: "tamil-nadu",
-        isInclude: true
-      });
+      expect(serviceMocks.addTarget).toHaveBeenCalledWith(
+        202,
+        {
+          targetType: "STATE",
+          targetValue: "tamil-nadu",
+          isInclude: true
+        },
+        authenticatedUserId
+      );
 
       expect(authorizationConfigurations).toContainEqual([
         "ADVERTISEMENT",
@@ -192,11 +209,15 @@ describe("Advertisement Targeting routes", () => {
         })
         .expect(201);
 
-      expect(serviceMocks.addTarget).toHaveBeenCalledWith(202, {
-        targetType: "STATE",
-        targetValue: "tamil-nadu",
-        isInclude: true
-      });
+      expect(serviceMocks.addTarget).toHaveBeenCalledWith(
+        202,
+        {
+          targetType: "STATE",
+          targetValue: "tamil-nadu",
+          isInclude: true
+        },
+        authenticatedUserId
+      );
     });
 
     it("returns 400 for an unsupported target type", async () => {
@@ -251,13 +272,17 @@ describe("Advertisement Targeting routes", () => {
         data: [sampleTarget]
       });
 
-      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(202, [
-        {
-          targetType: "STATE",
-          targetValue: "tamil-nadu",
-          isInclude: true
-        }
-      ]);
+      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(
+        202,
+        [
+          {
+            targetType: "STATE",
+            targetValue: "tamil-nadu",
+            isInclude: true
+          }
+        ],
+        authenticatedUserId
+      );
 
       expect(authorizationConfigurations).toContainEqual([
         "ADVERTISEMENT",
@@ -274,7 +299,12 @@ describe("Advertisement Targeting routes", () => {
         .send({ targets: [] })
         .expect(200);
 
-      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(202, []);
+      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(
+        202,
+        [],
+        authenticatedUserId
+      );
+
       expect(response.body.data).toEqual([]);
     });
 
@@ -340,9 +370,14 @@ describe("Advertisement Targeting routes", () => {
         data: updatedTarget
       });
 
-      expect(serviceMocks.editTarget).toHaveBeenCalledWith(202, 101, {
-        targetValue: "kerala"
-      });
+      expect(serviceMocks.editTarget).toHaveBeenCalledWith(
+        202,
+        101,
+        {
+          targetValue: "kerala"
+        },
+        authenticatedUserId
+      );
 
       expect(authorizationConfigurations).toContainEqual([
         "ADVERTISEMENT",

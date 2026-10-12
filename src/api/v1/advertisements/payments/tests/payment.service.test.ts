@@ -8,6 +8,12 @@ import * as paymentService from "../payment.service.js";
 import type { AdvertisementPayment } from "../payment.types.js";
 
 vi.mock("../payment.repository.js", () => ({
+  withAdvertisementLock: vi.fn(
+    async <T>(
+      _advertisementId: number,
+      callback: (executor: unknown) => Promise<T>
+    ): Promise<T> => callback({})
+  ),
   findById: vi.fn(),
   findRawById: vi.fn(),
   create: vi.fn(),
@@ -21,6 +27,7 @@ vi.mock("../payment.repository.js", () => ({
   getTotalRefundedAmount: vi.fn(),
   getList: vi.fn(),
   getSummary: vi.fn(),
+  getUnsettledPaymentAmounts: vi.fn(),
   advertisementExists: vi.fn(),
   hasTransactionReference: vi.fn(),
   getVerifiedPaymentAmount: vi.fn(),
@@ -79,6 +86,25 @@ describe("Advertisement Payment Service", () => {
 
     mockedRepository.advertisementExists.mockResolvedValue(true);
     mockedRepository.hasTransactionReference.mockResolvedValue(false);
+
+    mockedRepository.getSummary.mockResolvedValue({
+      advertisementId: 10,
+      advertisementAmount: 100000,
+      discountAmount: 0,
+      adjustmentAmount: 0,
+      verifiedPaymentAmount: 0,
+      refundedAmount: 0,
+      netPaidAmount: 0,
+      outstandingAmount: 100000,
+      advanceRequiredAmount: 0,
+      advanceReceivedAmount: 0,
+      advancePendingAmount: 0
+    });
+
+    mockedRepository.getUnsettledPaymentAmounts.mockResolvedValue({
+      total: 0,
+      advance: 0
+    });
   });
 
   describe("getPaymentById", () => {
@@ -110,6 +136,20 @@ describe("Advertisement Payment Service", () => {
     it("should create a payment successfully", async () => {
       const payment = createPayment();
 
+      mockedRepository.getSummary.mockResolvedValue({
+        advertisementId: 10,
+        advertisementAmount: 100000,
+        discountAmount: 0,
+        adjustmentAmount: 0,
+        verifiedPaymentAmount: 0,
+        refundedAmount: 0,
+        netPaidAmount: 0,
+        outstandingAmount: 100000,
+        advanceRequiredAmount: 25000,
+        advanceReceivedAmount: 0,
+        advancePendingAmount: 25000
+      });
+
       mockedRepository.create.mockResolvedValue(payment);
 
       const result = await paymentService.createPayment(
@@ -126,10 +166,25 @@ describe("Advertisement Payment Service", () => {
 
       expect(result).toEqual(payment);
 
-      expect(mockedRepository.advertisementExists).toHaveBeenCalledWith(10);
+      expect(mockedRepository.withAdvertisementLock).toHaveBeenCalledWith(
+        10,
+        expect.any(Function)
+      );
+
+      expect(mockedRepository.getSummary).toHaveBeenCalledWith(
+        10,
+        expect.anything()
+      );
+
+      expect(mockedRepository.getUnsettledPaymentAmounts).toHaveBeenCalledWith(
+        10,
+        expect.anything()
+      );
 
       expect(mockedRepository.hasTransactionReference).toHaveBeenCalledWith(
-        "TXN-10001"
+        "TXN-10001",
+        undefined,
+        expect.anything()
       );
 
       expect(mockedRepository.create).toHaveBeenCalledWith(
@@ -141,7 +196,8 @@ describe("Advertisement Payment Service", () => {
           transactionReference: "TXN-10001",
           notes: "Advance payment"
         }),
-        1
+        1,
+        expect.anything()
       );
     });
 
@@ -181,6 +237,11 @@ describe("Advertisement Payment Service", () => {
         statusCode: 409
       });
 
+      expect(mockedRepository.getUnsettledPaymentAmounts).toHaveBeenCalledWith(
+        10,
+        expect.anything()
+      );
+
       expect(mockedRepository.create).not.toHaveBeenCalled();
     });
 
@@ -203,7 +264,8 @@ describe("Advertisement Payment Service", () => {
           transactionReference: "TXN-ABC",
           notes: "Payment note"
         }),
-        1
+        1,
+        expect.anything()
       );
     });
   });
@@ -779,7 +841,10 @@ describe("Advertisement Payment Service", () => {
         verifiedPaymentAmount: 30000,
         refundedAmount: 2000,
         netPaidAmount: 28000,
-        outstandingAmount: 16000
+        outstandingAmount: 16000,
+        advanceRequiredAmount: 0,
+        advanceReceivedAmount: 0,
+        advancePendingAmount: 0
       };
 
       mockedRepository.advertisementExists.mockResolvedValue(true);

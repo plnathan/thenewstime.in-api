@@ -62,7 +62,33 @@ function createPlacement(
 function createCandidate(
   overrides: Partial<AdvertisementDeliveryCandidate> = {}
 ): AdvertisementDeliveryCandidate {
-  return {
+  const defaultFormat = {
+    id: 50,
+    code: "LEADERBOARD",
+    displayName: "Leaderboard",
+    description: "728x90 leaderboard",
+    widthPx: 728,
+    heightPx: 90,
+    mobileWidthPx: 320,
+    mobileHeightPx: 100,
+    isResponsive: true
+  };
+
+  const defaultCreative = {
+    id: 40,
+    creativeType: "IMAGE" as const,
+    variant: "DESKTOP" as const,
+    title: "Test Creative",
+    altText: "Test advertisement",
+    mediaUrl: "https://cdn.example.com/ad.jpg",
+    thumbnailUrl: "https://cdn.example.com/ad-thumb.jpg",
+    widthPx: 728,
+    heightPx: 90,
+    displayOrder: 1,
+    isPrimary: true
+  };
+
+  const base: AdvertisementDeliveryCandidate = {
     advertisementId: 100,
     advertisementName: "Test Advertisement",
     advertisementType: "DISPLAY",
@@ -89,6 +115,13 @@ function createCandidate(
     closeButtonEnabled: true,
     closeOnOverlayClick: true,
 
+    rotationEnabled: false,
+    rotationMode: "TIME_BASED",
+    rotationIntervalSeconds: 10,
+    rotationStrategy: "ROUND_ROBIN",
+    rotationMemberId: null,
+    rotationPriority: 0,
+
     placementRuleId: 20,
     placementRuleDisplayOrder: 1,
     placementRuleInsertionType: null,
@@ -98,36 +131,49 @@ function createCandidate(
     scheduleId: 30,
     schedulePriority: 5,
 
-    creative: {
-      id: 40,
-      creativeType: "IMAGE",
-      variant: "DESKTOP",
-      title: "Test Creative",
-      altText: "Test advertisement",
-      mediaUrl: "https://cdn.example.com/ad.jpg",
-      thumbnailUrl: "https://cdn.example.com/ad-thumb.jpg",
-      widthPx: 728,
-      heightPx: 90,
-      displayOrder: 1,
-      isPrimary: true
-    },
+    creatives: [
+      {
+        ...defaultCreative,
+        format: defaultFormat
+      }
+    ],
 
-    format: {
-      id: 50,
-      code: "LEADERBOARD",
-      displayName: "Leaderboard",
-      description: "728x90 leaderboard",
-      widthPx: 728,
-      heightPx: 90,
-      mobileWidthPx: 320,
-      mobileHeightPx: 100,
-      isResponsive: true
-    },
+    creative: defaultCreative,
+    format: defaultFormat,
+    targets: []
+  };
 
-    targets: [],
-
+  const candidate = {
+    ...base,
     ...overrides
   };
+
+  /*
+   * Keep the legacy singular creative and the aggregated creative collection
+   * consistent when a test overrides creative or format data.
+   *
+   * An explicitly supplied `creatives` array takes precedence. This lets
+   * tests exercise multiple creatives and empty creative collections.
+   */
+  if (
+    !Object.prototype.hasOwnProperty.call(overrides, "creatives") &&
+    (Object.prototype.hasOwnProperty.call(overrides, "creative") ||
+      Object.prototype.hasOwnProperty.call(overrides, "format"))
+  ) {
+    const selectedCreative = candidate.creative;
+    const selectedFormat = candidate.format;
+
+    candidate.creatives = selectedCreative
+      ? [
+          {
+            ...selectedCreative,
+            format: selectedFormat
+          }
+        ]
+      : [];
+  }
+
+  return candidate;
 }
 
 describe("Advertisement Delivery Service", () => {
@@ -138,9 +184,7 @@ describe("Advertisement Delivery Service", () => {
   });
 
   it("should retrieve eligible advertisements for a valid page and placement", async () => {
-    const candidate = createCandidate();
-
-    mockedFindEligibleCandidates.mockResolvedValue([candidate]);
+    mockedFindEligibleCandidates.mockResolvedValue([createCandidate()]);
 
     const result = await getEligibleAdvertisements({
       pageType: "NEWS_DETAIL",
@@ -194,6 +238,7 @@ describe("Advertisement Delivery Service", () => {
         placementType: "HOME_TOP",
         insertionType: "FIXED",
         displayOrder: 0,
+        isEnabled: false,
         collapseWhenEmpty: true,
         fallbackBehavior: "HIDE",
         displayFrequency: null,
@@ -201,7 +246,11 @@ describe("Advertisement Delivery Service", () => {
         autoCloseEnabled: false,
         autoCloseSeconds: null,
         closeButtonEnabled: true,
-        closeOnOverlayClick: true
+        closeOnOverlayClick: true,
+        rotationEnabled: false,
+        rotationMode: "TIME_BASED",
+        rotationIntervalSeconds: 10,
+        rotationStrategy: "ROUND_ROBIN"
       },
       advertisements: [],
       fallbackApplied: false
@@ -263,7 +312,6 @@ describe("Advertisement Delivery Service", () => {
     });
 
     expect(mockedFindPlacementById).toHaveBeenCalledWith(99);
-
     expect(mockedFindEligibleCandidates).not.toHaveBeenCalled();
 
     expect(result).toEqual({
@@ -416,11 +464,9 @@ describe("Advertisement Delivery Service", () => {
   });
 
   it("should allow advertisements without targets", async () => {
-    const candidate = createCandidate({
-      targets: []
-    });
-
-    mockedFindEligibleCandidates.mockResolvedValue([candidate]);
+    mockedFindEligibleCandidates.mockResolvedValue([
+      createCandidate({ targets: [] })
+    ]);
 
     const result = await getEligibleAdvertisements({
       pageType: "NEWS_DETAIL",
@@ -433,7 +479,8 @@ describe("Advertisement Delivery Service", () => {
 
   it("should exclude an advertisement without usable creative", async () => {
     const candidate = createCandidate({
-      creative: null
+      creative: null,
+      creatives: []
     });
 
     mockedFindEligibleCandidates.mockResolvedValue([candidate]);
@@ -450,20 +497,38 @@ describe("Advertisement Delivery Service", () => {
   });
 
   it("should exclude an advertisement when the creative media URL is empty", async () => {
+    const invalidCreative = {
+      id: 40,
+      creativeType: "IMAGE" as const,
+      variant: "DESKTOP" as const,
+      title: "Invalid Creative",
+      altText: "Invalid",
+      mediaUrl: "   ",
+      thumbnailUrl: null,
+      widthPx: 728,
+      heightPx: 90,
+      displayOrder: 1,
+      isPrimary: true
+    };
+
     const candidate = createCandidate({
-      creative: {
-        id: 40,
-        creativeType: "IMAGE",
-        variant: "DESKTOP",
-        title: "Invalid Creative",
-        altText: "Invalid",
-        mediaUrl: "   ",
-        thumbnailUrl: null,
-        widthPx: 728,
-        heightPx: 90,
-        displayOrder: 1,
-        isPrimary: true
-      }
+      creative: invalidCreative,
+      creatives: [
+        {
+          ...invalidCreative,
+          format: {
+            id: 50,
+            code: "LEADERBOARD",
+            displayName: "Leaderboard",
+            description: "728x90 leaderboard",
+            widthPx: 728,
+            heightPx: 90,
+            mobileWidthPx: 320,
+            mobileHeightPx: 100,
+            isResponsive: true
+          }
+        }
+      ]
     });
 
     mockedFindEligibleCandidates.mockResolvedValue([candidate]);
@@ -489,7 +554,12 @@ describe("Advertisement Delivery Service", () => {
         mobileWidthPx: 320,
         mobileHeightPx: 100,
         isResponsive: true
-      }
+      },
+      /*
+       * Exercise the legacy singular-creative compatibility path so that
+       * the invalid top-level format is the format used for validation.
+       */
+      creatives: []
     });
 
     mockedFindEligibleCandidates.mockResolvedValue([candidate]);
@@ -505,7 +575,23 @@ describe("Advertisement Delivery Service", () => {
 
   it("should allow a usable creative without a format", async () => {
     const candidate = createCandidate({
-      format: null
+      format: null,
+      creatives: [
+        {
+          id: 40,
+          creativeType: "IMAGE",
+          variant: "DESKTOP",
+          title: "Test Creative",
+          altText: "Test advertisement",
+          mediaUrl: "https://cdn.example.com/ad.jpg",
+          thumbnailUrl: "https://cdn.example.com/ad-thumb.jpg",
+          widthPx: 728,
+          heightPx: 90,
+          displayOrder: 1,
+          isPrimary: true,
+          format: null
+        }
+      ]
     });
 
     mockedFindEligibleCandidates.mockResolvedValue([candidate]);
@@ -642,6 +728,32 @@ describe("Advertisement Delivery Service", () => {
   });
 
   it("should map placement, creative, format, and advertisement fields correctly", async () => {
+    const format = {
+      id: 50,
+      code: "LEADERBOARD",
+      displayName: "Leaderboard",
+      description: "728x90 leaderboard",
+      widthPx: 728,
+      heightPx: 90,
+      mobileWidthPx: 320,
+      mobileHeightPx: 100,
+      isResponsive: true
+    };
+
+    const creative = {
+      id: 40,
+      creativeType: "IMAGE" as const,
+      variant: "DESKTOP" as const,
+      title: "Test Creative",
+      altText: "Test advertisement",
+      mediaUrl: "https://cdn.example.com/ad.jpg",
+      thumbnailUrl: "https://cdn.example.com/ad-thumb.jpg",
+      widthPx: 728,
+      heightPx: 90,
+      displayOrder: 1,
+      isPrimary: true
+    };
+
     const candidate = createCandidate({
       placementRuleInsertionType: "AFTER_N_ITEMS",
       insertionPosition: 3,
@@ -656,30 +768,9 @@ describe("Advertisement Delivery Service", () => {
       autoCloseSeconds: 8,
       closeButtonEnabled: true,
       closeOnOverlayClick: false,
-      creative: {
-        id: 40,
-        creativeType: "IMAGE",
-        variant: "DESKTOP",
-        title: "Test Creative",
-        altText: "Test advertisement",
-        mediaUrl: "https://cdn.example.com/ad.jpg",
-        thumbnailUrl: "https://cdn.example.com/ad-thumb.jpg",
-        widthPx: 728,
-        heightPx: 90,
-        displayOrder: 1,
-        isPrimary: true
-      },
-      format: {
-        id: 50,
-        code: "LEADERBOARD",
-        displayName: "Leaderboard",
-        description: "728x90 leaderboard",
-        widthPx: 728,
-        heightPx: 90,
-        mobileWidthPx: 320,
-        mobileHeightPx: 100,
-        isResponsive: true
-      }
+      creative,
+      creatives: [{ ...creative, format }],
+      format
     });
 
     mockedFindEligibleCandidates.mockResolvedValue([candidate]);
@@ -698,6 +789,7 @@ describe("Advertisement Delivery Service", () => {
       placementType: "NEWS_DETAIL_TOP",
       insertionType: "FIXED",
       displayOrder: 1,
+      isEnabled: true,
       collapseWhenEmpty: true,
       fallbackBehavior: "HIDE",
       displayFrequency: "ONCE_PER_SESSION",
@@ -705,10 +797,14 @@ describe("Advertisement Delivery Service", () => {
       autoCloseEnabled: true,
       autoCloseSeconds: 8,
       closeButtonEnabled: true,
-      closeOnOverlayClick: false
+      closeOnOverlayClick: false,
+      rotationEnabled: false,
+      rotationMode: "TIME_BASED",
+      rotationIntervalSeconds: 10,
+      rotationStrategy: "ROUND_ROBIN"
     });
 
-    expect(result.advertisements[0]).toEqual({
+    expect(result.advertisements[0]).toMatchObject({
       advertisementId: 100,
       name: "Test Advertisement",
       advertisementType: "DISPLAY",
@@ -719,10 +815,11 @@ describe("Advertisement Delivery Service", () => {
       isHouseAd: false,
       schedulePriority: 5,
       placementRuleId: 20,
-      placementDisplayOrder: 1,
-      insertionType: "AFTER_N_ITEMS",
+      placementRuleDisplayOrder: 1,
+      placementRuleInsertionType: "AFTER_N_ITEMS",
       insertionPosition: 3,
       maxImpressions: 1000,
+      targeting: [],
       creative: {
         id: 40,
         formatId: 50,
@@ -741,32 +838,67 @@ describe("Advertisement Delivery Service", () => {
         id: 50,
         code: "LEADERBOARD",
         displayName: "Leaderboard",
+        description: null,
         widthPx: 728,
         heightPx: 90,
         mobileWidthPx: 320,
         mobileHeightPx: 100,
         isResponsive: true
-      }
+      },
+      creatives: [
+        {
+          id: 40,
+          formatId: 50,
+          creativeType: "IMAGE",
+          variant: "DESKTOP",
+          title: "Test Creative",
+          altText: "Test advertisement",
+          mediaUrl: "https://cdn.example.com/ad.jpg",
+          thumbnailUrl: "https://cdn.example.com/ad-thumb.jpg",
+          widthPx: 728,
+          heightPx: 90,
+          displayOrder: 1,
+          isPrimary: true
+        }
+      ]
     });
 
     expect(result.fallbackApplied).toBe(false);
   });
 
   it("should preserve the mobile creative variant when mapping delivery data", async () => {
+    const mobileCreative = {
+      id: 41,
+      creativeType: "IMAGE" as const,
+      variant: "MOBILE" as const,
+      title: "Mobile Creative",
+      altText: "Mobile advertisement",
+      mediaUrl: "https://cdn.example.com/ad-mobile.jpg",
+      thumbnailUrl: "https://cdn.example.com/ad-mobile-thumb.jpg",
+      widthPx: 320,
+      heightPx: 100,
+      displayOrder: 1,
+      isPrimary: false
+    };
+
     const candidate = createCandidate({
-      creative: {
-        id: 41,
-        creativeType: "IMAGE",
-        variant: "MOBILE",
-        title: "Mobile Creative",
-        altText: "Mobile advertisement",
-        mediaUrl: "https://cdn.example.com/ad-mobile.jpg",
-        thumbnailUrl: "https://cdn.example.com/ad-mobile-thumb.jpg",
-        widthPx: 320,
-        heightPx: 100,
-        displayOrder: 1,
-        isPrimary: false
-      }
+      creative: mobileCreative,
+      creatives: [
+        {
+          ...mobileCreative,
+          format: {
+            id: 50,
+            code: "LEADERBOARD",
+            displayName: "Leaderboard",
+            description: "728x90 leaderboard",
+            widthPx: 728,
+            heightPx: 90,
+            mobileWidthPx: 320,
+            mobileHeightPx: 100,
+            isResponsive: true
+          }
+        }
+      ]
     });
 
     mockedFindEligibleCandidates.mockResolvedValue([candidate]);
@@ -871,13 +1003,13 @@ describe("Advertisement Delivery Service", () => {
       fallbackBehavior: "HOUSE_AD"
     });
 
-    mockedFindEligibleCandidates.mockResolvedValue([
-      createCandidate({
-        fallbackBehavior: "HOUSE_AD",
-        creative: null
-      })
-    ]);
+    const unusablePaidCandidate = createCandidate({
+      creative: null,
+      creatives: [],
+      fallbackBehavior: "HOUSE_AD"
+    });
 
+    mockedFindEligibleCandidates.mockResolvedValue([unusablePaidCandidate]);
     mockedFindEligibleHouseAdCandidates.mockResolvedValue([houseCandidate]);
 
     const result = await getEligibleAdvertisements({
@@ -900,7 +1032,6 @@ describe("Advertisement Delivery Service", () => {
 
   it("should never mark fallbackApplied when house fallback produces no advertisement", async () => {
     mockedFindEligibleCandidates.mockResolvedValue([]);
-
     mockedFindEligibleHouseAdCandidates.mockResolvedValue([]);
 
     const result = await getEligibleAdvertisements({

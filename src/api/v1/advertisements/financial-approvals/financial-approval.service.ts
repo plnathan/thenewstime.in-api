@@ -483,7 +483,64 @@ export const approve = async (
       return heldApproval;
     }
   }
+  const hasApprovedAmount =
+    input.approvedAmount !== undefined && input.approvedAmount !== null;
 
+  const hasApprovedPercentage =
+    input.approvedPercentage !== undefined && input.approvedPercentage !== null;
+
+  if (hasApprovedAmount && hasApprovedPercentage) {
+    throw new ApiError(
+      400,
+      "Provide either approvedAmount or approvedPercentage, not both."
+    );
+  }
+
+  if (hasApprovedAmount) {
+    if (approval.requestedAmount === null) {
+      throw new ApiError(
+        400,
+        "This approval request does not have a requested amount."
+      );
+    }
+
+    validateRequestedAmount(input.approvedAmount as number);
+
+    if (input.approvedAmount! > approval.requestedAmount) {
+      throw new ApiError(
+        400,
+        "Approved amount cannot exceed the requested amount."
+      );
+    }
+  }
+
+  if (hasApprovedPercentage) {
+    if (approval.requestedPercentage === null) {
+      throw new ApiError(
+        400,
+        "This approval request does not have a requested percentage."
+      );
+    }
+
+    validateRequestedPercentage(input.approvedPercentage as number);
+
+    if (input.approvedPercentage! > approval.requestedPercentage) {
+      throw new ApiError(
+        400,
+        "Approved percentage cannot exceed the requested percentage."
+      );
+    }
+  }
+
+  const approvedAmount =
+    approval.requestedAmount === null
+      ? null
+      : (input.approvedAmount ?? approval.requestedAmount);
+
+  const approvedPercentage =
+    approval.requestedPercentage === null
+      ? null
+      : (input.approvedPercentage ?? approval.requestedPercentage);
   /*
    * --------------------------------------------------------------------------
    * NORMAL APPROVAL
@@ -501,7 +558,9 @@ export const approve = async (
   const updatedApproval = await repository.approve(
     approval.id,
     {
-      approvalRemarks
+      approvalRemarks,
+      approvedAmount,
+      approvedPercentage
     },
     reviewedBy
   );

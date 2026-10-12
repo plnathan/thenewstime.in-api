@@ -160,12 +160,47 @@ export interface AdvertisementPaymentSummary {
 
   adjustmentAmount: number;
 
+  /**
+   * Total gross amount of verified payments.
+   * Fully refunded payments remain included in this historical total.
+   */
   verifiedPaymentAmount: number;
 
+  /**
+   * Total refunds across all payments associated with the advertisement.
+   */
   refundedAmount: number;
 
+  /**
+   * Net amount collected after refunds.
+   * This is used to calculate the advertisement outstanding balance.
+   */
   netPaidAmount: number;
 
+  /**
+   * Advance amount configured in Pricing & Commercial.
+   * This is a requirement, not a payment transaction.
+   */
+  advanceRequiredAmount: number;
+
+  /**
+   * Net amount collected from verified ADVANCE payments,
+   * after subtracting refunds associated with those advance payments.
+   */
+  advanceReceivedAmount: number;
+
+  /**
+   * Remaining advance requirement.
+   * This value must never be negative.
+   */
+  advancePendingAmount: number;
+
+  /**
+   * Remaining advertisement balance after discounts, adjustments,
+   * net verified payments, and refunds.
+   *
+   * The configured advance must not be deducted a second time.
+   */
   outstandingAmount: number | null;
 }
 

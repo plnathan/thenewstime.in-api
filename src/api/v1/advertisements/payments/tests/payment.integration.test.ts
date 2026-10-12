@@ -20,6 +20,7 @@ describe("Advertisement Payment API Integration", () => {
   let pendingPaymentId = 0;
   let cancelledPaymentId = 0;
   let refundedPaymentId = 0;
+  let partialRefundPaymentId = 0;
 
   const timestamp = Date.now();
 
@@ -74,12 +75,6 @@ describe("Advertisement Payment API Integration", () => {
    */
 
   beforeAll(async () => {
-    /*
-     * ------------------------------------------------------------------------
-     * Find SUPER_ADMIN role dynamically.
-     * ------------------------------------------------------------------------
-     */
-
     const superAdminResult = await pool.query(
       `
       SELECT id
@@ -94,12 +89,6 @@ describe("Advertisement Payment API Integration", () => {
     superAdminRoleId = Number(superAdminResult.rows[0].id);
 
     expect(superAdminRoleId).toBeGreaterThan(0);
-
-    /*
-     * ------------------------------------------------------------------------
-     * Create temporary integration-test user.
-     * ------------------------------------------------------------------------
-     */
 
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -141,12 +130,6 @@ describe("Advertisement Payment API Integration", () => {
 
     expect(testUserId).toBeGreaterThan(0);
 
-    /*
-     * ------------------------------------------------------------------------
-     * Create temporary role.
-     * ------------------------------------------------------------------------
-     */
-
     const roleResult = await pool.query(
       `
       INSERT INTO roles
@@ -182,12 +165,6 @@ describe("Advertisement Payment API Integration", () => {
     testRoleId = Number(roleResult.rows[0].id);
 
     expect(testRoleId).toBeGreaterThan(0);
-
-    /*
-     * ------------------------------------------------------------------------
-     * Replace temporary SUPER_ADMIN role with the test role.
-     * ------------------------------------------------------------------------
-     */
 
     await pool.query(
       `
@@ -225,12 +202,6 @@ describe("Advertisement Payment API Integration", () => {
       `,
       [testUserId, testRoleId]
     );
-
-    /*
-     * ------------------------------------------------------------------------
-     * Resolve Advertisement Payment permissions dynamically.
-     * ------------------------------------------------------------------------
-     */
 
     for (const [key, code] of Object.entries(paymentPermissionCodes) as Array<
       [keyof typeof paymentPermissionCodes, string]
@@ -314,15 +285,6 @@ describe("Advertisement Payment API Integration", () => {
       );
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * Resolve the base Advertisement READ and CREATE permissions.
-     *
-     * These are required because the integration test creates its own
-     * advertisement through the real Advertisement API.
-     * ------------------------------------------------------------------------
-     */
-
     for (const [key, code] of Object.entries(
       advertisementPermissionCodes
     ) as Array<[keyof typeof advertisementPermissionCodes, string]>) {
@@ -339,8 +301,6 @@ describe("Advertisement Payment API Integration", () => {
       if (existing.rows[0]) {
         advertisementPermissionIds[key] = Number(existing.rows[0].id);
       } else {
-        const action = key;
-
         const created = await pool.query(
           `
           INSERT INTO permissions
@@ -377,7 +337,7 @@ describe("Advertisement Payment API Integration", () => {
             code,
             `Advertisement ${key} permission`,
             `Integration-test permission for ${code}.`,
-            action,
+            key,
             testUserId
           ]
         );
@@ -406,12 +366,6 @@ describe("Advertisement Payment API Integration", () => {
         [testRoleId, advertisementPermissionIds[key], testUserId]
       );
     }
-
-    /*
-     * ------------------------------------------------------------------------
-     * Create temporary Advertisement Client directly in the database.
-     * ------------------------------------------------------------------------
-     */
 
     const clientResult = await pool.query(
       `
@@ -448,19 +402,6 @@ describe("Advertisement Payment API Integration", () => {
     testClientId = Number(clientResult.rows[0].id);
 
     expect(testClientId).toBeGreaterThan(0);
-
-    /*
-     * ------------------------------------------------------------------------
-     * Create a dedicated active Advertisement Placement.
-     *
-     * The current Advertisement API requires every newly-created
-     * advertisement to have a persisted runtime placement.
-     *
-     * This is intentionally created directly in the database because this
-     * payment integration suite is testing the Payment API, not the Placement
-     * API. The placement is therefore test infrastructure only.
-     * ------------------------------------------------------------------------
-     */
 
     const placementResult = await pool.query(
       `
@@ -522,12 +463,6 @@ describe("Advertisement Payment API Integration", () => {
 
     expect(testPlacementId).toBeGreaterThan(0);
 
-    /*
-     * ------------------------------------------------------------------------
-     * Login through the real Authentication API.
-     * ------------------------------------------------------------------------
-     */
-
     const loginResponse = await request(app).post("/api/v1/auth/login").send({
       username: testUsername,
       password
@@ -547,17 +482,12 @@ describe("Advertisement Payment API Integration", () => {
    */
 
   afterAll(async () => {
-    /*
-     * ------------------------------------------------------------------------
-     * Remove refunds first.
-     * ------------------------------------------------------------------------
-     */
-
     const paymentIds = [
       createdPaymentId,
       pendingPaymentId,
       cancelledPaymentId,
-      refundedPaymentId
+      refundedPaymentId,
+      partialRefundPaymentId
     ].filter((id, index, array) => id > 0 && array.indexOf(id) === index);
 
     for (const paymentId of paymentIds) {
@@ -574,12 +504,6 @@ describe("Advertisement Payment API Integration", () => {
       }
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * Remove test payments.
-     * ------------------------------------------------------------------------
-     */
-
     for (const paymentId of paymentIds) {
       try {
         await pool.query(
@@ -593,16 +517,6 @@ describe("Advertisement Payment API Integration", () => {
         // Cleanup should not make the test suite fail.
       }
     }
-
-    /*
-     * ------------------------------------------------------------------------
-     * Remove pricing snapshots created for the test advertisement.
-     *
-     * The current Advertisement creation flow may create a pricing snapshot
-     * when pricing information is available. Remove it explicitly before the
-     * advertisement itself so cleanup remains safe across schema revisions.
-     * ------------------------------------------------------------------------
-     */
 
     if (testAdvertisementId > 0) {
       try {
@@ -618,15 +532,6 @@ describe("Advertisement Payment API Integration", () => {
       }
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * Remove runtime placement rules created for the test advertisement.
-     *
-     * Advertisement creation now automatically persists the selected
-     * placement as an ACTIVE runtime placement rule.
-     * ------------------------------------------------------------------------
-     */
-
     if (testAdvertisementId > 0) {
       try {
         await pool.query(
@@ -640,12 +545,6 @@ describe("Advertisement Payment API Integration", () => {
         // Cleanup should not make the test suite fail.
       }
     }
-
-    /*
-     * ------------------------------------------------------------------------
-     * Remove test advertisement.
-     * ------------------------------------------------------------------------
-     */
 
     if (testAdvertisementId > 0) {
       try {
@@ -661,12 +560,6 @@ describe("Advertisement Payment API Integration", () => {
       }
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * Remove temporary Advertisement Placement.
-     * ------------------------------------------------------------------------
-     */
-
     if (testPlacementId > 0) {
       try {
         await pool.query(
@@ -680,12 +573,6 @@ describe("Advertisement Payment API Integration", () => {
         // Cleanup should not make the test suite fail.
       }
     }
-
-    /*
-     * ------------------------------------------------------------------------
-     * Remove temporary Advertisement Client.
-     * ------------------------------------------------------------------------
-     */
 
     if (testClientId > 0) {
       try {
@@ -701,12 +588,6 @@ describe("Advertisement Payment API Integration", () => {
       }
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * Remove role-permission relationships.
-     * ------------------------------------------------------------------------
-     */
-
     if (testRoleId > 0) {
       try {
         await pool.query(
@@ -720,12 +601,6 @@ describe("Advertisement Payment API Integration", () => {
         // Cleanup should not make the test suite fail.
       }
     }
-
-    /*
-     * ------------------------------------------------------------------------
-     * Remove temporary user's sessions.
-     * ------------------------------------------------------------------------
-     */
 
     if (testUserId > 0) {
       try {
@@ -741,12 +616,6 @@ describe("Advertisement Payment API Integration", () => {
       }
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * Remove temporary user-role relationships.
-     * ------------------------------------------------------------------------
-     */
-
     if (testUserId > 0) {
       try {
         await pool.query(
@@ -760,12 +629,6 @@ describe("Advertisement Payment API Integration", () => {
         // Cleanup should not make the test suite fail.
       }
     }
-
-    /*
-     * ------------------------------------------------------------------------
-     * Remove temporary role.
-     * ------------------------------------------------------------------------
-     */
 
     if (testRoleId > 0) {
       try {
@@ -781,12 +644,6 @@ describe("Advertisement Payment API Integration", () => {
       }
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * Remove temporary user.
-     * ------------------------------------------------------------------------
-     */
-
     if (testUserId > 0) {
       try {
         await pool.query(
@@ -800,12 +657,6 @@ describe("Advertisement Payment API Integration", () => {
         // Cleanup should not make the test suite fail.
       }
     }
-
-    /*
-     * ------------------------------------------------------------------------
-     * Remove permissions created only by this test.
-     * ------------------------------------------------------------------------
-     */
 
     for (const permissionId of createdPermissionIds) {
       try {
@@ -854,6 +705,8 @@ describe("Advertisement Payment API Integration", () => {
         openInNewTab: true,
         notes: "Temporary advertisement for payment integration tests.",
         advertisementAmount: 50000,
+        discountPercentage: 0,
+        advancePercentage: 50,
         currencyCode: "INR"
       });
 
@@ -870,7 +723,7 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * POST /payments
+   * CREATE ADVANCE PAYMENT
    * ==========================================================================
    */
 
@@ -899,13 +752,8 @@ describe("Advertisement Payment API Integration", () => {
     );
     expect(Number(response.body.data.amount)).toBe(25000);
     expect(response.body.data.paymentType).toBe("ADVANCE");
-    expect(response.body.data.paymentMethod).toBe("UPI");
-
-    /*
-     * The current repository implementation creates new payments with
-     * RECEIVED status.
-     */
     expect(response.body.data.paymentStatus).toBe("RECEIVED");
+    expect(response.body.data.paymentMethod).toBe("UPI");
     expect(response.body.data.transactionReference).toBe(
       `PAY-TXN-${timestamp}`
     );
@@ -913,7 +761,7 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * GET /payments/:id
+   * GET PAYMENT
    * ==========================================================================
    */
 
@@ -933,7 +781,7 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * GET /payments
+   * LIST PAYMENTS
    * ==========================================================================
    */
 
@@ -970,10 +818,6 @@ describe("Advertisement Payment API Integration", () => {
    * ==========================================================================
    * UPDATE PENDING PAYMENT
    * ==========================================================================
-   *
-   * The public create repository method currently creates RECEIVED payments.
-   * The service allows updates only for PENDING payments. Therefore a PENDING
-   * payment is inserted directly into the database for this specific test.
    */
 
   it("PATCH /api/v1/advertisements/payments/:id - should update a PENDING payment", async () => {
@@ -1044,7 +888,7 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * UPDATE RECEIVED PAYMENT
+   * RECEIVED PAYMENT CANNOT BE UPDATED
    * ==========================================================================
    */
 
@@ -1062,7 +906,7 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * VERIFY PAYMENT
+   * VERIFY ADVANCE PAYMENT
    * ==========================================================================
    */
 
@@ -1079,12 +923,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.body.data.verifiedAt).toBeDefined();
   });
 
-  /*
-   * ==========================================================================
-   * VERIFY ALREADY VERIFIED PAYMENT
-   * ==========================================================================
-   */
-
   it("POST /api/v1/advertisements/payments/:id/verify - should reject an already verified payment", async () => {
     const response = await request(app)
       .post(`/api/v1/advertisements/payments/${createdPaymentId}/verify`)
@@ -1093,12 +931,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
   });
-
-  /*
-   * ==========================================================================
-   * GET VERIFIED PAYMENT
-   * ==========================================================================
-   */
 
   it("GET /api/v1/advertisements/payments/:id - should return the verified payment", async () => {
     const response = await request(app)
@@ -1109,12 +941,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.body.success).toBe(true);
     expect(response.body.data.paymentStatus).toBe("VERIFIED");
   });
-
-  /*
-   * ==========================================================================
-   * LIST VERIFIED PAYMENTS
-   * ==========================================================================
-   */
 
   it("GET /api/v1/advertisements/payments - should filter payments by VERIFIED status", async () => {
     const response = await request(app)
@@ -1141,13 +967,50 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * CREATE PARTIAL REFUND
+   * CREATE A REGULAR PAYMENT FOR PARTIAL-REFUND TESTING
    * ==========================================================================
+   *
+   * The partial refund belongs to a REGULAR payment, not the ADVANCE payment.
+   * This verifies that a refund against a regular payment does not reduce
+   * advanceReceivedAmount.
    */
 
-  it("POST /api/v1/advertisements/payments/:id/refunds - should create a partial refund", async () => {
+  it("POST /api/v1/advertisements/payments - should create a regular payment for partial-refund testing", async () => {
     const response = await request(app)
-      .post(`/api/v1/advertisements/payments/${createdPaymentId}/refunds`)
+      .post("/api/v1/advertisements/payments")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        advertisementId: testAdvertisementId,
+        amount: 10000,
+        paymentType: "REGULAR",
+        paymentMethod: "BANK_TRANSFER",
+        transactionReference: `PARTIAL-REFUND-TXN-${timestamp}`,
+        notes: "Regular payment used for partial-refund integration test."
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.success).toBe(true);
+
+    partialRefundPaymentId = Number(response.body.data.id);
+
+    expect(partialRefundPaymentId).toBeGreaterThan(0);
+    expect(response.body.data.paymentStatus).toBe("RECEIVED");
+    expect(response.body.data.paymentType).toBe("REGULAR");
+  });
+
+  it("POST /api/v1/advertisements/payments/:id/verify - should verify the regular payment used for partial refunds", async () => {
+    const response = await request(app)
+      .post(`/api/v1/advertisements/payments/${partialRefundPaymentId}/verify`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.paymentStatus).toBe("VERIFIED");
+  });
+
+  it("POST /api/v1/advertisements/payments/:id/refunds - should create a partial refund against the regular payment", async () => {
+    const response = await request(app)
+      .post(`/api/v1/advertisements/payments/${partialRefundPaymentId}/refunds`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         amount: 5000,
@@ -1159,26 +1022,18 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.body.success).toBe(true);
     expect(response.body.data).toBeDefined();
 
-    expect(Number(response.body.data.paymentId)).toBe(createdPaymentId);
+    expect(Number(response.body.data.paymentId)).toBe(partialRefundPaymentId);
     expect(Number(response.body.data.amount)).toBe(5000);
-    expect(response.body.data.refundReference).toBe(
-      `REF-PARTIAL-${timestamp}`
-    );
+    expect(response.body.data.refundReference).toBe(`REF-PARTIAL-${timestamp}`);
     expect(response.body.data.refundReason).toBe(
       "Partial refund for integration test."
     );
     expect(Number(response.body.data.refundedBy)).toBe(testUserId);
   });
 
-  /*
-   * ==========================================================================
-   * GET PAYMENT REFUNDS
-   * ==========================================================================
-   */
-
-  it("GET /api/v1/advertisements/payments/:id/refunds - should return payment refunds", async () => {
+  it("GET /api/v1/advertisements/payments/:id/refunds - should return the partial refund", async () => {
     const response = await request(app)
-      .get(`/api/v1/advertisements/payments/${createdPaymentId}/refunds`)
+      .get(`/api/v1/advertisements/payments/${partialRefundPaymentId}/refunds`)
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
@@ -1192,15 +1047,9 @@ describe("Advertisement Payment API Integration", () => {
     expect(refund).toBeDefined();
   });
 
-  /*
-   * ==========================================================================
-   * PARTIAL REFUND MUST KEEP PAYMENT VERIFIED
-   * ==========================================================================
-   */
-
-  it("GET /api/v1/advertisements/payments/:id - should keep the payment VERIFIED after a partial refund", async () => {
+  it("GET /api/v1/advertisements/payments/:id - should keep the regular payment VERIFIED after a partial refund", async () => {
     const response = await request(app)
-      .get(`/api/v1/advertisements/payments/${createdPaymentId}`)
+      .get(`/api/v1/advertisements/payments/${partialRefundPaymentId}`)
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
@@ -1210,11 +1059,8 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * CREATE FULL REFUND ON SECOND VERIFIED PAYMENT
+   * CREATE SECOND REGULAR PAYMENT FOR FULL-REFUND TESTING
    * ==========================================================================
-   *
-   * A separate payment is used so the first payment can continue exercising
-   * the partial-refund path.
    */
 
   it("POST /api/v1/advertisements/payments - should create a second payment for full-refund testing", async () => {
@@ -1277,18 +1123,12 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.body.data.refundedAt).toBeDefined();
   });
 
-  /*
-   * ==========================================================================
-   * REFUND OVER REMAINING BALANCE
-   * ==========================================================================
-   */
-
   it("POST /api/v1/advertisements/payments/:id/refunds - should reject a refund greater than the remaining refundable amount", async () => {
     const response = await request(app)
-      .post(`/api/v1/advertisements/payments/${createdPaymentId}/refunds`)
+      .post(`/api/v1/advertisements/payments/${partialRefundPaymentId}/refunds`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
-        amount: 21000,
+        amount: 6000,
         refundReference: `REF-OVER-${timestamp}`,
         refundReason: "Refund exceeds remaining amount."
       });
@@ -1301,6 +1141,18 @@ describe("Advertisement Payment API Integration", () => {
    * ==========================================================================
    * PAYMENT SUMMARY
    * ==========================================================================
+   *
+   * Verified payments:
+   *   ADVANCE  : 25,000
+   *   REGULAR  : 10,000 (partial refund 5,000)
+   *   REGULAR  : 10,000 (full refund 10,000)
+   *
+   * Gross verified payments = 45,000.
+   * Total refunds           = 15,000.
+   * Net paid                = 30,000.
+   * Outstanding             = 20,000.
+   *
+   * The advance amount is unaffected by refunds against regular payments.
    */
 
   it("GET /api/v1/advertisements/payments/:id/summary - should return the advertisement payment summary", async () => {
@@ -1317,9 +1169,14 @@ describe("Advertisement Payment API Integration", () => {
     );
 
     expect(Number(response.body.data.advertisementAmount)).toBe(50000);
-    expect(Number(response.body.data.verifiedPaymentAmount)).toBe(35000);
+    expect(Number(response.body.data.verifiedPaymentAmount)).toBe(45000);
     expect(Number(response.body.data.refundedAmount)).toBe(15000);
-    expect(Number(response.body.data.netPaidAmount)).toBe(20000);
+    expect(Number(response.body.data.netPaidAmount)).toBe(30000);
+
+    expect(Number(response.body.data.advanceRequiredAmount)).toBe(25000);
+    expect(Number(response.body.data.advanceReceivedAmount)).toBe(25000);
+    expect(Number(response.body.data.advancePendingAmount)).toBe(0);
+    expect(Number(response.body.data.outstandingAmount)).toBe(20000);
   });
 
   /*
@@ -1350,12 +1207,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.body.data.paymentStatus).toBe("RECEIVED");
   });
 
-  /*
-   * ==========================================================================
-   * CANCEL PAYMENT
-   * ==========================================================================
-   */
-
   it("POST /api/v1/advertisements/payments/:id/cancel - should cancel a RECEIVED payment", async () => {
     const response = await request(app)
       .post(`/api/v1/advertisements/payments/${cancelledPaymentId}/cancel`)
@@ -1375,12 +1226,6 @@ describe("Advertisement Payment API Integration", () => {
     );
   });
 
-  /*
-   * ==========================================================================
-   * CANCEL VERIFIED PAYMENT
-   * ==========================================================================
-   */
-
   it("POST /api/v1/advertisements/payments/:id/cancel - should reject cancellation of a VERIFIED payment", async () => {
     const response = await request(app)
       .post(`/api/v1/advertisements/payments/${createdPaymentId}/cancel`)
@@ -1392,12 +1237,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
   });
-
-  /*
-   * ==========================================================================
-   * CANCELLED PAYMENT MUST NOT BE REFUNDABLE
-   * ==========================================================================
-   */
 
   it("POST /api/v1/advertisements/payments/:id/refunds - should reject refund of a CANCELLED payment", async () => {
     const response = await request(app)
@@ -1464,12 +1303,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.body.success).toBe(false);
   });
 
-  /*
-   * ==========================================================================
-   * DUPLICATE TRANSACTION REFERENCE
-   * ==========================================================================
-   */
-
   it("POST /api/v1/advertisements/payments - should reject a duplicate transaction reference", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements/payments")
@@ -1488,7 +1321,7 @@ describe("Advertisement Payment API Integration", () => {
 
   /*
    * ==========================================================================
-   * MISSING PAYMENT
+   * MISSING PAYMENT / ADVERTISEMENT
    * ==========================================================================
    */
 
@@ -1500,12 +1333,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.status).toBe(404);
     expect(response.body.success).toBe(false);
   });
-
-  /*
-   * ==========================================================================
-   * MISSING ADVERTISEMENT
-   * ==========================================================================
-   */
 
   it("POST /api/v1/advertisements/payments - should reject payment for a missing advertisement", async () => {
     const response = await request(app)
@@ -1523,12 +1350,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.body.success).toBe(false);
   });
 
-  /*
-   * ==========================================================================
-   * MISSING PAYMENT SUMMARY
-   * ==========================================================================
-   */
-
   it("GET /api/v1/advertisements/payments/:id/summary - should return 404 for a missing advertisement", async () => {
     const response = await request(app)
       .get("/api/v1/advertisements/payments/999999999/summary")
@@ -1537,12 +1358,6 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.status).toBe(404);
     expect(response.body.success).toBe(false);
   });
-
-  /*
-   * ==========================================================================
-   * MISSING PAYMENT REFUNDS
-   * ==========================================================================
-   */
 
   it("GET /api/v1/advertisements/payments/:id/refunds - should return 404 for a missing payment", async () => {
     const response = await request(app)

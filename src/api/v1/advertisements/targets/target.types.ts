@@ -9,6 +9,10 @@ export interface AdvertisementTarget {
   isInclude: boolean;
   createdAt: Date;
   updatedAt: Date;
+  createdBy: number | null;
+  updatedBy: number | null;
+  createdByName: string | null;
+  updatedByName: string | null;
 }
 
 export interface AdvertisementTargetContext {
@@ -23,8 +27,7 @@ export interface AdvertisementTargetContext {
 /**
  * Targeting fields supplied by an API caller.
  *
- * advertisementId comes from the validated route parameter,
- * not from the request body.
+ * advertisementId and audit user IDs are derived by the server.
  */
 export interface CreateAdvertisementTargetInput {
   targetType: AdvertisementTargetType;
@@ -37,6 +40,8 @@ export interface CreateAdvertisementTargetInput {
  */
 export interface CreateAdvertisementTargetRecordInput extends CreateAdvertisementTargetInput {
   advertisementId: number;
+  createdBy: number;
+  updatedBy: number;
 }
 
 export interface UpdateAdvertisementTargetInput {

@@ -584,6 +584,7 @@ describe("updateAdvertisement()", () => {
       100,
       {
         ...input,
+        advertisementAmount: 10000,
         ...calculatedDefaultFinancials
       },
       20
@@ -704,6 +705,7 @@ describe("updateAdvertisement()", () => {
       100,
       {
         ...input,
+        advertisementAmount: 10000,
         ...calculatedDefaultFinancials
       },
       20
@@ -781,6 +783,7 @@ describe("updateAdvertisement()", () => {
       100,
       {
         ...input,
+        advertisementAmount: 10000,
         ...calculatedDefaultFinancials
       },
       20
@@ -837,6 +840,7 @@ describe("updateAdvertisement()", () => {
       100,
       {
         ...input,
+        advertisementAmount: 10000,
         ...calculatedDefaultFinancials
       },
       20

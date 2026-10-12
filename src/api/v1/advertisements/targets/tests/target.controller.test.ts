@@ -63,7 +63,10 @@ function createRequest(
 ): Request {
   return {
     params,
-    body
+    body,
+    user: {
+      id: 1
+    }
   } as unknown as Request;
 }
 
@@ -188,11 +191,15 @@ describe("target.controller", () => {
         next
       );
 
-      expect(serviceMocks.addTarget).toHaveBeenCalledWith(202, {
-        targetType: "STATE",
-        targetValue: "tamil-nadu",
-        isInclude: true
-      });
+      expect(serviceMocks.addTarget).toHaveBeenCalledWith(
+        202,
+        {
+          targetType: "STATE",
+          targetValue: "tamil-nadu",
+          isInclude: true
+        },
+        1
+      );
       expect(response.status).toHaveBeenCalledWith(201);
       expect(response.json).toHaveBeenCalledWith({
         success: true,
@@ -278,9 +285,14 @@ describe("target.controller", () => {
         next
       );
 
-      expect(serviceMocks.editTarget).toHaveBeenCalledWith(202, 101, {
-        targetValue: "kerala"
-      });
+      expect(serviceMocks.editTarget).toHaveBeenCalledWith(
+        202,
+        101,
+        {
+          targetValue: "kerala"
+        },
+        1
+      );
       expect(response.status).toHaveBeenCalledWith(200);
       expect(response.json).toHaveBeenCalledWith({
         success: true,
@@ -456,13 +468,17 @@ describe("target.controller", () => {
         next
       );
 
-      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(202, [
-        {
-          targetType: "STATE",
-          targetValue: "tamil-nadu",
-          isInclude: true
-        }
-      ]);
+      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(
+        202,
+        [
+          {
+            targetType: "STATE",
+            targetValue: "tamil-nadu",
+            isInclude: true
+          }
+        ],
+        1
+      );
       expect(response.status).toHaveBeenCalledWith(200);
       expect(response.json).toHaveBeenCalledWith({
         success: true,
@@ -486,7 +502,7 @@ describe("target.controller", () => {
         next
       );
 
-      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(202, []);
+      expect(serviceMocks.replaceTargets).toHaveBeenCalledWith(202, [], 1);
       expect(response.status).toHaveBeenCalledWith(200);
     });
 

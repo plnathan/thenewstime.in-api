@@ -42,6 +42,30 @@ function sendValidationError(message: string, response: Response): void {
   });
 }
 
+function getAuthenticatedUserId(request: Request): number | null {
+  const userId = request.user?.id;
+
+  if (
+    typeof userId !== "number" ||
+    !Number.isSafeInteger(userId) ||
+    userId <= 0
+  ) {
+    return null;
+  }
+
+  return userId;
+}
+
+function sendAuthenticationError(response: Response): void {
+  response.status(401).json({
+    success: false,
+    message: "Authentication required.",
+    data: null,
+    errors: null,
+    meta: null
+  });
+}
+
 export async function getTargets(
   request: Request,
   response: Response,
@@ -84,10 +108,18 @@ export async function createTarget(
     return;
   }
 
+  const actorId = getAuthenticatedUserId(request);
+
+  if (actorId === null) {
+    sendAuthenticationError(response);
+    return;
+  }
+
   try {
     const target = await targetService.addTarget(
       params.data.advertisementId,
-      body.data
+      body.data,
+      actorId
     );
 
     response.status(201).json({
@@ -115,10 +147,15 @@ export async function updateTarget(
     return;
   }
 
+  const actorId = getAuthenticatedUserId(request);
+
+  if (actorId === null) {
+    sendAuthenticationError(response);
+    return;
+  }
+
   /*
    * exactOptionalPropertyTypes is enabled in this project.
-   *
-   * Zod's inferred optional fields may include undefined.
    * Only copy defined properties into the service input.
    */
   const input: UpdateAdvertisementTargetInput = {
@@ -137,7 +174,8 @@ export async function updateTarget(
     const target = await targetService.editTarget(
       params.data.advertisementId,
       params.data.targetId,
-      input
+      input,
+      actorId
     );
 
     response.status(200).json({
@@ -203,10 +241,18 @@ export async function replaceAllTargets(
     return;
   }
 
+  const actorId = getAuthenticatedUserId(request);
+
+  if (actorId === null) {
+    sendAuthenticationError(response);
+    return;
+  }
+
   try {
     const targets = await targetService.replaceTargets(
       params.data.advertisementId,
-      body.data.targets
+      body.data.targets,
+      actorId
     );
 
     response.status(200).json({
