@@ -18,57 +18,29 @@ describe("Advertisement Financial Approval API Integration", () => {
   let createdApprovalId = 0;
   let holdRejectApprovalId = 0;
 
-  let validationApprovalIds: number[] = [];
-
   const timestamp = Date.now();
 
   const username = `financial_approval_test_${timestamp}`;
-
   const email = `financial.approval.test.${timestamp}@example.com`;
-
   const roleName = `financial_approval_test_role_${timestamp}`;
-
   const clientCode = `FA-CLIENT-${timestamp}`;
-
   const testPlacementCode = `TEST-FA-PLACEMENT-${timestamp}`;
-
   const password = "Test@12345";
-
-  const ADVERTISEMENT_RESOURCE = "advertisements";
 
   const FINANCIAL_APPROVAL_RESOURCE = "advertisements.financial_approvals";
 
-  /*
-   * Production permission model.
-   *
-   * Financial approval creation and resubmission are part of the
-   * advertisement submission workflow.
-   *
-   * Remarks update is part of the advertisement update workflow.
-   *
-   * Finance actions use the dedicated financial approval resource.
-   */
   const permissionCodes = {
     advertisementRead: "advertisements.read",
-
     advertisementCreate: "advertisements.create",
-
     advertisementUpdate: "advertisements.update",
-
     advertisementSubmit: "advertisements.submit",
-
     financialApprovalRead: `${FINANCIAL_APPROVAL_RESOURCE}.read`,
-
     financialApprovalHold: `${FINANCIAL_APPROVAL_RESOURCE}.hold`,
-
     financialApprovalReject: `${FINANCIAL_APPROVAL_RESOURCE}.reject`,
-
     financialApprovalApprove: `${FINANCIAL_APPROVAL_RESOURCE}.approve`
   } as const;
 
   const permissionIds = new Map<string, number>();
-
-  const createdPermissionIds: number[] = [];
 
   const insertRolePermission = async (
     roleId: number,
@@ -77,20 +49,15 @@ describe("Advertisement Financial Approval API Integration", () => {
   ): Promise<void> => {
     await pool.query(
       `
-          INSERT INTO role_permissions (
-            role_id,
-            permission_id,
-            created_by,
-            created_at
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            NOW()
-          )
-          ON CONFLICT DO NOTHING
-          `,
+        INSERT INTO role_permissions (
+          role_id,
+          permission_id,
+          created_by,
+          created_at
+        )
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT DO NOTHING
+      `,
       [roleId, permissionId, createdBy]
     );
   };
@@ -102,33 +69,20 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     await pool.query(
       `
-          DELETE FROM advertisement_financial_approval_history
-          WHERE approval_id = $1
-          `,
+        DELETE FROM advertisement_financial_approval_history
+        WHERE approval_id = $1
+      `,
       [approvalId]
     );
 
     await pool.query(
       `
-          DELETE FROM advertisement_financial_approvals
-          WHERE id = $1
-          `,
+        DELETE FROM advertisement_financial_approvals
+        WHERE id = $1
+      `,
       [approvalId]
     );
   };
-
-  /*
-   * =========================================================================
-   * HISTORY HELPERS
-   * =========================================================================
-   *
-   * The financial approval history API can expose workflow transition values
-   * using camelCase or snake_case names depending on the mapper/response
-   * representation.
-   *
-   * Keep the integration test concerned with the actual business values
-   * rather than coupling it to one response-property spelling.
-   */
 
   const getHistoryStatusValues = (
     history: Array<Record<string, unknown>>
@@ -162,22 +116,16 @@ describe("Advertisement Financial Approval API Integration", () => {
   };
 
   beforeAll(async () => {
-    /*
-     * ======================================================================
-     * SUPER ADMIN ROLE
-     * ======================================================================
-     */
-
     const superAdminRoleResult = await pool.query<{
       id: number | string;
     }>(
       `
-          SELECT id
-          FROM roles
-          WHERE code = 'SUPER_ADMIN'
-            AND status = 'ACTIVE'
-          LIMIT 1
-          `
+        SELECT id
+        FROM roles
+        WHERE code = 'SUPER_ADMIN'
+          AND status = 'ACTIVE'
+        LIMIT 1
+      `
     );
 
     const superAdminRole = superAdminRoleResult.rows[0];
@@ -190,42 +138,26 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     expect(superAdminRoleId).toBeGreaterThan(0);
 
-    /*
-     * ======================================================================
-     * TEST USER
-     * ======================================================================
-     */
-
     const passwordHash = await bcrypt.hash(password, 12);
 
     const userResult = await pool.query<{
       id: number | string;
     }>(
       `
-          INSERT INTO users (
-            username,
-            email,
-            password_hash,
-            full_name,
-            display_name,
-            status,
-            role_id,
-            created_at,
-            updated_at
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            'ACTIVE',
-            $6,
-            NOW(),
-            NOW()
-          )
-          RETURNING id
-          `,
+        INSERT INTO users (
+          username,
+          email,
+          password_hash,
+          full_name,
+          display_name,
+          status,
+          role_id,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6, NOW(), NOW())
+        RETURNING id
+      `,
       [
         username,
         email,
@@ -246,40 +178,24 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     expect(testUserId).toBeGreaterThan(0);
 
-    /*
-     * ======================================================================
-     * TEST ROLE
-     * ======================================================================
-     */
-
     const roleResult = await pool.query<{
       id: number | string;
     }>(
       `
-          INSERT INTO roles (
-            code,
-            display_name,
-            description,
-            display_order,
-            status,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            999,
-            'ACTIVE',
-            $4,
-            $4,
-            NOW(),
-            NOW()
-          )
-          RETURNING id
-          `,
+        INSERT INTO roles (
+          code,
+          display_name,
+          description,
+          display_order,
+          status,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, 999, 'ACTIVE', $4, $4, NOW(), NOW())
+        RETURNING id
+      `,
       [
         roleName,
         "Financial Approval Integration Test Role",
@@ -298,28 +214,20 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     expect(testRoleId).toBeGreaterThan(0);
 
-    /*
-     * Move the test user to the dedicated role.
-     */
-
     await pool.query(
       `
         UPDATE users
         SET role_id = $2
         WHERE id = $1
-        `,
+      `,
       [testUserId, testRoleId]
     );
-
-    /*
-     * Keep the many-to-many RBAC mapping consistent as well.
-     */
 
     await pool.query(
       `
         DELETE FROM user_roles
         WHERE user_id = $1
-        `,
+      `,
       [testUserId]
     );
 
@@ -331,30 +239,11 @@ describe("Advertisement Financial Approval API Integration", () => {
           created_by,
           created_at
         )
-        VALUES (
-          $1,
-          $2,
-          $1,
-          NOW()
-        )
+        VALUES ($1, $2, $1, NOW())
         ON CONFLICT DO NOTHING
-        `,
+      `,
       [testUserId, testRoleId]
     );
-
-    /*
-     * ======================================================================
-     * RESOLVE PRODUCTION PERMISSIONS
-     * ======================================================================
-     *
-     * We deliberately do NOT create:
-     *
-     * advertisements.financial_approvals.create
-     * advertisements.financial_approvals.update
-     * advertisements.financial_approvals.resubmit
-     *
-     * because those are not production permissions used by the routes.
-     */
 
     const requiredPermissionCodes = Object.values(permissionCodes);
 
@@ -368,17 +257,11 @@ describe("Advertisement Financial Approval API Integration", () => {
         status: string;
       }>(
         `
-            SELECT
-              id,
-              code,
-              module,
-              resource,
-              action,
-              status
-            FROM permissions
-            WHERE code = $1
-            LIMIT 1
-            `,
+          SELECT id, code, module, resource, action, status
+          FROM permissions
+          WHERE code = $1
+          LIMIT 1
+        `,
         [permissionCode]
       );
 
@@ -398,13 +281,10 @@ describe("Advertisement Financial Approval API Integration", () => {
       expect(permission.module).toBe("ADVERTISEMENT");
 
       const parts = permissionCode.split(".");
-
       const action = parts.at(-1);
-
       const resource = parts.slice(0, -1).join(".");
 
       expect(permission.action).toBe(action);
-
       expect(permission.resource).toBe(resource);
 
       const permissionId = Number(permission.id);
@@ -416,28 +296,19 @@ describe("Advertisement Financial Approval API Integration", () => {
       await insertRolePermission(testRoleId, permissionId, testUserId);
     }
 
-    /*
-     * ======================================================================
-     * VERIFY REQUIRED ROLE PERMISSIONS
-     * ======================================================================
-     */
-
     const verificationResult = await pool.query<{
       id: number | string;
       code: string;
     }>(
       `
-          SELECT
-            p.id,
-            p.code
-          FROM role_permissions rp
-          INNER JOIN permissions p
-            ON p.id = rp.permission_id
-          WHERE rp.role_id = $1
-            AND p.status = 'ACTIVE'
-            AND p.code = ANY($2::text[])
-          ORDER BY p.code
-          `,
+        SELECT p.id, p.code
+        FROM role_permissions rp
+        INNER JOIN permissions p ON p.id = rp.permission_id
+        WHERE rp.role_id = $1
+          AND p.status = 'ACTIVE'
+          AND p.code = ANY($2::text[])
+        ORDER BY p.code
+      `,
       [testRoleId, requiredPermissionCodes]
     );
 
@@ -451,40 +322,24 @@ describe("Advertisement Financial Approval API Integration", () => {
       expect(attachedCodes.has(permissionCode)).toBe(true);
     }
 
-    /*
-     * ======================================================================
-     * TEST CLIENT
-     * ======================================================================
-     */
-
     const clientResult = await pool.query<{
       id: number | string;
     }>(
       `
-          INSERT INTO advertisement_clients (
-            client_code,
-            name,
-            display_name,
-            status,
-            ad_creation_hold,
-            created_by,
-            updated_by,
-            created_at,
-            updated_at
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            'ACTIVE',
-            FALSE,
-            $4,
-            $4,
-            NOW(),
-            NOW()
-          )
-          RETURNING id
-          `,
+        INSERT INTO advertisement_clients (
+          client_code,
+          name,
+          display_name,
+          status,
+          ad_creation_hold,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, 'ACTIVE', FALSE, $4, $4, NOW(), NOW())
+        RETURNING id
+      `,
       [
         clientCode,
         "Financial Approval Test Client",
@@ -503,68 +358,54 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     expect(testClientId).toBeGreaterThan(0);
 
-    /*
-     * ======================================================================
-     * TEST PLACEMENT
-     * ======================================================================
-     *
-     * Advertisements now require a persisted runtime placement.
-     *
-     * This fixture deliberately creates a valid ACTIVE and enabled
-     * advertisement placement so the advertisement API can persist the
-     * corresponding advertisement_placement_rules record during creation.
-     */
-
     const placementResult = await pool.query<{
       id: number | string;
     }>(
       `
-          INSERT INTO advertisement_placements
-          (
-            code,
-            display_name,
-            description,
-            page_type,
-            placement_type,
-            insertion_type,
-            display_order,
-            is_enabled,
-            collapse_when_empty,
-            fallback_behavior,
-            display_frequency,
-            frequency_value,
-            auto_close_enabled,
-            auto_close_seconds,
-            close_button_enabled,
-            close_on_overlay_click,
-            status,
-            created_by,
-            updated_by
-          )
-          VALUES
-          (
-            $1,
-            $2,
-            $3,
-            'HOME',
-            'HOME_TOP',
-            'FIXED',
-            999,
-            TRUE,
-            TRUE,
-            'HIDE',
-            NULL,
-            NULL,
-            FALSE,
-            NULL,
-            TRUE,
-            TRUE,
-            'ACTIVE',
-            $4,
-            $4
-          )
-          RETURNING id
-          `,
+        INSERT INTO advertisement_placements (
+          code,
+          display_name,
+          description,
+          page_type,
+          placement_type,
+          insertion_type,
+          display_order,
+          is_enabled,
+          collapse_when_empty,
+          fallback_behavior,
+          display_frequency,
+          frequency_value,
+          auto_close_enabled,
+          auto_close_seconds,
+          close_button_enabled,
+          close_on_overlay_click,
+          status,
+          created_by,
+          updated_by
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          'HOME',
+          'HOME_TOP',
+          'FIXED',
+          999,
+          TRUE,
+          TRUE,
+          'HIDE',
+          NULL,
+          NULL,
+          FALSE,
+          NULL,
+          TRUE,
+          TRUE,
+          'ACTIVE',
+          $4,
+          $4
+        )
+        RETURNING id
+      `,
       [
         testPlacementCode,
         `Financial Approval Test Placement ${timestamp}`,
@@ -576,20 +417,12 @@ describe("Advertisement Financial Approval API Integration", () => {
     const placement = placementResult.rows[0];
 
     if (placement === undefined) {
-      throw new Error(
-        "Failed to create financial approval test placement."
-      );
+      throw new Error("Failed to create financial approval test placement.");
     }
 
     testPlacementId = Number(placement.id);
 
     expect(testPlacementId).toBeGreaterThan(0);
-
-    /*
-     * ======================================================================
-     * LOGIN
-     * ======================================================================
-     */
 
     const loginResponse = await request(app).post("/api/v1/auth/login").send({
       username,
@@ -612,17 +445,9 @@ describe("Advertisement Financial Approval API Integration", () => {
   });
 
   afterAll(async () => {
-    /*
-     * ======================================================================
-     * APPROVAL CLEANUP
-     * ======================================================================
-     */
-
-    const approvalIds = [
-      createdApprovalId,
-      holdRejectApprovalId,
-      ...validationApprovalIds
-    ].filter((id, index, array) => id > 0 && array.indexOf(id) === index);
+    const approvalIds = [createdApprovalId, holdRejectApprovalId].filter(
+      (id, index, array) => id > 0 && array.indexOf(id) === index
+    );
 
     for (const approvalId of approvalIds) {
       try {
@@ -632,19 +457,13 @@ describe("Advertisement Financial Approval API Integration", () => {
       }
     }
 
-    /*
-     * ======================================================================
-     * PAYMENT CLEANUP
-     * ======================================================================
-     */
-
     if (testPaymentId > 0) {
       try {
         await pool.query(
           `
             DELETE FROM advertisement_payments
             WHERE id = $1
-            `,
+          `,
           [testPaymentId]
         );
       } catch {
@@ -652,58 +471,31 @@ describe("Advertisement Financial Approval API Integration", () => {
       }
     }
 
-    /*
-     * ======================================================================
-     * ADVERTISEMENT PLACEMENT RULE CLEANUP
-     * ======================================================================
-     *
-     * Advertisement creation now persists the selected runtime placement
-     * in advertisement_placement_rules. Those child rows must be removed
-     * before the parent advertisement is deleted.
-     */
-
     if (testAdvertisementId > 0) {
       try {
         await pool.query(
           `
             DELETE FROM advertisement_placement_rules
             WHERE advertisement_id = $1
-            `,
+          `,
           [testAdvertisementId]
         );
       } catch {
         // Cleanup must not fail the suite.
       }
-    }
 
-    /*
-     * ======================================================================
-     * ADVERTISEMENT CLEANUP
-     * ======================================================================
-     */
-
-    if (testAdvertisementId > 0) {
       try {
         await pool.query(
           `
             DELETE FROM advertisements
             WHERE id = $1
-            `,
+          `,
           [testAdvertisementId]
         );
       } catch {
         // Cleanup must not fail the suite.
       }
     }
-
-    /*
-     * ======================================================================
-     * PLACEMENT CLEANUP
-     * ======================================================================
-     *
-     * Remove any remaining placement-rule rows referencing the temporary
-     * placement before deleting the placement itself.
-     */
 
     if (testPlacementId > 0) {
       try {
@@ -711,7 +503,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           `
             DELETE FROM advertisement_placement_rules
             WHERE placement_id = $1
-            `,
+          `,
           [testPlacementId]
         );
       } catch {
@@ -723,7 +515,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           `
             DELETE FROM advertisement_placements
             WHERE id = $1
-            `,
+          `,
           [testPlacementId]
         );
       } catch {
@@ -731,19 +523,13 @@ describe("Advertisement Financial Approval API Integration", () => {
       }
     }
 
-    /*
-     * ======================================================================
-     * CLIENT CLEANUP
-     * ======================================================================
-     */
-
     if (testClientId > 0) {
       try {
         await pool.query(
           `
             DELETE FROM advertisement_clients
             WHERE id = $1
-            `,
+          `,
           [testClientId]
         );
       } catch {
@@ -751,19 +537,13 @@ describe("Advertisement Financial Approval API Integration", () => {
       }
     }
 
-    /*
-     * ======================================================================
-     * ROLE CLEANUP
-     * ======================================================================
-     */
-
     if (testRoleId > 0) {
       try {
         await pool.query(
           `
             DELETE FROM role_permissions
             WHERE role_id = $1
-            `,
+          `,
           [testRoleId]
         );
       } catch {
@@ -775,7 +555,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           `
             DELETE FROM user_roles
             WHERE role_id = $1
-            `,
+          `,
           [testRoleId]
         );
       } catch {
@@ -787,7 +567,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           `
             DELETE FROM roles
             WHERE id = $1
-            `,
+          `,
           [testRoleId]
         );
       } catch {
@@ -795,45 +575,13 @@ describe("Advertisement Financial Approval API Integration", () => {
       }
     }
 
-    /*
-     * ======================================================================
-     * TEST PERMISSION CLEANUP
-     * ======================================================================
-     *
-     * Normally this remains empty because this test only resolves
-     * production permissions.
-     *
-     * Keep the cleanup for compatibility if a future test changes the
-     * setup to create temporary permissions.
-     */
-
-    if (createdPermissionIds.length > 0) {
-      try {
-        await pool.query(
-          `
-            DELETE FROM permissions
-            WHERE id = ANY($1::bigint[])
-            `,
-          [createdPermissionIds]
-        );
-      } catch {
-        // Cleanup must not fail the suite.
-      }
-    }
-
-    /*
-     * ======================================================================
-     * USER CLEANUP
-     * ======================================================================
-     */
-
     if (testUserId > 0) {
       try {
         await pool.query(
           `
             DELETE FROM users
             WHERE id = $1
-            `,
+          `,
           [testUserId]
         );
       } catch {
@@ -844,21 +592,9 @@ describe("Advertisement Financial Approval API Integration", () => {
     await pool.end();
   });
 
-  /*
-   * =========================================================================
-   * AUTHENTICATION
-   * =========================================================================
-   */
-
   it("should authenticate the test user", () => {
     expect(accessToken).toBeTruthy();
   });
-
-  /*
-   * =========================================================================
-   * ADVERTISEMENT FIXTURE
-   * =========================================================================
-   */
 
   it("should create an advertisement fixture", async () => {
     const response = await request(app)
@@ -890,15 +626,8 @@ describe("Advertisement Financial Approval API Integration", () => {
     testAdvertisementId = Number(response.body.data.id);
 
     expect(testAdvertisementId).toBeGreaterThan(0);
-
     expect(response.body.data.workflowStatus).toBe("DRAFT");
   });
-
-  /*
-   * =========================================================================
-   * PAYMENT FIXTURE
-   * =========================================================================
-   */
 
   it("should create a payment fixture", async () => {
     expect(testAdvertisementId).toBeGreaterThan(0);
@@ -907,34 +636,34 @@ describe("Advertisement Financial Approval API Integration", () => {
       id: number | string;
     }>(
       `
-            INSERT INTO advertisement_payments (
-              advertisement_id,
-              amount,
-              payment_date,
-              payment_method,
-              payment_status,
-              transaction_reference,
-              notes,
-              recorded_by,
-              created_at,
-              updated_at,
-              payment_type
-            )
-            VALUES (
-              $1,
-              $2,
-              NOW(),
-              $3,
-              $4,
-              $5,
-              $6,
-              $7,
-              NOW(),
-              NOW(),
-              $8
-            )
-            RETURNING id
-            `,
+        INSERT INTO advertisement_payments (
+          advertisement_id,
+          amount,
+          payment_date,
+          payment_method,
+          payment_status,
+          transaction_reference,
+          notes,
+          recorded_by,
+          created_at,
+          updated_at,
+          payment_type
+        )
+        VALUES (
+          $1,
+          $2,
+          NOW(),
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          NOW(),
+          NOW(),
+          $8
+        )
+        RETURNING id
+      `,
       [
         testAdvertisementId,
         5000,
@@ -957,12 +686,6 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     expect(testPaymentId).toBeGreaterThan(0);
   });
-
-  /*
-   * =========================================================================
-   * CREATE FINANCIAL APPROVAL
-   * =========================================================================
-   */
 
   it("should create a financial approval using advertisements.submit", async () => {
     const response = await request(app)
@@ -987,17 +710,9 @@ describe("Advertisement Financial Approval API Integration", () => {
     createdApprovalId = Number(response.body.data.id);
 
     expect(createdApprovalId).toBeGreaterThan(0);
-
     expect(response.body.data.status).toBe("SUBMITTED");
-
     expect(Number(response.body.data.requestedBy)).toBe(testUserId);
   });
-
-  /*
-   * =========================================================================
-   * GET BY ID
-   * =========================================================================
-   */
 
   it("should get a financial approval by id", async () => {
     const response = await request(app)
@@ -1007,17 +722,9 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(Number(response.body.data.id)).toBe(createdApprovalId);
   });
-
-  /*
-   * =========================================================================
-   * LIST
-   * =========================================================================
-   */
 
   it("should list financial approvals", async () => {
     const response = await request(app)
@@ -1034,15 +741,8 @@ describe("Advertisement Financial Approval API Integration", () => {
     ).toBe(200);
 
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeTruthy();
   });
-
-  /*
-   * =========================================================================
-   * FILTERED LIST
-   * =========================================================================
-   */
 
   it("should list financial approvals using filters", async () => {
     const response = await request(app)
@@ -1067,15 +767,8 @@ describe("Advertisement Financial Approval API Integration", () => {
     ).toBe(200);
 
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeTruthy();
   });
-
-  /*
-   * =========================================================================
-   * EXISTENCE / LATEST / PENDING WHILE SUBMITTED
-   * =========================================================================
-   */
 
   it("should report that the financial approval exists", async () => {
     const response = await request(app)
@@ -1085,9 +778,7 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data.exists).toBe(true);
   });
 
@@ -1099,9 +790,7 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data.exists).toBe(true);
   });
 
@@ -1113,9 +802,7 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(Number(response.body.data.id)).toBe(createdApprovalId);
   });
 
@@ -1127,13 +814,9 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).not.toBeNull();
-
     expect(Number(response.body.data.id)).toBe(createdApprovalId);
-
     expect(response.body.data.status).toBe("SUBMITTED");
   });
 
@@ -1145,19 +828,10 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).not.toBeNull();
-
     expect(Number(response.body.data.id)).toBe(createdApprovalId);
   });
-
-  /*
-   * =========================================================================
-   * REMARK UPDATE
-   * =========================================================================
-   */
 
   it("should update financial approval remarks", async () => {
     const approvalRemarks = "Updated financial approval remarks.";
@@ -1172,19 +846,17 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data.approvalRemarks).toBe(approvalRemarks);
   });
 
-  /*
-   * =========================================================================
-   * DUPLICATE PENDING REQUEST
-   * =========================================================================
-   */
-
   it("should reject a duplicate pending financial approval", async () => {
+    /*
+     * The original approval is DISCOUNT and remains SUBMITTED.
+     * A duplicate must use the same advertisement and approval type.
+     * ADJUSTMENT is a different approval type and is not a duplicate
+     * under the type-specific pending-approval rule.
+     */
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
       .set("Authorization", `Bearer ${accessToken}`)
@@ -1192,7 +864,7 @@ describe("Advertisement Financial Approval API Integration", () => {
         advertisementId: testAdvertisementId,
         clientId: testClientId,
         paymentId: testPaymentId,
-        approvalType: "ADJUSTMENT",
+        approvalType: "DISCOUNT",
         requestedAmount: 1000,
         approvalRemarks: "Duplicate pending approval."
       });
@@ -1205,12 +877,6 @@ describe("Advertisement Financial Approval API Integration", () => {
     expect(response.body.success).toBe(false);
   });
 
-  /*
-   * =========================================================================
-   * APPROVE
-   * =========================================================================
-   */
-
   it("should approve the financial approval", async () => {
     const response = await request(app)
       .post(
@@ -1222,19 +888,10 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data.status).toBe("APPROVED");
-
     expect(Number(response.body.data.id)).toBe(createdApprovalId);
   });
-
-  /*
-   * =========================================================================
-   * POST-APPROVAL STATE
-   * =========================================================================
-   */
 
   it("should keep the approved financial approval as the latest approval", async () => {
     const response = await request(app)
@@ -1244,13 +901,9 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).not.toBeNull();
-
     expect(Number(response.body.data.id)).toBe(createdApprovalId);
-
     expect(response.body.data.status).toBe("APPROVED");
   });
 
@@ -1262,9 +915,7 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeNull();
   });
 
@@ -1276,17 +927,9 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeNull();
   });
-
-  /*
-   * =========================================================================
-   * VALIDATION CASES
-   * =========================================================================
-   */
 
   it("should reject both requested amount and percentage", async () => {
     const response = await request(app)
@@ -1302,7 +945,6 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(400);
-
     expect(response.body.success).toBe(false);
   });
 
@@ -1318,7 +960,6 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(400);
-
     expect(response.body.success).toBe(false);
   });
 
@@ -1335,7 +976,6 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(400);
-
     expect(response.body.success).toBe(false);
   });
 
@@ -1352,7 +992,6 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(400);
-
     expect(response.body.success).toBe(false);
   });
 
@@ -1369,7 +1008,6 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(400);
-
     expect(response.body.success).toBe(false);
   });
 
@@ -1386,15 +1024,8 @@ describe("Advertisement Financial Approval API Integration", () => {
       });
 
     expect(response.status).toBe(400);
-
     expect(response.body.success).toBe(false);
   });
-
-  /*
-   * =========================================================================
-   * MISSING RECORDS
-   * =========================================================================
-   */
 
   it("should return 404 for a missing financial approval", async () => {
     const response = await request(app)
@@ -1402,7 +1033,6 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(404);
-
     expect(response.body.success).toBe(false);
   });
 
@@ -1414,9 +1044,7 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeNull();
   });
 
@@ -1428,9 +1056,7 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeNull();
   });
 
@@ -1442,17 +1068,9 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(response.body.data).toBeNull();
   });
-
-  /*
-   * =========================================================================
-   * AUTHORIZATION
-   * =========================================================================
-   */
 
   it("should reject an unauthenticated financial approval request", async () => {
     const response = await request(app).get(
@@ -1460,15 +1078,8 @@ describe("Advertisement Financial Approval API Integration", () => {
     );
 
     expect(response.status).toBe(401);
-
     expect(response.body.success).toBe(false);
   });
-
-  /*
-   * =========================================================================
-   * RBAC: READ
-   * =========================================================================
-   */
 
   it("should reject financial approval read access without the read permission", async () => {
     const permissionId = permissionIds.get(
@@ -1483,31 +1094,26 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     await pool.query(
       `
-          DELETE FROM role_permissions
-          WHERE role_id = $1
-            AND permission_id = $2
-          `,
+        DELETE FROM role_permissions
+        WHERE role_id = $1
+          AND permission_id = $2
+      `,
       [testRoleId, permissionId]
     );
 
-    const response = await request(app)
-      .get(
-        `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}`
-      )
-      .set("Authorization", `Bearer ${accessToken}`);
+    try {
+      const response = await request(app)
+        .get(
+          `/api/v1/advertisements/payments/financial-approval/${createdApprovalId}`
+        )
+        .set("Authorization", `Bearer ${accessToken}`);
 
-    expect(response.status).toBe(403);
-
-    expect(response.body.success).toBe(false);
-
-    await insertRolePermission(testRoleId, permissionId, testUserId);
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+    } finally {
+      await insertRolePermission(testRoleId, permissionId, testUserId);
+    }
   });
-
-  /*
-   * =========================================================================
-   * RBAC: CREATE / SUBMIT
-   * =========================================================================
-   */
 
   it("should reject financial approval creation without advertisements.submit", async () => {
     const permissionId = permissionIds.get(permissionCodes.advertisementSubmit);
@@ -1518,37 +1124,32 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     await pool.query(
       `
-          DELETE FROM role_permissions
-          WHERE role_id = $1
-            AND permission_id = $2
-          `,
+        DELETE FROM role_permissions
+        WHERE role_id = $1
+          AND permission_id = $2
+      `,
       [testRoleId, permissionId]
     );
 
-    const response = await request(app)
-      .post("/api/v1/advertisements/payments/financial-approval")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        advertisementId: testAdvertisementId,
-        clientId: testClientId,
-        paymentId: testPaymentId,
-        approvalType: "DISCOUNT",
-        requestedAmount: 1000,
-        approvalRemarks: "Permission test."
-      });
+    try {
+      const response = await request(app)
+        .post("/api/v1/advertisements/payments/financial-approval")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({
+          advertisementId: testAdvertisementId,
+          clientId: testClientId,
+          paymentId: testPaymentId,
+          approvalType: "DISCOUNT",
+          requestedAmount: 1000,
+          approvalRemarks: "Permission test."
+        });
 
-    expect(response.status).toBe(403);
-
-    expect(response.body.success).toBe(false);
-
-    await insertRolePermission(testRoleId, permissionId, testUserId);
+      expect(response.status).toBe(403);
+      expect(response.body.success).toBe(false);
+    } finally {
+      await insertRolePermission(testRoleId, permissionId, testUserId);
+    }
   });
-
-  /*
-   * =========================================================================
-   * RBAC: REMARK UPDATE
-   * =========================================================================
-   */
 
   it("should reject remark update without advertisements.update", async () => {
     const permissionId = permissionIds.get(permissionCodes.advertisementUpdate);
@@ -1556,12 +1157,6 @@ describe("Advertisement Financial Approval API Integration", () => {
     if (permissionId === undefined) {
       throw new Error("Advertisement update permission ID was not resolved.");
     }
-
-    /*
-     * The main approval is already APPROVED, so create a temporary
-     * SUBMITTED approval to ensure authorization is tested against
-     * a valid editable record.
-     */
 
     const createResponse = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
@@ -1592,7 +1187,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           DELETE FROM role_permissions
           WHERE role_id = $1
             AND permission_id = $2
-          `,
+        `,
         [testRoleId, permissionId]
       );
 
@@ -1606,20 +1201,12 @@ describe("Advertisement Financial Approval API Integration", () => {
         });
 
       expect(response.status).toBe(403);
-
       expect(response.body.success).toBe(false);
     } finally {
       await insertRolePermission(testRoleId, permissionId, testUserId);
-
       await deleteApproval(approvalId);
     }
   });
-
-  /*
-   * =========================================================================
-   * RBAC: APPROVE
-   * =========================================================================
-   */
 
   it("should reject approval without the approve permission", async () => {
     const permissionId = permissionIds.get(
@@ -1661,7 +1248,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           DELETE FROM role_permissions
           WHERE role_id = $1
             AND permission_id = $2
-          `,
+        `,
         [testRoleId, permissionId]
       );
 
@@ -1675,20 +1262,12 @@ describe("Advertisement Financial Approval API Integration", () => {
         });
 
       expect(response.status).toBe(403);
-
       expect(response.body.success).toBe(false);
     } finally {
       await insertRolePermission(testRoleId, permissionId, testUserId);
-
       await deleteApproval(approvalId);
     }
   });
-
-  /*
-   * =========================================================================
-   * RBAC: HOLD
-   * =========================================================================
-   */
 
   it("should reject hold without the hold permission", async () => {
     const permissionId = permissionIds.get(
@@ -1730,7 +1309,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           DELETE FROM role_permissions
           WHERE role_id = $1
             AND permission_id = $2
-          `,
+        `,
         [testRoleId, permissionId]
       );
 
@@ -1744,20 +1323,12 @@ describe("Advertisement Financial Approval API Integration", () => {
         });
 
       expect(response.status).toBe(403);
-
       expect(response.body.success).toBe(false);
     } finally {
       await insertRolePermission(testRoleId, permissionId, testUserId);
-
       await deleteApproval(approvalId);
     }
   });
-
-  /*
-   * =========================================================================
-   * RBAC: REJECT
-   * =========================================================================
-   */
 
   it("should reject rejection without the reject permission", async () => {
     const permissionId = permissionIds.get(
@@ -1799,7 +1370,7 @@ describe("Advertisement Financial Approval API Integration", () => {
           DELETE FROM role_permissions
           WHERE role_id = $1
             AND permission_id = $2
-          `,
+        `,
         [testRoleId, permissionId]
       );
 
@@ -1813,33 +1384,12 @@ describe("Advertisement Financial Approval API Integration", () => {
         });
 
       expect(response.status).toBe(403);
-
       expect(response.body.success).toBe(false);
     } finally {
       await insertRolePermission(testRoleId, permissionId, testUserId);
-
       await deleteApproval(approvalId);
     }
   });
-
-  /*
-   * =========================================================================
-   * PHASE 5: HOLD → REJECTED
-   * =========================================================================
-   *
-   * This is deliberately tested with a separate approval because the main
-   * financial approval has already completed the SUBMITTED → APPROVED path.
-   *
-   * Expected lifecycle:
-   *
-   * SUBMITTED
-   *     ↓
-   *   HOLD
-   *     ↓
-   * REJECTED
-   *
-   * The production service represents the held workflow state as HOLD.
-   */
 
   it("should move a submitted financial approval to HOLD", async () => {
     const createResponse = await request(app)
@@ -1866,7 +1416,6 @@ describe("Advertisement Financial Approval API Integration", () => {
     holdRejectApprovalId = Number(createResponse.body.data.id);
 
     expect(holdRejectApprovalId).toBeGreaterThan(0);
-
     expect(createResponse.body.data.status).toBe("SUBMITTED");
 
     const holdReason =
@@ -1887,11 +1436,8 @@ describe("Advertisement Financial Approval API Integration", () => {
     ).toBe(200);
 
     expect(response.body.success).toBe(true);
-
     expect(Number(response.body.data.id)).toBe(holdRejectApprovalId);
-
     expect(response.body.data.status).toBe("HOLD");
-
     expect(response.body.data.holdReason).toBe(holdReason);
   });
 
@@ -1905,13 +1451,9 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(Number(response.body.data.id)).toBe(holdRejectApprovalId);
-
     expect(response.body.data.status).toBe("HOLD");
-
     expect(response.body.data.holdReason).toBe(
       "Financial approval is placed on hold for Phase 5 integration testing."
     );
@@ -1938,11 +1480,8 @@ describe("Advertisement Financial Approval API Integration", () => {
     ).toBe(200);
 
     expect(response.body.success).toBe(true);
-
     expect(Number(response.body.data.id)).toBe(holdRejectApprovalId);
-
     expect(response.body.data.status).toBe("REJECTED");
-
     expect(response.body.data.rejectionReason).toBe(rejectionReason);
   });
 
@@ -1956,45 +1495,14 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(Number(response.body.data.id)).toBe(holdRejectApprovalId);
-
     expect(response.body.data.status).toBe("REJECTED");
-
-    /*
-     * The production rejection transition clears the active hold reason.
-     * The reason is part of the HOLD transition/history, while the current
-     * approval record exposes no active hold reason after rejection.
-     */
     expect(response.body.data.holdReason).toBeNull();
-
     expect(response.body.data.rejectionReason).toBe(
       "Financial approval rejected after the hold review."
     );
   });
-
-  /*
-   * =========================================================================
-   * PHASE 5: COMPLETE HISTORY
-   * =========================================================================
-   *
-   * History records are transition records. Depending on the response mapper,
-   * the transition status may be exposed as:
-   *
-   * status
-   * action
-   * newStatus / new_status
-   * workflowStatus / workflow_status
-   * fromStatus / from_status
-   * toStatus / to_status
-   * previousStatus / previous_status
-   * currentStatus / current_status
-   *
-   * The test therefore validates the business transition values without
-   * coupling the integration test to one property naming convention.
-   */
 
   it("should return the complete HOLD → REJECTED approval history", async () => {
     expect(holdRejectApprovalId).toBeGreaterThan(0);
@@ -2011,19 +1519,12 @@ describe("Advertisement Financial Approval API Integration", () => {
     ).toBe(200);
 
     expect(response.body.success).toBe(true);
-
     expect(Array.isArray(response.body.data)).toBe(true);
 
     const history = response.body.data as Array<Record<string, unknown>>;
 
-    /*
-     * HOLD and REJECTED are two separate workflow transitions.
-     */
     expect(history.length).toBeGreaterThanOrEqual(2);
 
-    /*
-     * The history must belong exclusively to the tested approval.
-     */
     for (const entry of history) {
       expect(Number(entry.approvalId ?? entry.approval_id)).toBe(
         holdRejectApprovalId
@@ -2032,11 +1533,7 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     const historyValues = getHistoryStatusValues(history);
 
-    /*
-     * The important business assertions are the persisted transition states.
-     */
     expect(historyValues).toContain("HOLD");
-
     expect(historyValues).toContain("REJECTED");
   });
 
@@ -2055,15 +1552,10 @@ describe("Advertisement Financial Approval API Integration", () => {
     ).toBe(200);
 
     expect(response.body.success).toBe(true);
-
     expect(Array.isArray(response.body.data)).toBe(true);
 
     const history = response.body.data as Array<Record<string, unknown>>;
 
-    /*
-     * SUBMITTED → APPROVED produces at least the APPROVED transition
-     * in the current history implementation.
-     */
     expect(history.length).toBeGreaterThanOrEqual(1);
 
     for (const entry of history) {
@@ -2076,12 +1568,6 @@ describe("Advertisement Financial Approval API Integration", () => {
 
     expect(historyValues).toContain("APPROVED");
   });
-
-  /*
-   * =========================================================================
-   * VALIDATION / TERMINAL STATE AFTER HOLD → REJECTED
-   * =========================================================================
-   */
 
   it("should reject an invalid transition from REJECTED back to HOLD", async () => {
     expect(holdRejectApprovalId).toBeGreaterThan(0);
@@ -2125,12 +1611,6 @@ describe("Advertisement Financial Approval API Integration", () => {
     expect(response.body.success).toBe(false);
   });
 
-  /*
-   * =========================================================================
-   * EXISTING HISTORY / MISSING HISTORY CASE
-   * =========================================================================
-   */
-
   it("should return history for the existing approved financial approval", async () => {
     const response = await request(app)
       .get(
@@ -2139,13 +1619,9 @@ describe("Advertisement Financial Approval API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`);
 
     expect(response.status).toBe(200);
-
     expect(response.body.success).toBe(true);
-
     expect(Array.isArray(response.body.data)).toBe(true);
-
     expect(response.body.data.length).toBeGreaterThanOrEqual(1);
-
     expect(response.body.data[0]).toBeDefined();
   });
 });

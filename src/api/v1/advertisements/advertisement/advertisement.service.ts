@@ -8,6 +8,8 @@ import * as pricingSnapshotService from "../pricing-snapshots/pricing-snapshot.s
 
 import { calculateStandardAmount } from "../standard-amount/standard-amount.service.js";
 
+import * as financialApprovalRepository from "../financial-approvals/financial-approval.repository.js";
+
 import * as repository from "./advertisement.repository.js";
 
 import type {
@@ -22,6 +24,11 @@ import type {
   CreateAdvertisementInput,
   UpdateAdvertisementInput
 } from "./advertisement.types.js";
+
+import type {
+  AdvertisementFinancialApproval,
+  AdvertisementFinancialApprovalType
+} from "../financial-approvals/financial-approval.types.js";
 
 type CreateAdvertisementInputWithPlacement = CreateAdvertisementInput & {
   placementId?: number | null;
@@ -167,7 +174,6 @@ const toCalculatedFinancialFields = (
 
 const validateWorkflowTransition = (
   currentStatus: AdvertisementWorkflowStatus,
-
   nextStatus: AdvertisementWorkflowStatus
 ): void => {
   if (currentStatus === nextStatus) {
@@ -205,6 +211,280 @@ const normalizeRequiredReason = (reason: string, message: string): string => {
   }
 
   return trimmed;
+};
+
+/* ------------------------------------------------------------
+ * Financial approval validation
+ * ------------------------------------------------------------ */
+
+const FINANCIAL_APPROVAL_PAGE_SIZE = 100;
+
+const getLatestFinancialApproval = async (
+  advertisementId: number,
+  approvalType: AdvertisementFinancialApprovalType
+): Promise<AdvertisementFinancialApproval | null> => {
+  const result = await financialApprovalRepository.list({
+    advertisementId,
+    approvalType,
+    page: 1,
+    pageSize: FINANCIAL_APPROVAL_PAGE_SIZE
+  });
+
+  /*
+   * The repository orders records by requested_at DESC, id DESC.
+   * The first matching record is therefore the latest request for this
+   * advertisement and approval type.
+   */
+  return result.items[0] ?? null;
+};
+
+const isFinancialValueDifferent = (
+  first: number | null | undefined,
+  second: number | null | undefined
+): boolean => {
+  if (first === null || first === undefined) {
+    return second !== null && second !== undefined;
+  }
+
+  if (second === null || second === undefined) {
+    return true;
+  }
+
+  return roundToTwo(Number(first)) !== roundToTwo(Number(second));
+};
+
+/**
+ * Ensures a pending, rejected, or approved discount request cannot be
+ * bypassed by directly editing commercial values in the advertisement
+ * workspace.
+ *
+ * DISCOUNT approval limits apply to the discount percentage and the
+ * calculated discount amount, not to Standard Amount.
+ */
+const validateDiscountApproval = async (
+  advertisement: Advertisement,
+  financials: AdvertisementFinancialCalculation
+): Promise<void> => {
+  const discountChanged =
+    isFinancialValueDifferent(
+      advertisement.discountPercentage,
+      financials.discountPercentage
+    ) ||
+    isFinancialValueDifferent(
+      advertisement.discountAmount,
+      financials.discountAmount
+    );
+
+  if (!discountChanged) {
+    return;
+  }
+
+  const approval = await getLatestFinancialApproval(
+    advertisement.id,
+    "DISCOUNT"
+  );
+
+  /*
+   * An advertisement without a DISCOUNT approval record retains its
+   * existing behaviour. Approval thresholds and request creation remain
+   * the responsibility of the financial-approval workflow.
+   */
+  if (!approval) {
+    return;
+  }
+
+  if (approval.status === "SUBMITTED" || approval.status === "HOLD") {
+    throw new ApiError(
+      409,
+      "A discount financial approval is pending or on hold. Commercial discount changes cannot be saved until the request is resolved."
+    );
+  }
+
+  if (approval.status === "APPROVED") {
+    if (
+      approval.approvedPercentage === null &&
+      approval.approvedAmount === null
+    ) {
+      throw new ApiError(
+        409,
+        "The approved discount request does not contain an approved percentage or amount. Please review the financial approval before editing the discount."
+      );
+    }
+
+    if (
+      approval.approvedPercentage !== null &&
+      financials.discountPercentage >
+        approval.approvedPercentage + Number.EPSILON
+    ) {
+      throw new ApiError(
+        409,
+        `The discount percentage exceeds the approved limit of ${approval.approvedPercentage}%.`
+      );
+    }
+
+    if (
+      approval.approvedAmount !== null &&
+      financials.discountAmount > approval.approvedAmount + 0.009
+    ) {
+      throw new ApiError(
+        409,
+        `The calculated discount amount exceeds the approved limit of ${roundToTwo(approval.approvedAmount).toFixed(2)}.`
+      );
+    }
+
+    return;
+  }
+
+  /*
+   * A rejected request must not authorize the rejected discount.
+   * A lower discount can still be saved where it does not exceed either
+   * rejected requested limit.
+   */
+  if (approval.status === "REJECTED") {
+    if (
+      approval.requestedPercentage !== null &&
+      financials.discountPercentage >
+        approval.requestedPercentage + Number.EPSILON
+    ) {
+      throw new ApiError(
+        409,
+        "The requested discount percentage was rejected. A higher discount cannot be saved without a new financial approval."
+      );
+    }
+
+    if (
+      approval.requestedAmount !== null &&
+      financials.discountAmount > approval.requestedAmount + 0.009
+    ) {
+      throw new ApiError(
+        409,
+        "The requested discount amount was rejected. A higher discount amount cannot be saved without a new financial approval."
+      );
+    }
+
+    if (
+      approval.requestedPercentage === null &&
+      approval.requestedAmount === null &&
+      (financials.discountPercentage > 0 || financials.discountAmount > 0)
+    ) {
+      throw new ApiError(
+        409,
+        "The discount request was rejected and has no requested limit. Submit a new financial approval before applying a discount."
+      );
+    }
+  }
+};
+
+/**
+ * Ensures changes to Advertisement Amount cannot bypass a pending,
+ * rejected, or approved ADJUSTMENT request.
+ *
+ * For an adjustment request, the approved amount is treated as the
+ * maximum permitted change from the previously saved Advertisement Amount.
+ * Standard Amount and pricing snapshots remain system-derived.
+ */
+/**
+ * Ensures changes to Advertisement Amount cannot bypass a pending,
+ * rejected, or approved ADJUSTMENT request.
+ *
+ * An approved adjustment authorizes only a change within its approved
+ * limit. A rejected request never authorizes a new adjustment.
+ *
+ * Standard Amount and pricing snapshots remain system-derived.
+ */
+const validateAdjustmentApproval = async (
+  advertisement: Advertisement,
+  nextAdvertisementAmount: number | null
+): Promise<void> => {
+  const currentAdvertisementAmount =
+    advertisement.advertisementAmount === null ||
+    advertisement.advertisementAmount === undefined
+      ? null
+      : Number(advertisement.advertisementAmount);
+
+  if (
+    !isFinancialValueDifferent(
+      currentAdvertisementAmount,
+      nextAdvertisementAmount
+    )
+  ) {
+    return;
+  }
+
+  const approval = await getLatestFinancialApproval(
+    advertisement.id,
+    "ADJUSTMENT"
+  );
+
+  if (!approval) {
+    return;
+  }
+
+  if (approval.status === "SUBMITTED" || approval.status === "HOLD") {
+    throw new ApiError(
+      409,
+      "An adjustment financial approval is pending or on hold. Advertisement Amount cannot be changed until the request is resolved."
+    );
+  }
+
+  if (approval.status === "REJECTED") {
+    throw new ApiError(
+      409,
+      "The adjustment request was rejected. Submit a new financial approval before applying an Advertisement Amount change."
+    );
+  }
+
+  if (approval.status === "APPROVED") {
+    if (approval.approvedAmount === null) {
+      throw new ApiError(
+        409,
+        "The approved adjustment request does not contain an approved amount. Please review the financial approval before changing Advertisement Amount."
+      );
+    }
+
+    const changeAmount = roundToTwo(
+      Math.abs(
+        (nextAdvertisementAmount ?? 0) -
+          (currentAdvertisementAmount ?? 0)
+      )
+    );
+
+    if (changeAmount > approval.approvedAmount + 0.009) {
+      throw new ApiError(
+        409,
+        `The Advertisement Amount change exceeds the approved adjustment limit of ${roundToTwo(approval.approvedAmount).toFixed(2)}.`
+      );
+    }
+  }
+};
+
+/**
+ * Validates financial approvals before any commercial update is persisted.
+ *
+ * REFUND and PARTIAL_REFUND requests concern payment operations rather
+ * than changing the advertisement's discount or negotiated amount.
+ * CREDIT_EXCEPTION is also separate: it does not authorize discounts,
+ * advertisement amount changes, or count as money received.
+ */
+const validateCommercialFinancialApprovals = async (
+  advertisement: Advertisement,
+  input: UpdateAdvertisementInputWithPlacement,
+  financials: AdvertisementFinancialCalculation
+): Promise<void> => {
+  const discountOrAmountWasProvided =
+    input.discountPercentage !== undefined ||
+    input.advertisementAmount !== undefined;
+
+  if (!discountOrAmountWasProvided) {
+    return;
+  }
+
+  await validateDiscountApproval(advertisement, financials);
+
+  await validateAdjustmentApproval(
+    advertisement,
+    financials.advertisementAmount
+  );
 };
 
 /* ------------------------------------------------------------
@@ -262,11 +542,8 @@ const validatePlacementSelection = async (
 
 const changeWorkflowStatus = async (
   id: number,
-
   nextStatus: AdvertisementWorkflowStatus,
-
   performedBy: number,
-
   options: {
     reason?: string | null;
     remarks?: string | null;
@@ -722,6 +999,7 @@ export const updateAdvertisement = async (
         ? new Date(mergedStartAt.getTime())
         : new Date(mergedStartAt)
       : null;
+
     const endDate = mergedEndAt
       ? mergedEndAt instanceof Date
         ? new Date(mergedEndAt.getTime())
@@ -750,11 +1028,13 @@ export const updateAdvertisement = async (
         startDate.getUTCMonth(),
         startDate.getUTCDate()
       );
+
       const endUtc = Date.UTC(
         endDate.getUTCFullYear(),
         endDate.getUTCMonth(),
         endDate.getUTCDate()
       );
+
       recalculatedPricingQuantity =
         Math.floor((endUtc - startUtc) / 86_400_000) + 1;
     }
@@ -806,6 +1086,15 @@ export const updateAdvertisement = async (
       ? null
       : Number(recalculatedStandardAmount)
   );
+
+  /*
+   * Validate financial approvals before persisting any commercial changes.
+   *
+   * DISCOUNT requests govern discount limits.
+   * ADJUSTMENT requests govern changes to Advertisement Amount.
+   * Payment refunds and credit exceptions remain separate workflows.
+   */
+  await validateCommercialFinancialApprovals(advertisement, input, financials);
 
   /*
    * Remove placementId from the spread so that `null` or `undefined`

@@ -1,224 +1,400 @@
 import { z } from "zod";
 
-const financialApprovalTypeSchema = z.enum([
+/**
+ * Shared validation rules
+ */
+
+const positiveIntegerIdSchema = z.coerce
+  .number()
+  .int("ID must be an integer")
+  .positive("ID must be greater than zero");
+
+const positiveAmountSchema = z.coerce
+  .number()
+  .finite("Amount must be a finite number")
+  .positive("Amount must be greater than zero")
+  .refine(
+    (value) => Math.round(value * 100) === value * 100,
+    "Amount cannot have more than two decimal places"
+  );
+
+const percentageSchema = z.coerce
+  .number()
+  .finite("Percentage must be a finite number")
+  .min(0, "Percentage cannot be less than zero")
+  .max(100, "Percentage cannot exceed 100")
+  .refine(
+    (value) => Math.round(value * 100) === value * 100,
+    "Percentage cannot have more than two decimal places"
+  );
+
+const optionalPositiveAmountSchema = positiveAmountSchema.nullable().optional();
+
+const optionalPercentageSchema = percentageSchema.nullable().optional();
+
+const optionalRemarksSchema = z
+  .string()
+  .trim()
+  .max(5000, "Remarks cannot exceed 5000 characters")
+  .nullable()
+  .optional();
+
+const requiredReasonSchema = z
+  .string()
+  .trim()
+  .min(1, "A reason is required")
+  .max(5000, "Reason cannot exceed 5000 characters");
+
+/**
+ * Validate a real calendar date in YYYY-MM-DD format.
+ *
+ * Regex validation alone would accept invalid dates such as
+ * 2026-02-31, so the calendar components are also checked.
+ */
+const dateOnlySchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD format")
+  .refine((value) => {
+    const [year, month, day] = value.split("-").map(Number);
+
+    if (year === undefined || month === undefined || day === undefined) {
+      return false;
+    }
+
+    const date = new Date(Date.UTC(year, month - 1, day));
+
+    return (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+    );
+  }, "Enter a valid calendar date");
+
+/**
+ * Enums
+ */
+
+export const advertisementFinancialApprovalTypeSchema = z.enum([
   "DISCOUNT",
   "ADJUSTMENT",
   "REFUND",
-  "PARTIAL_REFUND"
+  "PARTIAL_REFUND",
+  "CREDIT_EXCEPTION"
 ]);
 
-const financialApprovalStatusSchema = z.enum([
+export const advertisementFinancialApprovalStatusSchema = z.enum([
   "SUBMITTED",
   "HOLD",
   "APPROVED",
   "REJECTED"
 ]);
 
-const positiveIntegerSchema = z.coerce.number().int().positive();
-
-const financialApprovalAmountSchema = z.coerce
-  .number()
-  .positive("Requested amount must be greater than zero.")
-  .finite("Requested amount must be a valid number.")
-  .refine(
-    (value) => Number.isInteger(value * 100),
-    "Requested amount must have at most two decimal places."
-  );
-
-const financialApprovalPercentageSchema = z.coerce
-  .number()
-  .min(0, "Requested percentage cannot be less than 0.")
-  .max(100, "Requested percentage cannot exceed 100.")
-  .finite("Requested percentage must be a valid number.")
-  .refine(
-    (value) => Number.isInteger(value * 100),
-    "Requested percentage must have at most two decimal places."
-  );
-
-const optionalNullableRemarksSchema = z
-  .string()
-  .trim()
-  .max(5000, "Approval remarks must not exceed 5000 characters.")
-  .nullable()
-  .optional();
-
-const approvedAmountSchema = z.coerce
-  .number()
-  .nonnegative("Approved amount cannot be negative.")
-  .finite("Approved amount must be a valid number.")
-  .refine(
-    (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-9,
-    "Approved amount must have at most two decimal places."
-  );
-
-const approvedPercentageSchema = z.coerce
-  .number()
-  .min(0, "Approved percentage cannot be negative.")
-  .max(100, "Approved percentage cannot exceed 100.")
-  .finite("Approved percentage must be a valid number.")
-  .refine(
-    (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-9,
-    "Approved percentage must have at most two decimal places."
-  );
-
-/*
- * Keep the remarks fields as an object schema so approval-specific fields
- * can be added with .extend() before any transformation takes place.
+/**
+ * Route parameter schemas
  */
-const workflowRemarksObjectSchema = z.object({
-  approvalRemarks: optionalNullableRemarksSchema,
-  remarks: optionalNullableRemarksSchema
-});
-
-/*
- * Validate the two supported remarks fields and then normalize them to
- * approvalRemarks for the service layer.
- */
-const workflowRemarksSchema = workflowRemarksObjectSchema
-  .superRefine((value, context) => {
-    if (value.approvalRemarks !== undefined && value.remarks !== undefined) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["remarks"],
-        message: "Provide either approvalRemarks or remarks, not both."
-      });
-    }
-  })
-  .transform((value) => ({
-    approvalRemarks:
-      value.approvalRemarks !== undefined
-        ? value.approvalRemarks
-        : value.remarks
-  }));
 
 export const advertisementFinancialApprovalIdSchema = z.object({
-  id: positiveIntegerSchema
+  id: positiveIntegerIdSchema
 });
 
 export const advertisementFinancialApprovalAdvertisementIdSchema = z.object({
-  advertisementId: positiveIntegerSchema
+  advertisementId: positiveIntegerIdSchema
 });
 
 export const advertisementFinancialApprovalPaymentIdSchema = z.object({
-  paymentId: positiveIntegerSchema
+  paymentId: positiveIntegerIdSchema
 });
 
-export const createAdvertisementFinancialApprovalSchema = z
-  .object({
-    advertisementId: positiveIntegerSchema,
-    clientId: positiveIntegerSchema,
-    paymentId: positiveIntegerSchema.nullable().optional(),
-    approvalType: financialApprovalTypeSchema,
-    requestedAmount: financialApprovalAmountSchema.nullable().optional(),
-    requestedPercentage: financialApprovalPercentageSchema
-      .nullable()
-      .optional(),
-    approvalRemarks: optionalNullableRemarksSchema
-  })
-  .superRefine((value, context) => {
-    const hasAmount =
-      value.requestedAmount !== undefined && value.requestedAmount !== null;
+/**
+ * Create a financial approval request.
+ *
+ * Existing approval types:
+ *   - Require exactly one of requestedAmount or requestedPercentage.
+ *
+ * CREDIT_EXCEPTION:
+ *   - Requires requestedAmount.
+ *   - Does not allow requestedPercentage.
+ *   - Requires a reason.
+ *   - Requires an expected payment due date.
+ */
+const createAdvertisementFinancialApprovalBaseSchema = z.object({
+  advertisementId: positiveIntegerIdSchema,
+  clientId: positiveIntegerIdSchema,
 
-    const hasPercentage =
-      value.requestedPercentage !== undefined &&
-      value.requestedPercentage !== null;
+  paymentId: positiveIntegerIdSchema.nullable().optional(),
 
-    if (!hasAmount && !hasPercentage) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["requestedAmount"],
-        message: "Either requestedAmount or requestedPercentage is required."
-      });
-    }
+  approvalType: advertisementFinancialApprovalTypeSchema,
 
-    if (hasAmount && hasPercentage) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["requestedAmount"],
-        message:
-          "Provide either requestedAmount or requestedPercentage, not both."
-      });
-    }
-  });
+  requestedAmount: optionalPositiveAmountSchema,
+  requestedPercentage: optionalPercentageSchema,
 
-export const updateAdvertisementFinancialApprovalRemarksSchema = z.object({
-  approvalRemarks: z
+  approvalRemarks: optionalRemarksSchema,
+  remarks: optionalRemarksSchema,
+
+  creditExceptionReason: z
     .string()
     .trim()
-    .max(5000, "Approval remarks must not exceed 5000 characters.")
+    .max(5000, "Credit exception reason cannot exceed 5000 characters")
     .nullable()
+    .optional(),
+
+  expectedPaymentDueDate: dateOnlySchema.nullable().optional()
 });
 
-export const holdAdvertisementFinancialApprovalSchema = z.object({
-  holdReason: z
-    .string()
-    .trim()
-    .min(1, "Hold reason is required.")
-    .max(5000, "Hold reason must not exceed 5000 characters.")
-});
-
-export const rejectAdvertisementFinancialApprovalSchema = z.object({
-  rejectionReason: z
-    .string()
-    .trim()
-    .min(1, "Rejection reason is required.")
-    .max(5000, "Rejection reason must not exceed 5000 characters.")
-});
-
-export const approveAdvertisementFinancialApprovalSchema =
-  workflowRemarksObjectSchema
-    .extend({
-      approvedAmount: approvedAmountSchema.nullable().optional(),
-      approvedPercentage: approvedPercentageSchema.nullable().optional()
-    })
+export const createAdvertisementFinancialApprovalSchema =
+  createAdvertisementFinancialApprovalBaseSchema
     .superRefine((value, context) => {
-      if (value.approvalRemarks !== undefined && value.remarks !== undefined) {
+      if (value.approvalRemarks != null && value.remarks != null) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["remarks"],
-          message: "Provide either approvalRemarks or remarks, not both."
+          message: "Provide either approvalRemarks or remarks, not both"
         });
       }
 
-      const hasAmount =
-        value.approvedAmount !== undefined && value.approvedAmount !== null;
+      if (value.approvalType === "CREDIT_EXCEPTION") {
+        if (value.requestedAmount == null) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["requestedAmount"],
+            message: "A positive credit exception amount is required"
+          });
+        }
 
-      const hasPercentage =
-        value.approvedPercentage !== undefined &&
-        value.approvedPercentage !== null;
+        if (value.requestedPercentage != null) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["requestedPercentage"],
+            message:
+              "Credit exceptions must be requested by amount, not percentage"
+          });
+        }
+
+        if (
+          value.creditExceptionReason == null ||
+          value.creditExceptionReason.trim().length === 0
+        ) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["creditExceptionReason"],
+            message: "A credit exception reason is required"
+          });
+        }
+
+        if (
+          value.expectedPaymentDueDate == null ||
+          value.expectedPaymentDueDate.trim().length === 0
+        ) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["expectedPaymentDueDate"],
+            message: "An expected payment due date is required"
+          });
+        }
+
+        return;
+      }
+
+      const hasAmount = value.requestedAmount != null;
+      const hasPercentage = value.requestedPercentage != null;
 
       if (hasAmount && hasPercentage) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["approvedAmount"],
+          path: ["requestedAmount"],
           message:
-            "Provide either approvedAmount or approvedPercentage, not both."
+            "Provide either requestedAmount or requestedPercentage, not both."
+        });
+      } else if (!hasAmount && !hasPercentage) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["requestedAmount"],
+          message: "Either requestedAmount or requestedPercentage is required."
+        });
+      }
+    })
+    .transform((value) => {
+      const { remarks: _legacyRemarks, ...rest } = value;
+
+      return {
+        ...rest,
+        // Creation accepts canonical approvalRemarks only.
+        // Legacy remarks is deliberately not copied during creation.
+        approvalRemarks: value.approvalRemarks ?? null
+      };
+    });
+
+/**
+ * Update approval remarks.
+ *
+ * Supports either approvalRemarks or remarks and normalizes the result.
+ * At least one field must be supplied. An explicitly supplied empty
+ * string remains valid after trimming.
+ */
+const updateAdvertisementFinancialApprovalRemarksBaseSchema = z.object({
+  approvalRemarks: optionalRemarksSchema,
+  remarks: optionalRemarksSchema
+});
+
+export const updateAdvertisementFinancialApprovalRemarksSchema =
+  updateAdvertisementFinancialApprovalRemarksBaseSchema
+    .superRefine((value, context) => {
+      const hasApprovalRemarks = value.approvalRemarks !== undefined;
+      const hasRemarks = value.remarks !== undefined;
+
+      if (!hasApprovalRemarks && !hasRemarks) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["remarks"],
+          message: "Remarks are required"
+        });
+      }
+
+      if (value.approvalRemarks != null && value.remarks != null) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["remarks"],
+          message: "Provide either approvalRemarks or remarks, not both"
         });
       }
     })
     .transform((value) => ({
-      approvalRemarks:
-        value.approvalRemarks !== undefined
-          ? value.approvalRemarks
-          : value.remarks,
-      approvedAmount: value.approvedAmount,
-      approvedPercentage: value.approvedPercentage
+      approvalRemarks: value.approvalRemarks ?? value.remarks ?? null
     }));
 
-export const resubmitAdvertisementFinancialApprovalSchema =
-  workflowRemarksSchema;
+/**
+ * Put an approval request on hold.
+ */
+const holdAdvertisementFinancialApprovalBaseSchema = z.object({
+  holdReason: requiredReasonSchema,
+  remarks: optionalRemarksSchema
+});
 
+export const holdAdvertisementFinancialApprovalSchema =
+  holdAdvertisementFinancialApprovalBaseSchema.transform((value) => ({
+    holdReason: value.holdReason,
+    remarks: value.remarks ?? null
+  }));
+
+/**
+ * Reject an approval request.
+ */
+const rejectAdvertisementFinancialApprovalBaseSchema = z.object({
+  rejectionReason: requiredReasonSchema,
+  remarks: optionalRemarksSchema
+});
+
+export const rejectAdvertisementFinancialApprovalSchema =
+  rejectAdvertisementFinancialApprovalBaseSchema.transform((value) => ({
+    rejectionReason: value.rejectionReason,
+    remarks: value.remarks ?? null
+  }));
+
+/**
+ * Approve a financial approval request.
+ *
+ * Supports both approvalRemarks and the legacy remarks property.
+ * The parsed result always exposes approvalRemarks so the controller
+ * and service receive the approver's remarks under one canonical name.
+ *
+ * The service additionally enforces amount, percentage, threshold,
+ * and CREDIT_EXCEPTION outstanding-balance rules.
+ */
+const approveAdvertisementFinancialApprovalBaseSchema = z.object({
+  approvedAmount: optionalPositiveAmountSchema,
+  approvedPercentage: optionalPercentageSchema,
+  approvalRemarks: optionalRemarksSchema,
+  remarks: optionalRemarksSchema
+});
+
+export const approveAdvertisementFinancialApprovalSchema =
+  approveAdvertisementFinancialApprovalBaseSchema
+    .superRefine((value, context) => {
+      if (value.approvedAmount != null && value.approvedPercentage != null) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["approvedAmount"],
+          message: "Provide approvedAmount or approvedPercentage, not both"
+        });
+      }
+
+      if (value.approvalRemarks != null && value.remarks != null) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["remarks"],
+          message: "Provide either approvalRemarks or remarks, not both"
+        });
+      }
+    })
+    .transform((value) => ({
+      approvedAmount: value.approvedAmount,
+      approvedPercentage: value.approvedPercentage,
+      approvalRemarks: value.approvalRemarks ?? value.remarks ?? null
+    }));
+
+/**
+ * Resubmit a rejected or held approval request.
+ */
+const resubmitAdvertisementFinancialApprovalBaseSchema = z.object({
+  approvalRemarks: optionalRemarksSchema,
+  remarks: optionalRemarksSchema
+});
+
+export const resubmitAdvertisementFinancialApprovalSchema =
+  resubmitAdvertisementFinancialApprovalBaseSchema
+    .superRefine((value, context) => {
+      if (value.approvalRemarks != null && value.remarks != null) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["remarks"],
+          message: "Provide either approvalRemarks or remarks, not both"
+        });
+      }
+    })
+    .transform((value) => ({
+      approvalRemarks: value.approvalRemarks ?? value.remarks ?? null
+    }));
+
+/**
+ * List and search query validation.
+ */
 export const advertisementFinancialApprovalQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(20),
-  advertisementId: positiveIntegerSchema.optional(),
-  clientId: positiveIntegerSchema.optional(),
-  paymentId: positiveIntegerSchema.optional(),
-  approvalType: financialApprovalTypeSchema.optional(),
-  status: financialApprovalStatusSchema.optional(),
-  requestedBy: positiveIntegerSchema.optional(),
-  reviewedBy: positiveIntegerSchema.optional()
+
+  pageSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(100, "Page size cannot exceed 100")
+    .default(20),
+
+  advertisementId: positiveIntegerIdSchema.optional(),
+  clientId: positiveIntegerIdSchema.optional(),
+  paymentId: positiveIntegerIdSchema.optional(),
+
+  approvalType: advertisementFinancialApprovalTypeSchema.optional(),
+  status: advertisementFinancialApprovalStatusSchema.optional(),
+
+  requestedBy: positiveIntegerIdSchema.optional(),
+  reviewedBy: positiveIntegerIdSchema.optional()
 });
+
+/**
+ * Inferred validation types.
+ *
+ * These describe parsed outputs, including transformations.
+ */
+export type AdvertisementFinancialApprovalIdValidatedInput = z.infer<
+  typeof advertisementFinancialApprovalIdSchema
+>;
+
+export type AdvertisementFinancialApprovalAdvertisementIdValidatedInput =
+  z.infer<typeof advertisementFinancialApprovalAdvertisementIdSchema>;
+
+export type AdvertisementFinancialApprovalPaymentIdValidatedInput = z.infer<
+  typeof advertisementFinancialApprovalPaymentIdSchema
+>;
 
 export type CreateAdvertisementFinancialApprovalValidatedInput = z.infer<
   typeof createAdvertisementFinancialApprovalSchema

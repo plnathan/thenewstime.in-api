@@ -1,12 +1,15 @@
 import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
 
 import * as thresholdService from "../financial-approval-thresholds/financial-approval-threshold.service.js";
+
+import * as paymentService from "../payments/payment.service.js";
+
 import * as repository from "./financial-approval.repository.js";
 
 import type {
   AdvertisementFinancialApproval,
   AdvertisementFinancialApprovalHistory,
-  AdvertisementFinancialApprovalListFilter,
+  AdvertisementFinancialApprovalListFilters,
   AdvertisementFinancialApprovalListResult,
   ApproveAdvertisementFinancialApprovalInput,
   CreateAdvertisementFinancialApprovalInput,
@@ -19,7 +22,8 @@ const FINANCIAL_APPROVAL_TYPES = [
   "DISCOUNT",
   "ADJUSTMENT",
   "REFUND",
-  "PARTIAL_REFUND"
+  "PARTIAL_REFUND",
+  "CREDIT_EXCEPTION"
 ] as const;
 
 type FinancialApprovalType = (typeof FINANCIAL_APPROVAL_TYPES)[number];
@@ -29,7 +33,6 @@ const isPositiveInteger = (value: number): boolean =>
 
 const isPositiveNumber = (value: number): boolean =>
   Number.isFinite(value) && value > 0;
-
 const isPercentage = (value: number): boolean =>
   Number.isFinite(value) && value >= 0 && value <= 100;
 
@@ -37,10 +40,8 @@ const hasAtMostTwoDecimalPlaces = (value: number): boolean => {
   if (!Number.isFinite(value)) {
     return false;
   }
-
   return Math.abs(value * 100 - Math.round(value * 100)) < 1e-9;
 };
-
 const isFinancialApprovalType = (
   value: string
 ): value is FinancialApprovalType =>
@@ -52,9 +53,7 @@ const normalizeOptionalText = (
   if (value === undefined || value === null) {
     return null;
   }
-
   const trimmed = value.trim();
-
   return trimmed.length > 0 ? trimmed : null;
 };
 
@@ -68,7 +67,6 @@ const validateRequestedAmount = (requestedAmount: number): void => {
   if (!isPositiveNumber(requestedAmount)) {
     throw new ApiError(400, "requestedAmount must be greater than zero.");
   }
-
   if (!hasAtMostTwoDecimalPlaces(requestedAmount)) {
     throw new ApiError(
       400,
@@ -81,7 +79,6 @@ const validateRequestedPercentage = (requestedPercentage: number): void => {
   if (!isPercentage(requestedPercentage)) {
     throw new ApiError(400, "requestedPercentage must be between 0 and 100.");
   }
-
   if (!hasAtMostTwoDecimalPlaces(requestedPercentage)) {
     throw new ApiError(
       400,
@@ -94,42 +91,80 @@ const validateCreateInput = (
   input: CreateAdvertisementFinancialApprovalInput
 ): void => {
   validateId(input.advertisementId, "advertisementId");
-
   validateId(input.clientId, "clientId");
-
   if (input.paymentId !== undefined && input.paymentId !== null) {
     validateId(input.paymentId, "paymentId");
   }
-
   if (!isFinancialApprovalType(input.approvalType)) {
     throw new ApiError(400, "Invalid financial approval type.");
   }
-
   const hasAmount =
     input.requestedAmount !== undefined && input.requestedAmount !== null;
-
   const hasPercentage =
     input.requestedPercentage !== undefined &&
     input.requestedPercentage !== null;
-
+  if (input.approvalType === "CREDIT_EXCEPTION") {
+    if (!hasAmount) {
+      throw new ApiError(
+        400,
+        "A positive requestedAmount is required for a credit exception."
+      );
+    }
+    if (hasPercentage) {
+      throw new ApiError(
+        400,
+        "Credit exceptions must be requested by amount, not percentage."
+      );
+    }
+    validateRequestedAmount(input.requestedAmount as number);
+    if (
+      typeof input.creditExceptionReason !== "string" ||
+      input.creditExceptionReason.trim().length === 0
+    ) {
+      throw new ApiError(400, "A credit exception reason is required.");
+    }
+    if (input.creditExceptionReason.trim().length > 5000) {
+      throw new ApiError(
+        400,
+        "Credit exception reason cannot exceed 5000 characters."
+      );
+    }
+    const dueDate = input.expectedPaymentDueDate;
+    if (typeof dueDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      throw new ApiError(
+        400,
+        "A valid expected payment due date in YYYY-MM-DD format is required."
+      );
+    }
+    const [year, month, day] = dueDate.split("-").map(Number);
+    const parsedDate = new Date(Date.UTC(year!, month! - 1, day!));
+    if (
+      parsedDate.getUTCFullYear() !== year ||
+      parsedDate.getUTCMonth() !== month! - 1 ||
+      parsedDate.getUTCDate() !== day
+    ) {
+      throw new ApiError(
+        400,
+        "The expected payment due date is not a valid calendar date."
+      );
+    }
+    return;
+  }
   if (!hasAmount && !hasPercentage) {
     throw new ApiError(
       400,
       "Either requestedAmount or requestedPercentage is required."
     );
   }
-
   if (hasAmount && hasPercentage) {
     throw new ApiError(
       400,
       "Provide either requestedAmount or requestedPercentage, not both."
     );
   }
-
   if (hasAmount) {
     validateRequestedAmount(input.requestedAmount as number);
   }
-
   if (hasPercentage) {
     validateRequestedPercentage(input.requestedPercentage as number);
   }
@@ -139,13 +174,10 @@ const getApprovalOrThrow = async (
   id: number
 ): Promise<AdvertisementFinancialApproval> => {
   validateId(id, "id");
-
   const approval = await repository.findById(id);
-
   if (!approval) {
     throw new ApiError(404, "Financial approval not found.");
   }
-
   return approval;
 };
 
@@ -185,17 +217,23 @@ const getApprovalOrThrow = async (
 const getThresholdHoldReason = async (
   approval: AdvertisementFinancialApproval
 ): Promise<string | null> => {
+  // CREDIT_EXCEPTION has its own authorization and balance checks.
+  // It must not use the existing financial approval threshold table.
+  if (
+    approval.approvalType !== "DISCOUNT" &&
+    approval.approvalType !== "ADJUSTMENT" &&
+    approval.approvalType !== "REFUND" &&
+    approval.approvalType !== "PARTIAL_REFUND"
+  ) {
+    return null;
+  }
   const threshold = await thresholdService.getActiveThreshold(
     approval.approvalType
   );
-
   if (!threshold) {
     return null;
   }
-
-  /*
-   * Amount threshold.
-   */
+  // Check the requested amount against the configured amount threshold.
   if (
     approval.requestedAmount !== null &&
     approval.requestedAmount !== undefined &&
@@ -209,13 +247,9 @@ const getThresholdHoldReason = async (
         `${threshold.amountThreshold}.`
       );
     }
-
     return null;
   }
-
-  /*
-   * Percentage threshold.
-   */
+  // Check the requested percentage against the configured percentage threshold.
   if (
     approval.requestedPercentage !== null &&
     approval.requestedPercentage !== undefined &&
@@ -229,14 +263,9 @@ const getThresholdHoldReason = async (
         `threshold ${threshold.percentageThreshold}%.`
       );
     }
-
     return null;
   }
-
-  /*
-   * The active threshold does not correspond to the requested financial
-   * value. Preserve normal approval behavior.
-   */
+  // No applicable threshold: preserve the existing approval behavior.
   return null;
 };
 
@@ -249,17 +278,45 @@ export const create = async (
   requestedBy: number
 ): Promise<AdvertisementFinancialApproval> => {
   validateId(requestedBy, "requestedBy");
-
   validateCreateInput(input);
+  if (input.approvalType === "CREDIT_EXCEPTION") {
+    const summary = await paymentService.getPaymentSummary(
+      input.advertisementId
+    );
+    const outstandingAmount =
+      summary.outstandingAmount === null ||
+      summary.outstandingAmount === undefined
+        ? null
+        : Number(summary.outstandingAmount);
+    const requestedAmount = Number(input.requestedAmount);
+    if (
+      outstandingAmount === null ||
+      !Number.isFinite(outstandingAmount) ||
+      outstandingAmount <= 0
+    ) {
+      throw new ApiError(
+        400,
+        "A credit exception cannot be requested because no eligible outstanding balance remains."
+      );
+    }
+    if (requestedAmount > outstandingAmount) {
+      throw new ApiError(
+        400,
+        `Credit exception amount cannot exceed the current outstanding balance of ${outstandingAmount.toFixed(2)}.`
+      );
+    }
+  }
 
-  const existingPendingApproval = await repository.findPendingByAdvertisementId(
-    input.advertisementId
-  );
+  const existingPendingApproval =
+    await repository.findPendingByAdvertisementIdAndType(
+      input.advertisementId,
+      input.approvalType
+    );
 
   if (existingPendingApproval) {
     throw new ApiError(
       409,
-      "A pending financial approval already exists for this advertisement."
+      `A pending ${input.approvalType} approval already exists for this advertisement.`
     );
   }
 
@@ -271,7 +328,15 @@ export const create = async (
       approvalType: input.approvalType,
       requestedAmount: input.requestedAmount ?? null,
       requestedPercentage: input.requestedPercentage ?? null,
-      approvalRemarks: normalizeOptionalText(input.approvalRemarks)
+      approvalRemarks: normalizeOptionalText(input.approvalRemarks),
+      ...(input.approvalType === "CREDIT_EXCEPTION"
+        ? {
+            creditExceptionReason: normalizeOptionalText(
+              input.creditExceptionReason
+            ),
+            expectedPaymentDueDate: input.expectedPaymentDueDate ?? null
+          }
+        : {})
     },
     requestedBy
   );
@@ -285,7 +350,6 @@ export const create = async (
     null,
     null
   );
-
   return approval;
 };
 
@@ -294,30 +358,25 @@ export const updateApprovalRemarks = async (
   approvalRemarks: string | null
 ): Promise<AdvertisementFinancialApproval> => {
   const approval = await getApprovalOrThrow(id);
-
   if (approval.status === "APPROVED") {
     throw new ApiError(
       400,
       "Approval remarks cannot be updated after financial approval is approved."
     );
   }
-
   if (approval.status === "REJECTED") {
     throw new ApiError(
       400,
       "Approval remarks cannot be updated while the financial approval is rejected."
     );
   }
-
   const updatedApproval = await repository.updateApprovalRemarks(
     approval.id,
     normalizeOptionalText(approvalRemarks)
   );
-
   if (!updatedApproval) {
     throw new ApiError(404, "Financial approval not found.");
   }
-
   return updatedApproval;
 };
 
@@ -327,22 +386,17 @@ export const hold = async (
   reviewedBy: number
 ): Promise<AdvertisementFinancialApproval> => {
   validateId(reviewedBy, "reviewedBy");
-
   const approval = await getApprovalOrThrow(id);
-
   if (approval.status !== "SUBMITTED") {
     throw new ApiError(
       400,
       `Financial approval cannot be placed on hold from ${approval.status} status.`
     );
   }
-
   const holdReason = input.holdReason.trim();
-
   if (holdReason.length === 0) {
     throw new ApiError(400, "holdReason is required.");
   }
-
   const updatedApproval = await repository.hold(
     approval.id,
     {
@@ -350,14 +404,12 @@ export const hold = async (
     },
     reviewedBy
   );
-
   if (!updatedApproval) {
     throw new ApiError(
       409,
       "Financial approval could not be placed on hold because its status has changed."
     );
   }
-
   await repository.createHistory(
     approval.id,
     approval.status,
@@ -367,7 +419,6 @@ export const hold = async (
     holdReason,
     null
   );
-
   return updatedApproval;
 };
 
@@ -377,22 +428,17 @@ export const reject = async (
   reviewedBy: number
 ): Promise<AdvertisementFinancialApproval> => {
   validateId(reviewedBy, "reviewedBy");
-
   const approval = await getApprovalOrThrow(id);
-
   if (approval.status !== "SUBMITTED" && approval.status !== "HOLD") {
     throw new ApiError(
       400,
       `Financial approval cannot be rejected from ${approval.status} status.`
     );
   }
-
   const rejectionReason = input.rejectionReason.trim();
-
   if (rejectionReason.length === 0) {
     throw new ApiError(400, "rejectionReason is required.");
   }
-
   const updatedApproval = await repository.reject(
     approval.id,
     {
@@ -400,14 +446,12 @@ export const reject = async (
     },
     reviewedBy
   );
-
   if (!updatedApproval) {
     throw new ApiError(
       409,
       "Financial approval could not be rejected because its status has changed."
     );
   }
-
   await repository.createHistory(
     approval.id,
     approval.status,
@@ -417,7 +461,6 @@ export const reject = async (
     null,
     rejectionReason
   );
-
   return updatedApproval;
 };
 
@@ -427,18 +470,14 @@ export const approve = async (
   reviewedBy: number
 ): Promise<AdvertisementFinancialApproval> => {
   validateId(reviewedBy, "reviewedBy");
-
   const approval = await getApprovalOrThrow(id);
-
   if (approval.status !== "SUBMITTED" && approval.status !== "HOLD") {
     throw new ApiError(
       400,
       `Financial approval cannot be approved from ${approval.status} status.`
     );
   }
-
   const approvalRemarks = normalizeOptionalText(input.approvalRemarks);
-
   /*
    * --------------------------------------------------------------------------
    * THRESHOLD EVALUATION
@@ -453,7 +492,6 @@ export const approve = async (
    */
   if (approval.status === "SUBMITTED") {
     const thresholdHoldReason = await getThresholdHoldReason(approval);
-
     if (thresholdHoldReason !== null) {
       const heldApproval = await repository.hold(
         approval.id,
@@ -462,14 +500,12 @@ export const approve = async (
         },
         reviewedBy
       );
-
       if (!heldApproval) {
         throw new ApiError(
           409,
           "Financial approval could not be placed on hold because its status has changed."
         );
       }
-
       await repository.createHistory(
         approval.id,
         approval.status,
@@ -479,23 +515,50 @@ export const approve = async (
         thresholdHoldReason,
         null
       );
-
       return heldApproval;
+    }
+  }
+  if (approval.approvalType === "CREDIT_EXCEPTION") {
+    // Recalculate debt at approval time: payments may have been verified since
+    // this exception was submitted.
+    const summary = await paymentService.getPaymentSummary(
+      approval.advertisementId
+    );
+    const outstandingAmount =
+      summary.outstandingAmount === null ||
+      summary.outstandingAmount === undefined
+        ? null
+        : Number(summary.outstandingAmount);
+    const amountToApprove = Number(
+      input.approvedAmount ?? approval.requestedAmount
+    );
+    if (
+      outstandingAmount === null ||
+      !Number.isFinite(outstandingAmount) ||
+      outstandingAmount <= 0
+    ) {
+      throw new ApiError(
+        400,
+        "This credit exception cannot be approved because no eligible outstanding balance remains."
+      );
+    }
+    if (amountToApprove > outstandingAmount) {
+      throw new ApiError(
+        400,
+        `Credit exception approval cannot exceed the current outstanding balance of ${outstandingAmount.toFixed(2)}.`
+      );
     }
   }
   const hasApprovedAmount =
     input.approvedAmount !== undefined && input.approvedAmount !== null;
-
   const hasApprovedPercentage =
     input.approvedPercentage !== undefined && input.approvedPercentage !== null;
-
   if (hasApprovedAmount && hasApprovedPercentage) {
     throw new ApiError(
       400,
       "Provide either approvedAmount or approvedPercentage, not both."
     );
   }
-
   if (hasApprovedAmount) {
     if (approval.requestedAmount === null) {
       throw new ApiError(
@@ -503,9 +566,7 @@ export const approve = async (
         "This approval request does not have a requested amount."
       );
     }
-
     validateRequestedAmount(input.approvedAmount as number);
-
     if (input.approvedAmount! > approval.requestedAmount) {
       throw new ApiError(
         400,
@@ -513,7 +574,6 @@ export const approve = async (
       );
     }
   }
-
   if (hasApprovedPercentage) {
     if (approval.requestedPercentage === null) {
       throw new ApiError(
@@ -521,9 +581,7 @@ export const approve = async (
         "This approval request does not have a requested percentage."
       );
     }
-
     validateRequestedPercentage(input.approvedPercentage as number);
-
     if (input.approvedPercentage! > approval.requestedPercentage) {
       throw new ApiError(
         400,
@@ -531,12 +589,10 @@ export const approve = async (
       );
     }
   }
-
   const approvedAmount =
     approval.requestedAmount === null
       ? null
       : (input.approvedAmount ?? approval.requestedAmount);
-
   const approvedPercentage =
     approval.requestedPercentage === null
       ? null
@@ -564,14 +620,12 @@ export const approve = async (
     },
     reviewedBy
   );
-
   if (!updatedApproval) {
     throw new ApiError(
       409,
       "Financial approval could not be approved because its status has changed."
     );
   }
-
   await repository.createHistory(
     approval.id,
     approval.status,
@@ -581,7 +635,6 @@ export const approve = async (
     null,
     null
   );
-
   return updatedApproval;
 };
 
@@ -602,6 +655,77 @@ export const resubmit = async (
   }
 
   const approvalRemarks = normalizeOptionalText(input.approvalRemarks);
+
+  /*
+   * Revalidate credit-exception eligibility at resubmission time.
+   *
+   * The outstanding balance may have changed since the original request
+   * was submitted. A resubmission must not bypass the current balance
+   * restriction.
+   *
+   * A credit exception authorizes deferred payment only; it does not
+   * represent a payment received and must not change payment history.
+   */
+  if (approval.approvalType === "CREDIT_EXCEPTION") {
+    const requestedAmount = Number(approval.requestedAmount);
+
+    if (
+      approval.requestedAmount === null ||
+      approval.requestedAmount === undefined ||
+      !isPositiveNumber(requestedAmount) ||
+      !hasAtMostTwoDecimalPlaces(requestedAmount)
+    ) {
+      throw new ApiError(
+        400,
+        "The credit-exception request does not contain a valid requested amount."
+      );
+    }
+
+    const summary = await paymentService.getPaymentSummary(
+      approval.advertisementId
+    );
+
+    const outstandingAmount =
+      summary.outstandingAmount === null ||
+      summary.outstandingAmount === undefined
+        ? null
+        : Number(summary.outstandingAmount);
+
+    if (
+      outstandingAmount === null ||
+      !Number.isFinite(outstandingAmount) ||
+      outstandingAmount <= 0
+    ) {
+      throw new ApiError(
+        400,
+        "This credit exception cannot be resubmitted because no eligible outstanding balance remains."
+      );
+    }
+
+    if (requestedAmount > outstandingAmount + 0.009) {
+      throw new ApiError(
+        400,
+        `Credit exception amount cannot exceed the current outstanding balance of ${outstandingAmount.toFixed(2)}.`
+      );
+    }
+
+    if (
+      typeof approval.creditExceptionReason !== "string" ||
+      approval.creditExceptionReason.trim().length === 0
+    ) {
+      throw new ApiError(
+        400,
+        "A credit exception reason is required before resubmission."
+      );
+    }
+
+    if (!approval.expectedPaymentDueDate) {
+      throw new ApiError(
+        400,
+        "An expected payment due date is required before resubmission."
+      );
+    }
+  }
 
   const updatedApproval = await repository.resubmit(
     approval.id,
@@ -633,13 +757,11 @@ export const getHistory = async (
   id: number
 ): Promise<AdvertisementFinancialApprovalHistory[]> => {
   await getApprovalOrThrow(id);
-
   return repository.findHistoryByApprovalId(id);
 };
 
 export const exists = async (id: number): Promise<boolean> => {
   validateId(id, "id");
-
   return repository.exists(id);
 };
 
@@ -647,7 +769,6 @@ export const existsForAdvertisement = async (
   advertisementId: number
 ): Promise<boolean> => {
   validateId(advertisementId, "advertisementId");
-
   return repository.existsForAdvertisement(advertisementId);
 };
 
@@ -655,7 +776,6 @@ export const getLatestByAdvertisementId = async (
   advertisementId: number
 ): Promise<AdvertisementFinancialApproval | null> => {
   validateId(advertisementId, "advertisementId");
-
   return repository.findLatestByAdvertisementId(advertisementId);
 };
 
@@ -663,7 +783,6 @@ export const getPendingByAdvertisementId = async (
   advertisementId: number
 ): Promise<AdvertisementFinancialApproval | null> => {
   validateId(advertisementId, "advertisementId");
-
   return repository.findPendingByAdvertisementId(advertisementId);
 };
 
@@ -671,46 +790,43 @@ export const getPendingByPaymentId = async (
   paymentId: number
 ): Promise<AdvertisementFinancialApproval | null> => {
   validateId(paymentId, "paymentId");
-
   return repository.findPendingByPaymentId(paymentId);
 };
 
 export const list = async (
-  filters: AdvertisementFinancialApprovalListFilter
+  filters: AdvertisementFinancialApprovalListFilters
 ): Promise<AdvertisementFinancialApprovalListResult> => {
-  if (!Number.isInteger(filters.page) || filters.page <= 0) {
+  const page = filters.page ?? 1;
+  const pageSize = filters.pageSize ?? 20;
+  if (!Number.isInteger(page) || page <= 0) {
     throw new ApiError(400, "page must be a positive integer.");
   }
-
-  if (!Number.isInteger(filters.pageSize) || filters.pageSize <= 0) {
+  if (!Number.isInteger(pageSize) || pageSize <= 0) {
     throw new ApiError(400, "pageSize must be a positive integer.");
   }
-
-  if (filters.pageSize > 100) {
+  if (pageSize > 100) {
     throw new ApiError(400, "pageSize cannot exceed 100.");
   }
-
   if (filters.advertisementId !== undefined) {
     validateId(filters.advertisementId, "advertisementId");
   }
-
   if (filters.clientId !== undefined) {
     validateId(filters.clientId, "clientId");
   }
-
   if (filters.paymentId !== undefined) {
     validateId(filters.paymentId, "paymentId");
   }
-
   if (filters.requestedBy !== undefined) {
     validateId(filters.requestedBy, "requestedBy");
   }
-
   if (filters.reviewedBy !== undefined) {
     validateId(filters.reviewedBy, "reviewedBy");
   }
-
-  return repository.list(filters);
+  return repository.list({
+    ...filters,
+    page,
+    pageSize
+  });
 };
 
 export const createHistory = async (
@@ -723,11 +839,8 @@ export const createHistory = async (
   rejectionReason: string | null = null
 ): Promise<AdvertisementFinancialApprovalHistory> => {
   validateId(approvalId, "approvalId");
-
   validateId(actionBy, "actionBy");
-
   await getApprovalOrThrow(approvalId);
-
   return repository.createHistory(
     approvalId,
     fromStatus,
@@ -743,8 +856,6 @@ export const findHistoryByApprovalId = async (
   approvalId: number
 ): Promise<AdvertisementFinancialApprovalHistory[]> => {
   validateId(approvalId, "approvalId");
-
   await getApprovalOrThrow(approvalId);
-
   return repository.findHistoryByApprovalId(approvalId);
 };

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as repository from "../financial-approval.repository.js";
+import * as paymentService from "../../payments/payment.service.js";
 import * as service from "../financial-approval.service.js";
 
 import type {
@@ -9,6 +10,10 @@ import type {
   AdvertisementFinancialApprovalListResult,
   CreateAdvertisementFinancialApprovalInput
 } from "../financial-approval.types.js";
+
+vi.mock("../../payments/payment.service.js", () => ({
+  getPaymentSummary: vi.fn()
+}));
 
 vi.mock("../financial-approval.repository.js", () => ({
   findById: vi.fn(),
@@ -24,11 +29,13 @@ vi.mock("../financial-approval.repository.js", () => ({
   existsForAdvertisement: vi.fn(),
   findLatestByAdvertisementId: vi.fn(),
   findPendingByAdvertisementId: vi.fn(),
+  findPendingByAdvertisementIdAndType: vi.fn(),
   findPendingByPaymentId: vi.fn(),
   list: vi.fn()
 }));
 
 const mockedRepository = vi.mocked(repository);
+const mockedPaymentService = vi.mocked(paymentService);
 
 const TEST_USER_ID = 5;
 const TEST_REVIEWER_ID = 7;
@@ -110,7 +117,14 @@ describe("Advertisement Financial Approval Service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockedRepository.findPendingByAdvertisementId.mockResolvedValue(null);
+    mockedPaymentService.getPaymentSummary.mockResolvedValue({
+      outstandingAmount: 5000
+    } as Awaited<ReturnType<typeof paymentService.getPaymentSummary>>);
+
+    //mockedRepository.findPendingByAdvertisementId.mockResolvedValue(null);
+    mockedRepository.findPendingByAdvertisementIdAndType.mockResolvedValue(
+      null
+    );
     mockedRepository.createHistory.mockResolvedValue(createHistory());
   });
 
@@ -183,8 +197,8 @@ describe("Advertisement Financial Approval Service", () => {
       expect(result).toEqual(approval);
 
       expect(
-        mockedRepository.findPendingByAdvertisementId
-      ).toHaveBeenCalledWith(TEST_ADVERTISEMENT_ID);
+        mockedRepository.findPendingByAdvertisementIdAndType
+      ).toHaveBeenCalledWith(TEST_ADVERTISEMENT_ID, "DISCOUNT");
 
       expect(mockedRepository.create).toHaveBeenCalledWith(
         {
@@ -295,7 +309,7 @@ describe("Advertisement Financial Approval Service", () => {
       );
 
       expect(
-        mockedRepository.findPendingByAdvertisementId
+        mockedRepository.findPendingByAdvertisementIdAndType
       ).not.toHaveBeenCalled();
       expect(mockedRepository.create).not.toHaveBeenCalled();
     });
@@ -517,10 +531,13 @@ describe("Advertisement Financial Approval Service", () => {
       });
     });
 
-    it("should reject creation when another pending approval exists", async () => {
-      const existingApproval = createApproval();
+    it("should reject creation when another pending approval of the same type exists", async () => {
+      const existingApproval = createApproval({
+        approvalType: "DISCOUNT",
+        status: "SUBMITTED"
+      });
 
-      mockedRepository.findPendingByAdvertisementId.mockResolvedValue(
+      mockedRepository.findPendingByAdvertisementIdAndType.mockResolvedValue(
         existingApproval
       );
 
@@ -530,11 +547,15 @@ describe("Advertisement Financial Approval Service", () => {
         expectApiError(
           error,
           409,
-          "A pending financial approval already exists for this advertisement."
+          "A pending DISCOUNT approval already exists for this advertisement."
         );
 
         return true;
       });
+
+      expect(
+        mockedRepository.findPendingByAdvertisementIdAndType
+      ).toHaveBeenCalledWith(TEST_ADVERTISEMENT_ID, "DISCOUNT");
 
       expect(mockedRepository.create).not.toHaveBeenCalled();
       expect(mockedRepository.createHistory).not.toHaveBeenCalled();
@@ -1975,6 +1996,165 @@ describe("Advertisement Financial Approval Service", () => {
           pageSize: 20
         })
       ).rejects.toThrow("List failed");
+    });
+  });
+
+  describe("CREDIT_EXCEPTION service rules", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      mockedPaymentService.getPaymentSummary.mockResolvedValue({
+        outstandingAmount: 5000
+      } as Awaited<ReturnType<typeof paymentService.getPaymentSummary>>);
+      mockedRepository.findPendingByAdvertisementId.mockResolvedValue(null);
+      mockedRepository.findPendingByAdvertisementIdAndType.mockResolvedValue(
+        null
+      );
+      mockedRepository.createHistory.mockResolvedValue(createHistory());
+    });
+
+    const creditInput = (
+      overrides: Partial<CreateAdvertisementFinancialApprovalInput> = {}
+    ): CreateAdvertisementFinancialApprovalInput => ({
+      advertisementId: TEST_ADVERTISEMENT_ID,
+      clientId: TEST_CLIENT_ID,
+      paymentId: null,
+      approvalType: "CREDIT_EXCEPTION",
+      requestedAmount: 3000,
+      creditExceptionReason:
+        "Client will settle the remaining amount next week",
+      expectedPaymentDueDate: "2026-10-20",
+      approvalRemarks: "Temporary credit exception requested",
+      ...overrides
+    });
+
+    it("creates an amount-based credit exception and persists reason and due date", async () => {
+      const created = createApproval({
+        approvalType: "CREDIT_EXCEPTION",
+        paymentId: null,
+        requestedAmount: 3000,
+        requestedPercentage: null,
+        creditExceptionReason:
+          "Client will settle the remaining amount next week",
+        expectedPaymentDueDate: "2026-10-20"
+      });
+      mockedRepository.create.mockResolvedValue(created);
+
+      const result = await service.create(creditInput(), TEST_USER_ID);
+
+      expect(result).toEqual(created);
+      expect(mockedPaymentService.getPaymentSummary).toHaveBeenCalledWith(
+        TEST_ADVERTISEMENT_ID
+      );
+      expect(mockedRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          approvalType: "CREDIT_EXCEPTION",
+          requestedAmount: 3000,
+          requestedPercentage: null,
+          creditExceptionReason:
+            "Client will settle the remaining amount next week",
+          expectedPaymentDueDate: "2026-10-20"
+        }),
+        TEST_USER_ID
+      );
+    });
+
+    it("rejects a credit exception larger than current outstanding balance", async () => {
+      await expect(
+        service.create(creditInput({ requestedAmount: 5000.01 }), TEST_USER_ID)
+      ).rejects.toSatisfy((error: unknown) => {
+        expectApiError(
+          error,
+          400,
+          "Credit exception amount cannot exceed the current outstanding balance of 5000.00."
+        );
+        return true;
+      });
+      expect(mockedRepository.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a request when no eligible outstanding balance remains", async () => {
+      mockedPaymentService.getPaymentSummary.mockResolvedValue({
+        outstandingAmount: 0
+      } as Awaited<ReturnType<typeof paymentService.getPaymentSummary>>);
+
+      await expect(
+        service.create(creditInput(), TEST_USER_ID)
+      ).rejects.toSatisfy((error: unknown) => {
+        expectApiError(
+          error,
+          400,
+          "A credit exception cannot be requested because no eligible outstanding balance remains."
+        );
+        return true;
+      });
+      expect(mockedRepository.create).not.toHaveBeenCalled();
+    });
+
+    it("rechecks outstanding balance at approval time when payment arrived while pending", async () => {
+      mockedRepository.findById.mockResolvedValue(
+        createApproval({
+          approvalType: "CREDIT_EXCEPTION",
+          requestedAmount: 3000,
+          requestedPercentage: null,
+          status: "SUBMITTED"
+        })
+      );
+      mockedPaymentService.getPaymentSummary.mockResolvedValue({
+        outstandingAmount: 2500
+      } as Awaited<ReturnType<typeof paymentService.getPaymentSummary>>);
+
+      await expect(
+        service.approve(TEST_APPROVAL_ID, {}, TEST_REVIEWER_ID)
+      ).rejects.toSatisfy((error: unknown) => {
+        expectApiError(
+          error,
+          400,
+          "Credit exception approval cannot exceed the current outstanding balance of 2500.00."
+        );
+        return true;
+      });
+      expect(mockedRepository.approve).not.toHaveBeenCalled();
+    });
+
+    it("approves only the requested/approved exception amount without modifying payments", async () => {
+      mockedRepository.findById.mockResolvedValue(
+        createApproval({
+          approvalType: "CREDIT_EXCEPTION",
+          requestedAmount: 3000,
+          requestedPercentage: null,
+          status: "SUBMITTED"
+        })
+      );
+      mockedPaymentService.getPaymentSummary.mockResolvedValue({
+        outstandingAmount: 5000
+      } as Awaited<ReturnType<typeof paymentService.getPaymentSummary>>);
+      mockedRepository.approve.mockResolvedValue(
+        createApproval({
+          approvalType: "CREDIT_EXCEPTION",
+          requestedAmount: 3000,
+          approvedAmount: 2500,
+          requestedPercentage: null,
+          approvedPercentage: null,
+          status: "APPROVED",
+          reviewedBy: TEST_REVIEWER_ID
+        })
+      );
+
+      await service.approve(
+        TEST_APPROVAL_ID,
+        { approvedAmount: 2500, approvalRemarks: "Approved in part" },
+        TEST_REVIEWER_ID
+      );
+
+      expect(mockedRepository.approve).toHaveBeenCalledWith(
+        TEST_APPROVAL_ID,
+        {
+          approvalRemarks: "Approved in part",
+          approvedAmount: 2500,
+          approvedPercentage: null
+        },
+        TEST_REVIEWER_ID
+      );
     });
   });
 });
