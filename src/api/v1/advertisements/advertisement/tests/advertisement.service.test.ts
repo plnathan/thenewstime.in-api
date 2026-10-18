@@ -20,7 +20,6 @@ import type {
   Advertisement,
   AdvertisementClient,
   AdvertisementListItem,
-  AdvertisementWorkflowHistory,
   UpdateAdvertisementInput
 } from "../advertisement.types.js";
 
@@ -88,11 +87,8 @@ const createClient = (
  * ============================================================================
  *
  * The production advertisement service requires a valid placement during
- * advertisement creation and requires an existing persisted placement during
- * updates when no new placementId is supplied.
- *
- * Keep one reusable runtime placement fixture so tests that are not explicitly
- * testing placement validation can operate with a valid advertisement.
+ * advertisement creation and an existing persisted placement during updates
+ * when no new placementId is supplied.
  */
 const createRuntimePlacement = (
   overrides: Partial<AdvertisementRuntimePlacement> = {}
@@ -114,17 +110,10 @@ const createRuntimePlacement = (
  * DATABASE PLACEMENT ROW
  * ============================================================================
  *
- * validatePlacementSelection() now performs a direct pool.query() and expects
- * a PostgreSQL result containing rows.
+ * validatePlacementSelection() performs a direct pool.query() and expects a
+ * PostgreSQL result containing rows. Provide a valid placement by default.
  *
- * The service-level tests mock the database, so provide a valid placement row
- * as the default query result. Individual transaction tests can still override
- * this using mockResolvedValueOnce(), which takes precedence over the default
- * implementation.
- *
- * Both the database-style snake_case fields and the runtime-style fields are
- * supplied intentionally because the placement validation/repository layer
- * may consume the database row directly.
+ * Individual tests can override this result with mockResolvedValueOnce().
  */
 const createPlacementQueryResult = () => ({
   rows: [
@@ -221,8 +210,8 @@ const createAdvertisement = (
   client: createClient(),
 
   /*
-   * The service requires the advertisement to have a persisted placement
-   * when an update does not explicitly provide a new placement.
+   * The service requires a persisted placement when an update does not
+   * explicitly provide a new placement.
    */
   placement: createRuntimePlacement(),
 
@@ -274,24 +263,6 @@ const createAdvertisementListItem = (
   ...overrides
 });
 
-const createWorkflowHistory = (
-  overrides: Partial<AdvertisementWorkflowHistory> = {}
-): AdvertisementWorkflowHistory => ({
-  id: 1,
-  advertisementId: 100,
-
-  fromStatus: "ARCHIVED",
-  toStatus: "DRAFT",
-
-  remarks: "Reactivating archived advertisement for reuse.",
-
-  performedBy: 20,
-
-  performedAt: new Date("2026-09-10T10:00:00Z"),
-
-  ...overrides
-});
-
 const baseCreateInput = {
   clientId: 1,
   name: "Test Advertisement",
@@ -321,12 +292,10 @@ beforeEach(() => {
   /*
    * validatePlacementSelection() performs pool.query().
    *
-   * Provide a valid placement result by default so normal creation tests
-   * exercise the actual service flow instead of failing because the database
-   * mock returned undefined.
+   * A valid placement result allows ordinary creation tests to exercise the
+   * service flow without failing because the database mock returned undefined.
    *
-   * Tests which explicitly queue mockResolvedValueOnce() continue to override
-   * this default result.
+   * Tests that queue mockResolvedValueOnce() override this default result.
    */
   queryMock.mockResolvedValue(createPlacementQueryResult());
 });
@@ -366,10 +335,8 @@ describe("createAdvertisement()", () => {
 
     /*
      * This test verifies the Advertisement model contract.
-     *
-     * The actual 8C-9D calculation/transaction orchestration belongs
-     * to the production service implementation and its pricing
-     * repository/service mocks.
+     * Pricing calculation and transaction orchestration are covered by their
+     * respective service and repository tests.
      */
     const result = await service.createAdvertisement(baseCreateInput, 10);
 
@@ -870,72 +837,43 @@ describe("updateAdvertisement()", () => {
 });
 
 describe("activateAdvertisement()", () => {
-  it("should activate an archived advertisement and return it as DRAFT", async () => {
+  it("should reject activation of an archived advertisement", async () => {
     const archivedAdvertisement = createAdvertisement({
       status: "ARCHIVED",
-      workflowStatus: "ARCHIVED"
+      workflowStatus: "APPROVED"
     });
-
-    const activatedAdvertisement = createAdvertisement({
-      status: "DRAFT",
-      workflowStatus: "DRAFT"
-    });
-
-    const history = createWorkflowHistory();
-
-    queryMock.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
 
     vi.mocked(repository.findByIdForUpdate).mockResolvedValueOnce(
       archivedAdvertisement
     );
 
-    vi.mocked(repository.changeWorkflowStatus).mockResolvedValueOnce(
-      activatedAdvertisement
-    );
-
-    vi.mocked(repository.createWorkflowHistory).mockResolvedValueOnce(history);
-
-    const remarks = "Reactivating archived advertisement for reuse.";
-
-    const result = await service.activateAdvertisement(100, 20, {
-      remarks
+    await expect(
+      service.activateAdvertisement(100, 20, {
+        remarks: "Attempted activation."
+      })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Archived advertisements cannot be activated."
     });
 
     expect(repository.findByIdForUpdate).toHaveBeenCalledWith(100, mockClient);
 
-    expect(repository.changeWorkflowStatus).toHaveBeenCalledWith(
-      100,
-      "ARCHIVED",
-      "DRAFT",
-      20,
-      remarks,
-      mockClient
-    );
+    /*
+     * Operational activation must not alter workflow status or write workflow
+     * history.
+     */
+    expect(repository.changeWorkflowStatus).not.toHaveBeenCalled();
+    expect(repository.createWorkflowHistory).not.toHaveBeenCalled();
 
-    expect(repository.createWorkflowHistory).toHaveBeenCalledWith(
-      100,
-      "ARCHIVED",
-      "DRAFT",
-      remarks,
-      20,
-      mockClient
-    );
-
-    expect(result).toEqual({
-      advertisement: activatedAdvertisement,
-      history
-    });
-
+    expect(queryMock).toHaveBeenCalledWith("ROLLBACK");
     expect(releaseMock).toHaveBeenCalledTimes(1);
   });
 
-  it("should reject activation when the advertisement is not archived", async () => {
+  it("should reject activation when the advertisement is not approved", async () => {
     const rejectedAdvertisement = createAdvertisement({
       workflowStatus: "REJECTED",
       status: "DRAFT"
     });
-
-    queryMock.mockResolvedValueOnce(undefined);
 
     vi.mocked(repository.findByIdForUpdate).mockResolvedValueOnce(
       rejectedAdvertisement
@@ -947,20 +885,17 @@ describe("activateAdvertisement()", () => {
       })
     ).rejects.toMatchObject({
       statusCode: 409,
-      message:
-        "Invalid advertisement workflow transition from 'REJECTED' to 'DRAFT'."
+      message: "Only approved advertisements can be activated."
     });
 
     expect(repository.changeWorkflowStatus).not.toHaveBeenCalled();
-
     expect(repository.createWorkflowHistory).not.toHaveBeenCalled();
 
+    expect(queryMock).toHaveBeenCalledWith("ROLLBACK");
     expect(releaseMock).toHaveBeenCalledTimes(1);
   });
 
   it("should throw 404 when activating an unknown advertisement", async () => {
-    queryMock.mockResolvedValueOnce(undefined);
-
     vi.mocked(repository.findByIdForUpdate).mockResolvedValueOnce(null);
 
     await expect(
@@ -973,35 +908,27 @@ describe("activateAdvertisement()", () => {
     });
 
     expect(repository.changeWorkflowStatus).not.toHaveBeenCalled();
-
     expect(repository.createWorkflowHistory).not.toHaveBeenCalled();
 
+    expect(queryMock).toHaveBeenCalledWith("ROLLBACK");
     expect(releaseMock).toHaveBeenCalledTimes(1);
   });
 
   it("should require remarks when activation is requested without remarks", async () => {
-    const archivedAdvertisement = createAdvertisement({
-      status: "ARCHIVED",
-      workflowStatus: "ARCHIVED"
-    });
-
-    queryMock.mockResolvedValueOnce(undefined);
-
-    vi.mocked(repository.findByIdForUpdate).mockResolvedValueOnce(
-      archivedAdvertisement
-    );
-
     await expect(
       service.activateAdvertisement(100, 20, {})
     ).rejects.toMatchObject({
       statusCode: 400,
-      message: "Remarks are required for this workflow transition."
+      message: "Remarks are required for advertisement activation."
     });
 
+    /*
+     * Remarks are validated before acquiring a database connection.
+     */
+    expect(connectMock).not.toHaveBeenCalled();
+    expect(repository.findByIdForUpdate).not.toHaveBeenCalled();
     expect(repository.changeWorkflowStatus).not.toHaveBeenCalled();
-
     expect(repository.createWorkflowHistory).not.toHaveBeenCalled();
-
     expect(releaseMock).not.toHaveBeenCalled();
   });
 });

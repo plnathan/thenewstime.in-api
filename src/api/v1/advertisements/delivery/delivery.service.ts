@@ -1,3 +1,4 @@
+import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
 import type {
   AdvertisementDeliveryCandidate,
   AdvertisementDeliveryTargetRow
@@ -170,22 +171,28 @@ function hasUsableCreative(candidate: AdvertisementDeliveryCandidate): boolean {
   const activeCreatives = candidate.creatives ?? [];
 
   if (activeCreatives.length > 0) {
-    return activeCreatives.some(
-      (creative) => creative.mediaUrl.trim().length > 0
-    );
+    return activeCreatives.some((creative) => {
+      if (creative.mediaUrl.trim().length === 0) {
+        return false;
+      }
+
+      // A missing format is allowed. If a format exists, its code
+      // must be non-empty.
+      return creative.format === null || creative.format.code.trim().length > 0;
+    });
   }
 
-  // Preserve compatibility with repository results that only include
-  // the legacy singular creative field.
-  if (!candidate.creative || candidate.creative.mediaUrl.trim().length === 0) {
+  // Preserve compatibility with repository results that use the
+  // legacy singular creative field.
+  if (
+    candidate.creative === null ||
+    candidate.creative.mediaUrl.trim().length === 0
+  ) {
     return false;
   }
 
-  if (candidate.format !== null) {
-    return candidate.format.code.trim().length > 0;
-  }
-
-  return true;
+  // A missing format is valid; an existing format must have a code.
+  return candidate.format === null || candidate.format.code.trim().length > 0;
 }
 
 function deduplicateCandidates(
@@ -417,9 +424,13 @@ function mapTargeting(
 function mapAdvertisement(
   candidate: AdvertisementDeliveryCandidate
 ): AdvertisementDeliveryItem {
-  const aggregatedCreatives = (candidate.creatives ?? [])
-    .filter((creative) => creative.mediaUrl.trim().length > 0)
-    .map(mapCreative);
+ const aggregatedCreatives = (candidate.creatives ?? [])
+   .filter(
+     (creative) =>
+       creative.mediaUrl.trim().length > 0 &&
+       (creative.format === null || creative.format.code.trim().length > 0)
+   )
+   .map(mapCreative);
 
   const legacyCreative = mapLegacyCreative(candidate);
 
@@ -491,7 +502,8 @@ export async function getEligibleAdvertisements(
   request: AdvertisementDeliveryRequest
 ): Promise<AdvertisementDeliveryResponse> {
   if (!isValidPlacementForPage(request.pageType, request.placementType)) {
-    throw new Error(
+    throw new ApiError(
+      400,
       `Placement type ${request.placementType} is not valid for page type ${request.pageType}.`
     );
   }

@@ -13,8 +13,7 @@ import type {
   UpdateAdvertisementCreativeInput
 } from "./creative.types.js";
 
-const DIMENSION_SLIGHT_TOLERANCE_PERCENT = 10;
-const ASPECT_RATIO_SLIGHT_TOLERANCE_PERCENT = 5;
+const DIMENSION_SLIGHT_TOLERANCE_PX = 10;
 const DEFAULT_MAX_ACTIVE_CREATIVES_PER_ADVERTISEMENT = 5;
 
 type CreativeLimitRow = {
@@ -239,6 +238,17 @@ const getRequestedStatus = (
   return typeof status === "string" ? status.toUpperCase() : undefined;
 };
 
+const DIMENSION_SLIGHT_TOLERANCE_PERCENT = 10;
+const ASPECT_RATIO_SLIGHT_TOLERANCE_PERCENT = 5;
+
+const percentageDifference = (actual: number, expected: number): number => {
+  if (expected === 0) {
+    return actual === 0 ? 0 : Number.POSITIVE_INFINITY;
+  }
+
+  return (Math.abs(actual - expected) / Math.abs(expected)) * 100;
+};
+
 const calculateAspectRatio = (
   widthPx: number | null,
   heightPx: number | null
@@ -250,14 +260,18 @@ const calculateAspectRatio = (
   return Number((widthPx / heightPx).toFixed(6));
 };
 
-const percentageDifference = (actual: number, expected: number): number => {
-  if (expected === 0) {
-    return 100;
-  }
-
-  return (Math.abs(actual - expected) / expected) * 100;
-};
-
+/**
+ * Builds a creative preview using the established dimension tolerance.
+ *
+ * Exact dimensions produce EXACT_MATCH.
+ * When both dimensions differ from the expected dimensions by no more than
+ * 10 pixels, the preview is classified as SLIGHTLY_DIFFERENT.
+ * A difference greater than 10 pixels in either dimension produces
+ * DIMENSION_MISMATCH.
+ *
+ * Aspect ratios are returned as diagnostic information only. They do not
+ * override the 10-pixel dimension validation rule.
+ */
 const createPreview = (
   creative: AdvertisementCreative,
   expectedWidthPx: number | null,
@@ -290,40 +304,38 @@ const createPreview = (
     status = "EXACT_MATCH";
     statusMessage =
       "Creative dimensions exactly match the expected format dimensions.";
-  } else if (expectedAspectRatio !== null && actualAspectRatio !== null) {
-    const widthDifference = percentageDifference(
+  } else {
+    const widthDifferencePercent = percentageDifference(
       actualWidthPx,
       expectedWidthPx
     );
 
-    const heightDifference = percentageDifference(
+    const heightDifferencePercent = percentageDifference(
       actualHeightPx,
       expectedHeightPx
     );
 
-    const aspectDifference = percentageDifference(
-      actualAspectRatio,
-      expectedAspectRatio
-    );
+    const aspectRatioDifferencePercent =
+      expectedAspectRatio !== null && actualAspectRatio !== null
+        ? percentageDifference(actualAspectRatio, expectedAspectRatio)
+        : null;
 
     if (
-      widthDifference <= DIMENSION_SLIGHT_TOLERANCE_PERCENT &&
-      heightDifference <= DIMENSION_SLIGHT_TOLERANCE_PERCENT &&
-      aspectDifference <= ASPECT_RATIO_SLIGHT_TOLERANCE_PERCENT
+      aspectRatioDifferencePercent !== null &&
+      aspectRatioDifferencePercent > ASPECT_RATIO_SLIGHT_TOLERANCE_PERCENT
+    ) {
+      status = "ASPECT_RATIO_MISMATCH";
+      statusMessage = `Creative aspect ratio differs from the expected format by more than ${ASPECT_RATIO_SLIGHT_TOLERANCE_PERCENT}%.`;
+    } else if (
+      widthDifferencePercent <= DIMENSION_SLIGHT_TOLERANCE_PERCENT &&
+      heightDifferencePercent <= DIMENSION_SLIGHT_TOLERANCE_PERCENT
     ) {
       status = "SLIGHTLY_DIFFERENT";
-      statusMessage =
-        "Creative dimensions are slightly different but the aspect ratio remains close to the expected format.";
-    } else if (aspectDifference > ASPECT_RATIO_SLIGHT_TOLERANCE_PERCENT) {
-      status = "ASPECT_RATIO_MISMATCH";
-      statusMessage = "Creative aspect ratio differs from the expected format.";
+      statusMessage = `Creative dimensions are within ${DIMENSION_SLIGHT_TOLERANCE_PERCENT}% of the expected format dimensions.`;
     } else {
       status = "DIMENSION_MISMATCH";
-      statusMessage = "Creative dimensions differ from the expected format.";
+      statusMessage = `Creative width or height differs from the expected format dimensions by more than ${DIMENSION_SLIGHT_TOLERANCE_PERCENT}%.`;
     }
-  } else {
-    status = "DIMENSION_MISMATCH";
-    statusMessage = "Creative dimensions differ from the expected format.";
   }
 
   if (usesDesktopFallback) {

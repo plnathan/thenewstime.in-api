@@ -10,6 +10,7 @@ const {
   mockFindAll,
   mockFindById,
   mockFindByAdvertisementAndPlacement,
+  mockGetRuleReferenceState,
   mockCreate,
   mockUpdate,
   mockDeactivate
@@ -17,6 +18,7 @@ const {
   mockFindAll: vi.fn(),
   mockFindById: vi.fn(),
   mockFindByAdvertisementAndPlacement: vi.fn(),
+  mockGetRuleReferenceState: vi.fn(),
   mockCreate: vi.fn(),
   mockUpdate: vi.fn(),
   mockDeactivate: vi.fn()
@@ -26,6 +28,7 @@ vi.mock("../placement-rule.repository.js", () => ({
   findAll: mockFindAll,
   findById: mockFindById,
   findByAdvertisementAndPlacement: mockFindByAdvertisementAndPlacement,
+  getRuleReferenceState: mockGetRuleReferenceState,
   create: mockCreate,
   update: mockUpdate,
   deactivate: mockDeactivate
@@ -54,6 +57,10 @@ describe("placement-rule.service", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetRuleReferenceState.mockResolvedValue({
+      advertisementExists: true,
+      placementExists: true
+    });
   });
 
   describe("getAll", () => {
@@ -175,6 +182,30 @@ describe("placement-rule.service", () => {
       expect(mockCreate).toHaveBeenCalledWith(input, 101);
       expect(result.insertionType).toBe("BETWEEN_SECTIONS");
       expect(result.insertionPosition).toBe(2);
+    });
+
+    it("should reject a rule for a missing advertisement", async () => {
+      mockGetRuleReferenceState.mockResolvedValueOnce({
+        advertisementExists: false,
+        placementExists: true
+      });
+
+      await expect(
+        service.create({ advertisementId: 999, placementId: 20 }, 101)
+      ).rejects.toThrow("Advertisement not found");
+      expect(mockFindByAdvertisementAndPlacement).not.toHaveBeenCalled();
+    });
+
+    it("should reject a rule for a missing placement", async () => {
+      mockGetRuleReferenceState.mockResolvedValueOnce({
+        advertisementExists: true,
+        placementExists: false
+      });
+
+      await expect(
+        service.create({ advertisementId: 10, placementId: 999 }, 101)
+      ).rejects.toThrow("Advertisement placement not found");
+      expect(mockFindByAdvertisementAndPlacement).not.toHaveBeenCalled();
     });
 
     it("should reject a duplicate advertisement and placement combination", async () => {

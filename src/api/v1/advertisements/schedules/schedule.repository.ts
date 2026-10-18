@@ -122,6 +122,18 @@ export const findById = async (
   return result.rows[0] ? mapSchedule(result.rows[0]) : null;
 };
 
+export const findAdvertisementOperationalStatus = async (
+  advertisementId: number,
+  client?: PoolClient
+): Promise<string | null> => {
+  const db = client ?? pool;
+  const result = await db.query<{ status: string }>(
+    `SELECT status FROM advertisements WHERE id = $1 LIMIT 1`,
+    [advertisementId]
+  );
+  return result.rows[0]?.status ?? null;
+};
+
 export const findAdvertisementWorkflowStatus = async (
   advertisementId: number,
   client?: PoolClient
@@ -138,6 +150,26 @@ export const findAdvertisementWorkflowStatus = async (
   );
 
   return result.rows[0]?.workflow_status ?? null;
+};
+
+export interface AdvertisementCampaignWindow {
+  startAt: Date | string | null;
+  endAt: Date | string | null;
+}
+
+export const findAdvertisementCampaignWindow = async (
+  advertisementId: number,
+  client?: PoolClient
+): Promise<AdvertisementCampaignWindow | null> => {
+  const db = client ?? pool;
+  const result = await db.query<{
+    start_at: Date | string | null;
+    end_at: Date | string | null;
+  }>(`SELECT start_at, end_at FROM advertisements WHERE id = $1 LIMIT 1`, [
+    advertisementId
+  ]);
+  const row = result.rows[0];
+  return row ? { startAt: row.start_at, endAt: row.end_at } : null;
 };
 
 export const findPlacement = async (
@@ -196,6 +228,21 @@ export const findPlacementRule = async (
     : null;
 };
 
+/**
+ * Serializes schedule writes and manual activation checks for a placement.
+ * Call only inside a transaction; the lock is released automatically on
+ * commit/rollback. The namespace is reserved for advertisement scheduling.
+ */
+export const lockPlacementScheduleScope = async (
+  placementId: number,
+  client: PoolClient
+): Promise<void> => {
+  await client.query("SELECT pg_advisory_xact_lock($1, $2)", [
+    73421,
+    placementId
+  ]);
+};
+
 export const findOverlapping = async (
   advertisementId: number,
   placementId: number,
@@ -208,23 +255,38 @@ export const findOverlapping = async (
 
   const values: unknown[] = [advertisementId, placementId, startAt, endAt];
 
-  let excludeClause = "";
-
   if (excludeId !== undefined) {
     values.push(excludeId);
-    excludeClause = `AND id <> $${values.length}`;
   }
 
   const result = await db.query(
-    `       SELECT ${selectColumns}
-      FROM advertisement_schedules
-      WHERE advertisement_id = $1
-        AND placement_id = $2
-        AND status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
-        AND start_at < $4
-        AND end_at > $3
-        ${excludeClause}
-      ORDER BY start_at ASC, id ASC
+    `       SELECT
+        s.id,
+        s.advertisement_id,
+        s.placement_id,
+        s.placement_rule_id,
+        s.start_at,
+        s.end_at,
+        s.status,
+        s.priority,
+        s.rescheduled_from_id,
+        s.notes,
+        s.created_by,
+        s.updated_by,
+        s.created_at,
+        s.updated_at
+      FROM advertisement_schedules s
+      INNER JOIN advertisement_placements p ON p.id = s.placement_id
+      WHERE s.placement_id = $2
+        AND s.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
+        AND s.start_at < $4
+        AND s.end_at > $3
+        AND (
+          s.advertisement_id = $1
+          OR COALESCE(p.rotation_enabled, FALSE) = FALSE
+        )
+        ${excludeId !== undefined ? `AND s.id <> $${values.length}` : ""}
+      ORDER BY s.start_at ASC, s.id ASC
       LIMIT 1
     `,
     values

@@ -721,6 +721,9 @@ describe("delivery.repository.findEligibleCandidates", () => {
     expect(query).toContain("a.id ASC");
 
     expect(query).toContain("pr.id ASC");
+    expect(query).toContain(
+      "COALESCE(p.rotation_enabled, FALSE) = FALSE OR rm.id IS NOT NULL"
+    );
   });
 
   it("should accept every supported page type and placement type combination", async () => {

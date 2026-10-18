@@ -60,6 +60,10 @@ const activeRelationship: AdvertisementTrackingRelationship = {
   scheduleEndAt: new Date(Date.now() + 60_000),
   advertisementStatus: "ACTIVE",
   advertisementWorkflowStatus: "APPROVED",
+  advertisementStartAt: new Date(Date.now() - 60_000),
+  advertisementEndAt: new Date(Date.now() + 60_000),
+  rotationEnabled: false,
+  rotationMemberActive: false,
   creativeStatus: "ACTIVE"
 };
 
@@ -78,6 +82,7 @@ describe("tracking.service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.ADVERTISEMENT_TRACKING_HASH_SECRET = "test-tracking-secret";
+    mockedPoolConnect.mockResolvedValue(createMockClient() as never);
   });
 
   describe("trackImpression", () => {
@@ -86,7 +91,7 @@ describe("tracking.service", () => {
 
       mockedPoolConnect.mockResolvedValueOnce(client as never);
 
-      vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce(
+      vi.mocked(repository.findTrackingRelationship).mockResolvedValue(
         activeRelationship
       );
 
@@ -139,7 +144,7 @@ describe("tracking.service", () => {
 
       mockedPoolConnect.mockResolvedValueOnce(client as never);
 
-      vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce(
+      vi.mocked(repository.findTrackingRelationship).mockResolvedValue(
         activeRelationship
       );
 
@@ -167,7 +172,7 @@ describe("tracking.service", () => {
 
       mockedPoolConnect.mockResolvedValueOnce(client as never);
 
-      vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce({
+      vi.mocked(repository.findTrackingRelationship).mockResolvedValue({
         ...activeRelationship,
         maxImpressions: null
       });
@@ -215,6 +220,17 @@ describe("tracking.service", () => {
       await expect(service.trackImpression(baseInput, {})).rejects.toThrow(
         "Advertisement is not active for impression tracking."
       );
+    });
+
+    it("rejects click tracking when the advertisement is paused or archived", async () => {
+      vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce({
+        ...activeRelationship,
+        advertisementStatus: "PAUSED"
+      });
+      await expect(service.trackClick(baseInput, {})).rejects.toThrow(
+        "Advertisement is not active for click tracking."
+      );
+      expect(repository.createClick).not.toHaveBeenCalled();
     });
 
     it("rejects an unapproved advertisement", async () => {
@@ -299,7 +315,7 @@ describe("tracking.service", () => {
 
       mockedPoolConnect.mockResolvedValueOnce(client as never);
 
-      vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce(
+      vi.mocked(repository.findTrackingRelationship).mockResolvedValue(
         activeRelationship
       );
 
@@ -322,6 +338,8 @@ describe("tracking.service", () => {
 
   describe("trackClick", () => {
     it("tracks a click for an approved advertisement", async () => {
+      const client = createMockClient();
+      mockedPoolConnect.mockResolvedValueOnce(client as never);
       vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce({
         ...activeRelationship,
         scheduleStatus: "ACTIVE"
@@ -348,40 +366,35 @@ describe("tracking.service", () => {
           advertisementId: 101,
           ipHash: expect.any(String),
           userAgent: "Mozilla/5.0"
-        })
+        }),
+        client
       );
+      expect(client.query).toHaveBeenCalledWith("COMMIT");
+      expect(client.release).toHaveBeenCalledTimes(1);
     });
 
-    it("allows click tracking for a paused schedule", async () => {
+    it("rejects click tracking for a paused schedule", async () => {
       vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce({
         ...activeRelationship,
         scheduleStatus: "PAUSED"
       });
 
-      vi.mocked(repository.createClick).mockResolvedValueOnce({
-        id: 9102,
-        eventAt: new Date("2026-09-22T10:11:00Z")
-      });
-
-      const result = await service.trackClick(baseInput, {});
-
-      expect(result.tracked).toBe(true);
+      await expect(service.trackClick(baseInput, {})).rejects.toThrow(
+        "Advertisement schedule is not active for click tracking."
+      );
+      expect(repository.createClick).not.toHaveBeenCalled();
     });
 
-    it("allows click tracking for a completed schedule", async () => {
+    it("rejects click tracking for a completed schedule", async () => {
       vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce({
         ...activeRelationship,
         scheduleStatus: "COMPLETED"
       });
 
-      vi.mocked(repository.createClick).mockResolvedValueOnce({
-        id: 9103,
-        eventAt: new Date("2026-09-22T10:12:00Z")
-      });
-
-      const result = await service.trackClick(baseInput, {});
-
-      expect(result.tracked).toBe(true);
+      await expect(service.trackClick(baseInput, {})).rejects.toThrow(
+        "Advertisement schedule is not active for click tracking."
+      );
+      expect(repository.createClick).not.toHaveBeenCalled();
     });
 
     it("rejects a scheduled-only click", async () => {
@@ -403,14 +416,21 @@ describe("tracking.service", () => {
         scheduleStatus: "CANCELLED"
       });
 
-      vi.mocked(repository.createClick).mockResolvedValueOnce({
-        id: 9104,
-        eventAt: new Date("2026-09-22T10:13:00Z")
+      await expect(service.trackClick(baseInput, {})).rejects.toThrow(
+        "Advertisement schedule is not active for click tracking."
+      );
+      expect(repository.createClick).not.toHaveBeenCalled();
+    });
+
+    it("rejects click tracking when the advertisement is paused or archived", async () => {
+      vi.mocked(repository.findTrackingRelationship).mockResolvedValueOnce({
+        ...activeRelationship,
+        advertisementStatus: "PAUSED"
       });
-
-      const result = await service.trackClick(baseInput, {});
-
-      expect(result.tracked).toBe(true);
+      await expect(service.trackClick(baseInput, {})).rejects.toThrow(
+        "Advertisement is not active for click tracking."
+      );
+      expect(repository.createClick).not.toHaveBeenCalled();
     });
 
     it("rejects an unapproved advertisement", async () => {

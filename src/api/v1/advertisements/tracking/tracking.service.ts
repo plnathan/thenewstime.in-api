@@ -209,9 +209,25 @@ function validateImpressionState(
     relationship.scheduleStartAt === null ||
     relationship.scheduleEndAt === null ||
     now < relationship.scheduleStartAt ||
-    now > relationship.scheduleEndAt
+    now >= relationship.scheduleEndAt
   ) {
     throw new ApiError(400, "Advertisement schedule is not currently active.");
+  }
+
+  if (
+    relationship.advertisementStartAt === null ||
+    relationship.advertisementEndAt === null ||
+    now < relationship.advertisementStartAt ||
+    now >= relationship.advertisementEndAt
+  ) {
+    throw new ApiError(400, "Advertisement campaign is not currently active.");
+  }
+
+  if (relationship.rotationEnabled && !relationship.rotationMemberActive) {
+    throw new ApiError(
+      400,
+      "Advertisement is not an active member of this placement rotation."
+    );
   }
 
   if (relationship.creativeStatus !== "ACTIVE") {
@@ -222,6 +238,10 @@ function validateImpressionState(
 function validateClickState(
   relationship: AdvertisementTrackingRelationship
 ): void {
+  if (relationship.advertisementStatus !== "ACTIVE") {
+    throw new ApiError(400, "Advertisement is not active for click tracking.");
+  }
+
   if (relationship.advertisementWorkflowStatus !== "APPROVED") {
     throw new ApiError(
       400,
@@ -243,13 +263,44 @@ function validateClickState(
     throw new ApiError(400, "Advertisement placement rule is not active.");
   }
 
-  if (
-    relationship.scheduleStatus === null ||
-    relationship.scheduleStatus === "SCHEDULED"
-  ) {
+  if (relationship.scheduleStatus === "SCHEDULED") {
     throw new ApiError(
       400,
       "Advertisement schedule is not available for click tracking."
+    );
+  }
+
+  if (relationship.scheduleStatus !== "ACTIVE") {
+    throw new ApiError(
+      400,
+      "Advertisement schedule is not active for click tracking."
+    );
+  }
+
+  const now = new Date();
+
+  if (
+    relationship.scheduleStartAt === null ||
+    relationship.scheduleEndAt === null ||
+    now < relationship.scheduleStartAt ||
+    now >= relationship.scheduleEndAt
+  ) {
+    throw new ApiError(400, "Advertisement schedule is not currently active.");
+  }
+
+  if (
+    relationship.advertisementStartAt === null ||
+    relationship.advertisementEndAt === null ||
+    now < relationship.advertisementStartAt ||
+    now >= relationship.advertisementEndAt
+  ) {
+    throw new ApiError(400, "Advertisement campaign is not currently active.");
+  }
+
+  if (relationship.rotationEnabled && !relationship.rotationMemberActive) {
+    throw new ApiError(
+      400,
+      "Advertisement is not an active member of this placement rotation."
     );
   }
 
@@ -284,14 +335,27 @@ export const trackImpression = async (
 
     await repository.lockPlacementRule(request.placementRuleId, client);
 
-    if (relationship.maxImpressions !== null) {
+    const currentRelationship = validateRelationship(
+      request,
+      await repository.findTrackingRelationship(
+        request.advertisementId,
+        request.placementId,
+        request.placementRuleId,
+        request.scheduleId,
+        request.creativeId,
+        client
+      )
+    );
+    validateImpressionState(currentRelationship);
+
+    if (currentRelationship.maxImpressions !== null) {
       const impressionCount = await repository.countImpressionsForSchedule(
         request.scheduleId,
         request.placementRuleId,
         client
       );
 
-      if (impressionCount >= relationship.maxImpressions) {
+      if (impressionCount >= currentRelationship.maxImpressions) {
         await client.query("COMMIT");
 
         return {
@@ -326,26 +390,38 @@ export const trackClick = async (
 ): Promise<AdvertisementTrackingResult> => {
   const request = buildTrackingRequest(input, metadata);
 
-  const relationship = validateRelationship(
-    request,
-    await repository.findTrackingRelationship(
-      request.advertisementId,
-      request.placementId,
-      request.placementRuleId,
-      request.scheduleId,
-      request.creativeId
-    )
-  );
+  const client = await pool.connect();
 
-  validateClickState(relationship);
+  try {
+    await client.query("BEGIN");
 
-  const event = await repository.createClick(request);
+    const relationship = validateRelationship(
+      request,
+      await repository.findTrackingRelationship(
+        request.advertisementId,
+        request.placementId,
+        request.placementRuleId,
+        request.scheduleId,
+        request.creativeId,
+        client
+      )
+    );
+    validateClickState(relationship);
 
-  return {
-    tracked: true,
-    eventId: event.id,
-    eventAt: event.eventAt
-  };
+    const event = await repository.createClick(request, client);
+    await client.query("COMMIT");
+
+    return {
+      tracked: true,
+      eventId: event.id,
+      eventAt: event.eventAt
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 export const getMetrics = async (

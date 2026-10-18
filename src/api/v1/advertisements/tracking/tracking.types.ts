@@ -75,6 +75,10 @@ export interface AdvertisementTrackingRelationship {
 
   advertisementStatus: string;
   advertisementWorkflowStatus: string;
+  advertisementStartAt: Date | null;
+  advertisementEndAt: Date | null;
+  rotationEnabled: boolean;
+  rotationMemberActive: boolean;
 
   creativeStatus: string | null;
 }

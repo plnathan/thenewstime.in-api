@@ -84,6 +84,24 @@ describe("Advertisement Placement Validation", () => {
       expect(result.success).toBe(false);
     });
 
+    it("should reject a placement type that belongs to a different page type", () => {
+      const result = createPlacementSchema.safeParse({
+        ...validCreateInput,
+        pageType: "HOME",
+        placementType: "NEWS_LIST_TOP"
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("should reject null frequencyValue for ONCE_PER_PERIOD", () => {
+      const result = createPlacementSchema.safeParse({
+        ...validCreateInput,
+        displayFrequency: "ONCE_PER_PERIOD",
+        frequencyValue: null
+      });
+      expect(result.success).toBe(false);
+    });
+
     it("should reject an unsupported placement type", () => {
       const result = createPlacementSchema.safeParse({
         ...validCreateInput,

@@ -1,3 +1,6 @@
+import { pool } from "../../../../shared/config/db.js";
+import type { PoolClient } from "pg";
+
 import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
 
 import * as repository from "./schedule.repository.js";
@@ -32,6 +35,49 @@ const validateApprovedAdvertisement = async (
 
   if (workflowStatus !== "APPROVED") {
     throw new ApiError(400, "Only APPROVED advertisements can be scheduled.");
+  }
+};
+
+const validateScheduleWithinCampaign = async (
+  advertisementId: number,
+  startAt: Date,
+  endAt: Date
+): Promise<void> => {
+  const window =
+    await repository.findAdvertisementCampaignWindow(advertisementId);
+
+  if (!window) {
+    throw new ApiError(404, "Advertisement not found.");
+  }
+
+  if (window.startAt === null || window.endAt === null) {
+    throw new ApiError(
+      409,
+      "Both campaign start and end date/time must be configured before scheduling."
+    );
+  }
+
+  const campaignStart = new Date(window.startAt).getTime();
+  const campaignEnd = new Date(window.endAt).getTime();
+  const scheduleStart = startAt.getTime();
+  const scheduleEnd = endAt.getTime();
+
+  if (
+    !Number.isFinite(campaignStart) ||
+    !Number.isFinite(campaignEnd) ||
+    campaignEnd <= campaignStart
+  ) {
+    throw new ApiError(
+      409,
+      "Advertisement campaign has an invalid date window."
+    );
+  }
+
+  if (scheduleStart < campaignStart || scheduleEnd > campaignEnd) {
+    throw new ApiError(
+      400,
+      "The schedule must start at or after the campaign start and end at or before the campaign end."
+    );
   }
 };
 
@@ -102,27 +148,54 @@ const validateRescheduledFrom = async (
   }
 };
 
+/**
+ * Checks for schedule conflicts.
+ *
+ * Preserve the five-argument repository call when no transaction client is
+ * supplied. This keeps the service contract consistent for non-transactional
+ * lifecycle operations and unit tests.
+ *
+ * Transactional create/update operations pass their PoolClient explicitly so
+ * the overlap check participates in the same transaction as the write.
+ */
 const validateNoOverlap = async (
   advertisementId: number,
   placementId: number,
   startAt: Date,
   endAt: Date,
-  excludeId?: number
+  excludeId?: number,
+  client?: PoolClient
 ): Promise<void> => {
-  const overlapping = await repository.findOverlapping(
-    advertisementId,
-    placementId,
-    startAt,
-    endAt,
-    excludeId
-  );
+  const overlapping =
+    client === undefined
+      ? await repository.findOverlapping(
+          advertisementId,
+          placementId,
+          startAt,
+          endAt,
+          excludeId
+        )
+      : await repository.findOverlapping(
+          advertisementId,
+          placementId,
+          startAt,
+          endAt,
+          excludeId,
+          client
+        );
 
-  if (overlapping) {
-    throw new ApiError(
-      409,
-      "Advertisement already has an overlapping schedule for this placement."
-    );
+  if (!overlapping) {
+    return;
   }
+
+  const sameAdvertisement = overlapping.advertisementId === advertisementId;
+
+  throw new ApiError(
+    409,
+    sameAdvertisement
+      ? "This advertisement already has an overlapping schedule for this placement."
+      : "This placement is configured as exclusive (rotation is disabled) and already has an overlapping advertisement schedule. Enable rotation or choose a non-overlapping time window."
+  );
 };
 
 const validateLifecyclePrerequisites = async (
@@ -192,8 +265,13 @@ export const create = async (
 
   validateDateRange(input.startAt, input.endAt);
 
-  await validateApprovedAdvertisement(input.advertisementId);
+  await validateScheduleWithinCampaign(
+    input.advertisementId,
+    input.startAt,
+    input.endAt
+  );
 
+  await validateApprovedAdvertisement(input.advertisementId);
   await validatePlacement(input.placementId);
 
   if (input.placementRuleId !== undefined && input.placementRuleId !== null) {
@@ -210,18 +288,34 @@ export const create = async (
     input.placementId
   );
 
-  await validateNoOverlap(
-    input.advertisementId,
-    input.placementId,
-    input.startAt,
-    input.endAt
-  );
+  const client = await pool.connect();
 
   try {
-    return await repository.create(input, userId);
+    await client.query("BEGIN");
+
+    await repository.lockPlacementScheduleScope(input.placementId, client);
+
+    // Recheck overlap after acquiring the placement lock. This serializes
+    // schedule writes for the placement and closes the validation/write race.
+    await validateNoOverlap(
+      input.advertisementId,
+      input.placementId,
+      input.startAt,
+      input.endAt,
+      undefined,
+      client
+    );
+
+    const created = await repository.create(input, userId, client);
+
+    await client.query("COMMIT");
+
+    return created;
   } catch (error: unknown) {
+    await client.query("ROLLBACK");
+
     if (
-      error &&
+      error !== null &&
       typeof error === "object" &&
       "code" in error &&
       error.code === "23514"
@@ -230,6 +324,8 @@ export const create = async (
     }
 
     throw error;
+  } finally {
+    client.release();
   }
 };
 
@@ -252,6 +348,12 @@ export const update = async (
 
   validateDateRange(startAt, endAt);
 
+  await validateScheduleWithinCampaign(
+    existing.advertisementId,
+    startAt,
+    endAt
+  );
+
   if (input.placementRuleId !== undefined && input.placementRuleId !== null) {
     await validatePlacementRule(
       input.placementRuleId,
@@ -269,37 +371,83 @@ export const update = async (
   const changingScheduleWindow =
     input.startAt !== undefined || input.endAt !== undefined;
 
-  if (changingScheduleWindow) {
-    await validateNoOverlap(
-      existing.advertisementId,
-      existing.placementId,
-      startAt,
-      endAt,
-      id
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    await repository.lockPlacementScheduleScope(existing.placementId, client);
+
+    // Re-read under the transaction after obtaining the placement lock.
+    // This ensures the persisted schedule is checked against the latest row.
+    const current = await repository.findById(id, client);
+
+    if (!current) {
+      throw new ApiError(404, "Advertisement schedule not found");
+    }
+
+    const currentStartAt = input.startAt ?? current.startAt;
+    const currentEndAt = input.endAt ?? current.endAt;
+
+    validateDateRange(currentStartAt, currentEndAt);
+
+    await validateScheduleWithinCampaign(
+      current.advertisementId,
+      currentStartAt,
+      currentEndAt
     );
+
+    if (changingScheduleWindow) {
+      await validateNoOverlap(
+        current.advertisementId,
+        current.placementId,
+        currentStartAt,
+        currentEndAt,
+        id,
+        client
+      );
+    }
+
+    const updated = await repository.update(id, input, userId, client);
+
+    if (!updated) {
+      throw new ApiError(404, "Advertisement schedule not found");
+    }
+
+    await client.query("COMMIT");
+
+    return updated;
+  } catch (error: unknown) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const updated = await repository.update(id, input, userId);
-
-  if (!updated) {
-    throw new ApiError(404, "Advertisement schedule not found");
-  }
-
-  return updated;
 };
 
 const transition = async (
   id: number,
   userId: number,
-  targetStatus: AdvertisementSchedule["status"]
+  targetStatus: AdvertisementScheduleStatus
 ): Promise<AdvertisementSchedule> => {
   const existing = await getById(id);
 
   validateTransition(existing.status, targetStatus);
-
   await validateLifecyclePrerequisites(existing);
 
   if (targetStatus === "ACTIVE") {
+    const operationalStatus =
+      await repository.findAdvertisementOperationalStatus(
+        existing.advertisementId
+      );
+
+    if (operationalStatus !== "ACTIVE") {
+      throw new ApiError(
+        409,
+        "A schedule can only be activated or resumed while its advertisement is operationally ACTIVE. Use the advertisement activation action to resume delivery."
+      );
+    }
+
     await validateNoOverlap(
       existing.advertisementId,
       existing.placementId,

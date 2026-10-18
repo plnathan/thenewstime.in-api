@@ -278,15 +278,13 @@ describe("Advertisement API Integration", () => {
      * 3. An ACTIVE DAY rate card must exist for that placement.
      * 4. The rate card must currently be effective.
      *
-     * The integration test must not depend on a pre-existing seed rate
-     * card because the test database may not contain an effective DAY
-     * rate card.
+     * Do not depend on a pre-existing seed rate card because the test
+     * database may not contain an effective DAY rate card.
      *
-     * Therefore, select an ACTIVE/enabled placement that does not already
-     * have an ACTIVE DAY rate card and create a temporary rate card for it.
+     * Select an ACTIVE/enabled placement that does not already have an
+     * ACTIVE DAY rate card, then create a temporary rate card for it.
      *
-     * Selecting a placement without any ACTIVE DAY rate card also avoids
-     * the advertisement_rate_cards active-overlap constraint.
+     * This also avoids the active-rate-card overlap constraint.
      */
     const placementResult = await pool.query<{
       id: number;
@@ -320,15 +318,13 @@ describe("Advertisement API Integration", () => {
     expect(testPlacementId).toBeGreaterThan(0);
 
     /*
-     * Create a deterministic temporary DAY rate card for the selected
-     * placement.
+     * Create a deterministic temporary DAY rate card.
      *
-     * The rate amount is intentionally aligned with the project's
-     * standard DAY rate-card test value of INR 5,000.
+     * The amount is aligned with the project's standard DAY rate-card
+     * test value of INR 5,000.
      *
      * The effective period starts slightly before the current timestamp
-     * and ends one day later so the advertisement service can resolve
-     * this rate card as the currently effective rate.
+     * and ends one day later.
      */
     const rateCardResult = await pool.query<{
       id: number;
@@ -416,8 +412,7 @@ describe("Advertisement API Integration", () => {
   afterAll(async () => {
     if (testAdvertisementId > 0) {
       /*
-       * Placement rules reference advertisements, so they must be removed
-       * before deleting the advertisement.
+       * Placement rules reference advertisements, so remove them first.
        */
       await pool.query(
         `
@@ -428,8 +423,8 @@ describe("Advertisement API Integration", () => {
       );
 
       /*
-       * Payment records reference the advertisement and therefore must be
-       * removed before deleting the advertisement.
+       * Payment records reference advertisements and must be removed
+       * before deleting the advertisement.
        */
       await pool.query(
         `
@@ -440,8 +435,7 @@ describe("Advertisement API Integration", () => {
       );
 
       /*
-       * Workflow history references the advertisement and must be removed
-       * before deleting the advertisement.
+       * Workflow history references advertisements.
        */
       await pool.query(
         `
@@ -452,12 +446,8 @@ describe("Advertisement API Integration", () => {
       );
 
       /*
-       * Pricing snapshots have a RESTRICT foreign key to advertisements:
-       *
-       * advertisement_pricing_snapshots_advertisement_fk
-       *
-       * Therefore pricing snapshots must be removed before the
-       * advertisement itself can be deleted.
+       * Pricing snapshots have a RESTRICT foreign key to advertisements,
+       * so remove them before deleting the advertisement.
        */
       await pool.query(
         `
@@ -468,9 +458,17 @@ describe("Advertisement API Integration", () => {
       );
 
       /*
-       * The advertisement can now be deleted safely because all known
-       * child records referencing it have already been removed.
+       * Operational audit entries, if present, also belong to the
+       * advertisement and should be removed before deleting it.
        */
+      await pool.query(
+        `
+          DELETE FROM advertisement_operational_audit
+          WHERE advertisement_id = $1
+        `,
+        [testAdvertisementId]
+      );
+
       await pool.query(
         `
           DELETE FROM advertisements
@@ -481,8 +479,8 @@ describe("Advertisement API Integration", () => {
     }
 
     /*
-     * The rate card was created by the temporary test user, so it must be
-     * removed before the temporary user is deleted.
+     * The rate card was created by the temporary test user, so remove
+     * it before deleting that user.
      */
     if (testRateCardId > 0) {
       await pool.query(
@@ -882,7 +880,7 @@ describe("Advertisement API Integration", () => {
     expect(Number(result.rows[0]!.count)).toBe(0);
   });
 
-  it("should activate an archived advertisement and return it to DRAFT", async () => {
+  it("should reject activation of an archived advertisement without changing its state", async () => {
     await pool.query(
       `
         UPDATE advertisements
@@ -898,29 +896,17 @@ describe("Advertisement API Integration", () => {
       .post(`/api/v1/advertisements/${testAdvertisementId}/activate`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
-        remarks: "Reactivating archived advertisement for reuse."
+        remarks: "Attempting to activate an archived advertisement."
       });
 
-    expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.data).toBeDefined();
-
-    expect(response.body.data.advertisement).toBeDefined();
-    expect(Number(response.body.data.advertisement.id)).toBe(
-      testAdvertisementId
-    );
-    expect(response.body.data.advertisement.workflowStatus).toBe("DRAFT");
-    expect(response.body.data.advertisement.status).toBe("DRAFT");
-
-    expect(response.body.data.history).toBeDefined();
-    expect(response.body.data.history.fromStatus).toBe("ARCHIVED");
-    expect(response.body.data.history.toStatus).toBe("DRAFT");
-    expect(response.body.data.history.remarks).toBe(
-      "Reactivating archived advertisement for reuse."
+    expect(response.status).toBe(409);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toBe(
+      "Only approved advertisements can be activated."
     );
   });
 
-  it("should persist ARCHIVED to DRAFT activation in the database", async () => {
+  it("should preserve ARCHIVED workflow and operational statuses after rejected activation", async () => {
     const result = await pool.query<{
       workflow_status: string;
       status: string;
@@ -936,41 +922,26 @@ describe("Advertisement API Integration", () => {
     );
 
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0]!.workflow_status).toBe("DRAFT");
-    expect(result.rows[0]!.status).toBe("DRAFT");
+    expect(result.rows[0]!.workflow_status).toBe("ARCHIVED");
+    expect(result.rows[0]!.status).toBe("ARCHIVED");
   });
 
-  it("should record the ARCHIVED to DRAFT activation in workflow history", async () => {
-    const result = await pool.query<{
-      from_status: string;
-      to_status: string;
-      remarks: string | null;
-      performed_by: number;
-    }>(
+  it("should not record workflow history when archived activation is rejected", async () => {
+    const result = await pool.query<{ count: string }>(
       `
-        SELECT
-          from_status,
-          to_status,
-          remarks,
-          performed_by
+        SELECT COUNT(*)::text AS count
         FROM advertisement_workflow_history
         WHERE advertisement_id = $1
-        ORDER BY id DESC
-        LIMIT 1
       `,
       [testAdvertisementId]
     );
 
-    expect(result.rows.length).toBe(1);
-
-    const history = result.rows[0]!;
-
-    expect(history.from_status).toBe("ARCHIVED");
-    expect(history.to_status).toBe("DRAFT");
-    expect(history.remarks).toBe(
-      "Reactivating archived advertisement for reuse."
-    );
-    expect(Number(history.performed_by)).toBe(testUserId);
+    /*
+     * Activation is an operational action, not a workflow transition.
+     * A rejected activation attempt must not create ARCHIVED -> DRAFT
+     * workflow history.
+     */
+    expect(Number(result.rows[0]!.count)).toBe(0);
   });
 
   it("POST /api/v1/advertisements/:id/activate - should reject activation of a rejected advertisement", async () => {
@@ -985,32 +956,56 @@ describe("Advertisement API Integration", () => {
       [testAdvertisementId]
     );
 
-    const response = await request(app)
-      .post(`/api/v1/advertisements/${testAdvertisementId}/activate`)
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        remarks: "Invalid activation attempt."
-      });
+    try {
+      const response = await request(app)
+        .post(`/api/v1/advertisements/${testAdvertisementId}/activate`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({
+          remarks: "Invalid activation attempt."
+        });
 
-    expect(response.status).toBe(409);
-    expect(response.body.success).toBe(false);
-    expect(response.body.message).toBe(
-      "Invalid advertisement workflow transition from 'REJECTED' to 'DRAFT'."
-    );
+      expect(response.status).toBe(409);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe(
+        "Only approved advertisements can be activated."
+      );
 
-    await pool.query(
-      `
-        UPDATE advertisements
-        SET
-          workflow_status = 'DRAFT',
-          status = 'DRAFT',
-          rejected_at = NULL,
-          rejected_by = NULL,
-          rejection_reason = NULL
+      const result = await pool.query<{
+        workflow_status: string;
+        status: string;
+      }>(
+        `
+          SELECT
+            workflow_status,
+            status
+          FROM advertisements
+          WHERE id = $1
+        `,
+        [testAdvertisementId]
+      );
+
+      expect(result.rows.length).toBe(1);
+      expect(result.rows[0]!.workflow_status).toBe("REJECTED");
+      expect(result.rows[0]!.status).toBe("DRAFT");
+    } finally {
+      /*
+       * Restore the fixture so later tests do not inherit the REJECTED
+       * workflow state.
+       */
+      await pool.query(
+        `
+          UPDATE advertisements
+          SET
+            workflow_status = 'DRAFT',
+            status = 'DRAFT',
+            rejected_at = NULL,
+            rejected_by = NULL,
+            rejection_reason = NULL
         WHERE id = $1
-      `,
-      [testAdvertisementId]
-    );
+        `,
+        [testAdvertisementId]
+      );
+    }
   });
 
   it("should record a partial payment and calculate the pending amount", async () => {

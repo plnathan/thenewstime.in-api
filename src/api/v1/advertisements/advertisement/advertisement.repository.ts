@@ -2,6 +2,8 @@ import type { PoolClient } from "pg";
 
 import { pool } from "../../../../shared/config/db.js";
 
+import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
+
 import {
   mapAdvertisementListRow,
   mapAdvertisementRow,
@@ -713,6 +715,40 @@ async function syncAdvertisementSchedule(
     advertisement.placement_rule_id === null
       ? null
       : Number(advertisement.placement_rule_id);
+
+  if (placementId !== null) {
+    // Serialize schedule synchronization for this placement. This prevents
+    // two concurrent advertisement saves from both claiming an exclusive slot.
+    await client.query(
+      `SELECT id FROM advertisement_placements WHERE id = $1 FOR UPDATE`,
+      [placementId]
+    );
+
+    const conflictResult = await client.query<{ id: number | string }>(
+      `
+      SELECT s.id
+      FROM advertisement_schedules s
+      INNER JOIN advertisement_placements p ON p.id = s.placement_id
+      WHERE s.placement_id = $1
+        AND s.advertisement_id <> $2
+        AND COALESCE(p.rotation_enabled, FALSE) = FALSE
+        AND s.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
+        AND s.start_at < $4
+        AND s.end_at > $3
+      ORDER BY s.start_at ASC, s.id ASC
+      LIMIT 1
+      FOR UPDATE OF s
+      `,
+      [placementId, advertisementId, startAt, endAt]
+    );
+
+    if (conflictResult.rows[0]) {
+      throw new ApiError(
+        409,
+        `Placement ${placementId} is exclusive because rotation is disabled; the requested campaign window overlaps schedule ${conflictResult.rows[0].id}.`
+      );
+    }
+  }
 
   /*
    * Reuse the latest scheduled row when one exists.

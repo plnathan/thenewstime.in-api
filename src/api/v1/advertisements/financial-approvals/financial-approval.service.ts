@@ -217,55 +217,50 @@ const getApprovalOrThrow = async (
 const getThresholdHoldReason = async (
   approval: AdvertisementFinancialApproval
 ): Promise<string | null> => {
-  // CREDIT_EXCEPTION has its own authorization and balance checks.
-  // It must not use the existing financial approval threshold table.
-  if (
-    approval.approvalType !== "DISCOUNT" &&
-    approval.approvalType !== "ADJUSTMENT" &&
-    approval.approvalType !== "REFUND" &&
-    approval.approvalType !== "PARTIAL_REFUND"
-  ) {
-    return null;
-  }
   const threshold = await thresholdService.getActiveThreshold(
     approval.approvalType
   );
+
   if (!threshold) {
     return null;
   }
-  // Check the requested amount against the configured amount threshold.
+
   if (
     approval.requestedAmount !== null &&
     approval.requestedAmount !== undefined &&
-    threshold.amountThreshold !== null &&
-    threshold.amountThreshold !== undefined
+    threshold.amountThreshold !== null
   ) {
     if (approval.requestedAmount > threshold.amountThreshold) {
       return (
-        "THRESHOLD_EXCEEDED: Requested amount " +
-        `${approval.requestedAmount} exceeds the configured amount threshold ` +
+        `THRESHOLD_EXCEEDED: Requested amount ` +
+        `${approval.requestedAmount} exceeds the configured ` +
+        `${approval.approvalType} amount threshold of ` +
         `${threshold.amountThreshold}.`
       );
     }
+
     return null;
   }
-  // Check the requested percentage against the configured percentage threshold.
+
+  // Credit Exception thresholds are amount-only.
+  if (approval.approvalType === "CREDIT_EXCEPTION") {
+    return null;
+  }
+
   if (
     approval.requestedPercentage !== null &&
     approval.requestedPercentage !== undefined &&
     threshold.percentageThreshold !== null &&
-    threshold.percentageThreshold !== undefined
+    approval.requestedPercentage > threshold.percentageThreshold
   ) {
-    if (approval.requestedPercentage > threshold.percentageThreshold) {
-      return (
-        "THRESHOLD_EXCEEDED: Requested percentage " +
-        `${approval.requestedPercentage}% exceeds the configured percentage ` +
-        `threshold ${threshold.percentageThreshold}%.`
-      );
-    }
-    return null;
+    return (
+      `THRESHOLD_EXCEEDED: Requested percentage ` +
+      `${approval.requestedPercentage}% exceeds the configured ` +
+      `${approval.approvalType} percentage threshold of ` +
+      `${threshold.percentageThreshold}%.`
+    );
   }
-  // No applicable threshold: preserve the existing approval behavior.
+
   return null;
 };
 

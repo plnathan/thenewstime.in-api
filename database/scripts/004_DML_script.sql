@@ -92,3 +92,10 @@ INNER JOIN public.advertisement_placements p
 WHERE r.advertisement_id = 1525
 ORDER BY r.display_order, r.id;	
 -------------------------------------
+UPDATE public.advertisement_financial_approval_thresholds
+SET
+    status = 'INACTIVE',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id in(37,35,34,33,32,31,30,29,28)
+  AND approval_type = 'REFUND'
+  AND status = 'ACTIVE';

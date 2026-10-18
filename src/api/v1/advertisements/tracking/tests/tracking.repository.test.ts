@@ -56,6 +56,10 @@ describe("tracking.repository", () => {
             schedule_end_at: new Date("2026-09-23T00:00:00.000Z"),
             advertisement_status: "ACTIVE",
             advertisement_workflow_status: "APPROVED",
+            advertisement_start_at: new Date("2026-09-21T00:00:00.000Z"),
+            advertisement_end_at: new Date("2026-09-24T00:00:00.000Z"),
+            rotation_enabled: false,
+            rotation_member_active: false,
             creative_status: "ACTIVE"
           }
         ])
@@ -87,6 +91,10 @@ describe("tracking.repository", () => {
         scheduleEndAt: new Date("2026-09-23T00:00:00.000Z"),
         advertisementStatus: "ACTIVE",
         advertisementWorkflowStatus: "APPROVED",
+        advertisementStartAt: new Date("2026-09-21T00:00:00.000Z"),
+        advertisementEndAt: new Date("2026-09-24T00:00:00.000Z"),
+        rotationEnabled: false,
+        rotationMemberActive: false,
         creativeStatus: "ACTIVE"
       });
     });

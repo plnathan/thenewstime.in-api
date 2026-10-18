@@ -2,8 +2,8 @@ import type { Express } from "express";
 import request from "supertest";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { pool } from "../../../../../shared/config/db.js";
 import app from "../../../../../app.js";
+import { pool } from "../../../../../shared/config/db.js";
 
 let testApp: Express;
 
@@ -30,18 +30,14 @@ describe("advertisement tracking integration", () => {
         id: number;
       }>(
         `
-          INSERT INTO advertisement_clients (
-            name,
-            display_name,
-            client_code
-          )
-          VALUES (
-            $1,
-            $2,
-            $3
-          )
-          RETURNING id
-        `,
+        INSERT INTO advertisement_clients (
+          name,
+          display_name,
+          client_code
+        )
+        VALUES ($1, $2, $3)
+        RETURNING id
+      `,
         [
           `Tracking Test Client ${uniqueSuffix}`,
           `Tracking Test Client ${uniqueSuffix}`,
@@ -55,37 +51,50 @@ describe("advertisement tracking integration", () => {
         throw new Error("Failed to create advertisement test client.");
       }
 
+      // Keep the campaign active before and after the tracking requests.
+      const campaignStart = new Date(Date.now() - 60 * 60 * 1000);
+      const campaignEnd = new Date(Date.now() + 60 * 60 * 1000);
+
       const advertisementResult = await client.query<{
         id: number;
       }>(
         `
-          INSERT INTO advertisements (
-            client_id,
-            name,
-            advertisement_type,
-            destination_url,
-            priority,
-            status,
-            workflow_status,
-            is_clickable,
-            open_in_new_tab,
-            is_house_ad
-          )
-          VALUES (
-            $1,
-            $2,
-            'BANNER',
-            'https://www.thenewstime.in/',
-            10,
-            'ACTIVE',
-            'APPROVED',
-            true,
-            true,
-            false
-          )
-          RETURNING id
-        `,
-        [advertisementClientId, `Tracking Advertisement ${uniqueSuffix}`]
+        INSERT INTO advertisements (
+          client_id,
+          name,
+          advertisement_type,
+          destination_url,
+          priority,
+          status,
+          workflow_status,
+          is_clickable,
+          open_in_new_tab,
+          is_house_ad,
+          start_at,
+          end_at
+        )
+        VALUES (
+          $1,
+          $2,
+          'BANNER',
+          'https://www.thenewstime.in/',
+          10,
+          'ACTIVE',
+          'APPROVED',
+          true,
+          true,
+          false,
+          $3,
+          $4
+        )
+        RETURNING id
+      `,
+        [
+          advertisementClientId,
+          `Tracking Advertisement ${uniqueSuffix}`,
+          campaignStart,
+          campaignEnd
+        ]
       );
 
       advertisementId = advertisementResult.rows[0]?.id ?? 0;
@@ -98,34 +107,34 @@ describe("advertisement tracking integration", () => {
         id: number;
       }>(
         `
-          INSERT INTO advertisement_placements (
-            code,
-            display_name,
-            page_type,
-            placement_type,
-            insertion_type,
-            display_order,
-            is_enabled,
-            collapse_when_empty,
-            fallback_behavior,
-            display_frequency,
-            status
-          )
-          VALUES (
-            $1,
-            $2,
-            'HOME',
-            'HOME_TOP',
-            'FIXED',
-            1,
-            true,
-            true,
-            'HIDE',
-            'EVERY_VISIT',
-            'ACTIVE'
-          )
-          RETURNING id
-        `,
+        INSERT INTO advertisement_placements (
+          code,
+          display_name,
+          page_type,
+          placement_type,
+          insertion_type,
+          display_order,
+          is_enabled,
+          collapse_when_empty,
+          fallback_behavior,
+          display_frequency,
+          status
+        )
+        VALUES (
+          $1,
+          $2,
+          'HOME',
+          'HOME_TOP',
+          'FIXED',
+          1,
+          true,
+          true,
+          'HIDE',
+          'EVERY_VISIT',
+          'ACTIVE'
+        )
+        RETURNING id
+      `,
         [
           `tracking-test-${uniqueSuffix}`,
           `Tracking Test Placement ${uniqueSuffix}`
@@ -142,26 +151,26 @@ describe("advertisement tracking integration", () => {
         id: number;
       }>(
         `
-          INSERT INTO advertisement_placement_rules (
-            advertisement_id,
-            placement_id,
-            display_order,
-            insertion_type,
-            insertion_position,
-            max_impressions,
-            status
-          )
-          VALUES (
-            $1,
-            $2,
-            1,
-            'FIXED',
-            NULL,
-            100,
-            'ACTIVE'
-          )
-          RETURNING id
-        `,
+        INSERT INTO advertisement_placement_rules (
+          advertisement_id,
+          placement_id,
+          display_order,
+          insertion_type,
+          insertion_position,
+          max_impressions,
+          status
+        )
+        VALUES (
+          $1,
+          $2,
+          1,
+          'FIXED',
+          NULL,
+          100,
+          'ACTIVE'
+        )
+        RETURNING id
+      `,
         [advertisementId, placementId]
       );
 
@@ -175,28 +184,28 @@ describe("advertisement tracking integration", () => {
         id: number;
       }>(
         `
-          INSERT INTO advertisement_creatives (
-            advertisement_id,
-            creative_type,
-            title,
-            alt_text,
-            media_url,
-            display_order,
-            is_primary,
-            status
-          )
-          VALUES (
-            $1,
-            'IMAGE',
-            $2,
-            $3,
-            'https://res.cloudinary.com/test/image/upload/tracking-test.jpg',
-            1,
-            true,
-            'ACTIVE'
-          )
-          RETURNING id
-        `,
+        INSERT INTO advertisement_creatives (
+          advertisement_id,
+          creative_type,
+          title,
+          alt_text,
+          media_url,
+          display_order,
+          is_primary,
+          status
+        )
+        VALUES (
+          $1,
+          'IMAGE',
+          $2,
+          $3,
+          'https://res.cloudinary.com/test/image/upload/tracking-test.jpg',
+          1,
+          true,
+          'ACTIVE'
+        )
+        RETURNING id
+      `,
         [
           advertisementId,
           `Tracking Test Creative ${uniqueSuffix}`,
@@ -210,34 +219,40 @@ describe("advertisement tracking integration", () => {
         throw new Error("Failed to create creative test record.");
       }
 
-      const now = new Date();
-      const end = new Date(now.getTime() + 60 * 60 * 1000);
+      const scheduleStart = new Date(Date.now() - 60 * 60 * 1000);
+      const scheduleEnd = new Date(Date.now() + 60 * 60 * 1000);
 
       const scheduleResult = await client.query<{
         id: number;
       }>(
         `
-          INSERT INTO advertisement_schedules (
-            advertisement_id,
-            placement_id,
-            placement_rule_id,
-            start_at,
-            end_at,
-            status,
-            priority
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            'ACTIVE',
-            10
-          )
-          RETURNING id
-        `,
-        [advertisementId, placementId, placementRuleId, now, end]
+        INSERT INTO advertisement_schedules (
+          advertisement_id,
+          placement_id,
+          placement_rule_id,
+          start_at,
+          end_at,
+          status,
+          priority
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          'ACTIVE',
+          10
+        )
+        RETURNING id
+      `,
+        [
+          advertisementId,
+          placementId,
+          placementRuleId,
+          scheduleStart,
+          scheduleEnd
+        ]
       );
 
       scheduleId = scheduleResult.rows[0]?.id ?? 0;
@@ -272,6 +287,8 @@ describe("advertisement tracking integration", () => {
         pageUrl: "https://www.thenewstime.in/",
         referrerUrl: "https://www.google.com/"
       });
+
+    console.log("Tracking response:", response.status, response.body);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
@@ -330,6 +347,8 @@ describe("advertisement tracking integration", () => {
         placementType: "HOME_TOP",
         pageUrl: "https://www.thenewstime.in/"
       });
+
+    console.log("Tracking response:", response.status, response.body);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);

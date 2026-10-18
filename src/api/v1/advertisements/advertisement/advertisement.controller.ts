@@ -73,10 +73,7 @@ export const getAdvertisements = async (
       ...(req.query.status
         ? {
             status: req.query.status as
-              | "DRAFT"
-              | "ACTIVE"
-              | "INACTIVE"
-              | "ARCHIVED"
+              "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED"
           }
         : {})
     };
@@ -222,6 +219,40 @@ export const resumeAdvertisement = async (
       "Advertisement resumed successfully.",
       result.advertisement
     );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const pauseAdvertisement = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const result = await service.pauseAdvertisement(
+      Number(req.params.id),
+      req.user.id,
+      req.body
+    );
+    sendSuccess(res, "Advertisement paused successfully.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const stopAdvertisement = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const result = await service.stopAdvertisement(
+      Number(req.params.id),
+      req.user.id,
+      req.body
+    );
+    sendSuccess(res, "Advertisement stopped successfully.", result);
   } catch (error) {
     next(error);
   }

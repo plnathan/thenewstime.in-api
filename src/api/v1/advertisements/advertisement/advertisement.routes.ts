@@ -14,9 +14,11 @@ import {
   getAdvertisements,
   getAdvertisementWorkflowHistory,
   holdAdvertisement,
+  pauseAdvertisement,
   rejectAdvertisement,
   resumeAdvertisement,
   submitAdvertisement,
+  stopAdvertisement,
   updateAdvertisement
 } from "./advertisement.controller.js";
 
@@ -428,6 +430,28 @@ router.post(
   validate(advertisementIdSchema, "params"),
   validate(advertisementWorkflowSchema, "body"),
   resumeAdvertisement
+);
+
+/**
+ * Pause an active advertisement operationally without changing approval state.
+ */
+router.post(
+  "/:id/pause",
+  authorize("ADVERTISEMENT", "advertisements", "update"),
+  validate(advertisementIdSchema, "params"),
+  validate(advertisementWorkflowSchema, "body"),
+  pauseAdvertisement
+);
+
+/**
+ * Stop an active advertisement and cancel its current/future schedules.
+ */
+router.post(
+  "/:id/stop",
+  authorize("ADVERTISEMENT", "advertisements", "update"),
+  validate(advertisementIdSchema, "params"),
+  validate(advertisementWorkflowSchema, "body"),
+  stopAdvertisement
 );
 
 /**

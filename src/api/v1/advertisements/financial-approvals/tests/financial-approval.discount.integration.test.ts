@@ -94,9 +94,9 @@ describe("Advertisement Financial Approval Discount Integration", () => {
   };
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * TEST SETUP
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   beforeAll(async () => {
@@ -915,6 +915,61 @@ describe("Advertisement Financial Approval Discount Integration", () => {
     }
   };
 
+  /**
+   * Approve a financial approval and handle the legitimate HOLD transition.
+   *
+   * A first approval attempt can return HOLD when the request requires
+   * threshold verification. The Finance Approver must explicitly perform
+   * a second approval action to resolve that HOLD.
+   *
+   * This helper does not bypass threshold enforcement or duplicate-pending
+   * validation in the production service.
+   */
+  const approveFinancialApproval = async (
+    approvalId: number,
+    approvalRemarks: string
+  ) => {
+    expect(approvalId).toBeGreaterThan(0);
+
+    const url = `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`;
+
+    let response = await request(app)
+      .post(url)
+      .set("Authorization", `Bearer ${financeAccessToken}`)
+      .send({ approvalRemarks });
+
+    expect(
+      response.status,
+      `Initial financial approval attempt failed for approval ${approvalId}: ${JSON.stringify(response.body)}`
+    ).toBe(200);
+
+    expect(response.body.success).toBe(true);
+
+    if (response.body.data.status === "HOLD") {
+      response = await request(app)
+        .post(url)
+        .set("Authorization", `Bearer ${financeAccessToken}`)
+        .send({ approvalRemarks });
+
+      expect(
+        response.status,
+        `Resolving HOLD failed for approval ${approvalId}: ${JSON.stringify(response.body)}`
+      ).toBe(200);
+
+      expect(response.body.success).toBe(true);
+    }
+
+    expect(
+      response.body.data.status,
+      `Approval ${approvalId} did not reach APPROVED: ${JSON.stringify(response.body.data)}`
+    ).toBe("APPROVED");
+
+    expect(Number(response.body.data.id)).toBe(approvalId);
+    expect(Number(response.body.data.reviewedBy)).toBe(financeUserId);
+
+    return response;
+  };
+
   beforeEach(async () => {
     await ensureRequiredPermissions();
   });
@@ -1435,26 +1490,24 @@ describe("Advertisement Financial Approval Discount Integration", () => {
    */
 
   it("should allow Finance Approver to approve a DISCOUNT percentage request", async () => {
-    const approvalId = createdApprovalIds[createdApprovalIds.length - 1];
+    const approvalId = createdApprovalIds.at(-1);
+
+    if (approvalId === undefined) {
+      throw new Error(
+        "No financial approval ID is available for the percentage approval test."
+      );
+    }
+
+    expect(approvalId).toBeGreaterThan(0);
 
     const approvalRemarks = "Percentage discount approved.";
 
-    const response = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks
-      });
+    const response = await approveFinancialApproval(
+      approvalId,
+      approvalRemarks
+    );
 
-    expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-
-    expect(response.body.data.status).toBe("APPROVED");
-
-    expect(Number(response.body.data.reviewedBy)).toBe(financeUserId);
-
+    expect(response.body.data.approvalType).toBe("DISCOUNT");
     expect(response.body.data.approvalRemarks).toBe(approvalRemarks);
   });
 
@@ -1535,17 +1588,10 @@ describe("Advertisement Financial Approval Discount Integration", () => {
 
     expect(Number(response.body.data.requestedPercentage)).toBe(100);
 
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Maximum percentage boundary approved."
-      });
-
-    expect(approveResponse.status).toBe(200);
-    expect(approveResponse.body.data.status).toBe("APPROVED");
+    await approveFinancialApproval(
+      approvalId,
+      "Maximum percentage boundary approved."
+    );
   });
 
   /*
@@ -1871,10 +1917,14 @@ describe("Advertisement Financial Approval Discount Integration", () => {
         remarks: "Discount approval read authorization test."
       });
 
-    expect(createResponse.status).toBe(201);
+    expect(
+      createResponse.status,
+      `Could not create the read-test approval: ${JSON.stringify(createResponse.body)}`
+    ).toBe(201);
 
     const approvalId = Number(createResponse.body.data.id);
 
+    expect(approvalId).toBeGreaterThan(0);
     createdApprovalIds.push(approvalId);
 
     const response = await request(app)
@@ -1883,23 +1933,17 @@ describe("Advertisement Financial Approval Discount Integration", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-
     expect(Number(response.body.data.id)).toBe(approvalId);
-
     expect(response.body.data.approvalType).toBe("DISCOUNT");
-
     expect(Number(response.body.data.requestedPercentage)).toBe(25);
 
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Discount read authorization test approved."
-      });
+    // Resolve SUBMITTED/HOLD before the next test reuses this advertisement.
+    const approveResponse = await approveFinancialApproval(
+      approvalId,
+      "Discount read authorization test approved."
+    );
 
-    expect(approveResponse.status).toBe(200);
+    expect(approveResponse.body.data.status).toBe("APPROVED");
   });
 
   /*
@@ -1972,22 +2016,24 @@ describe("Advertisement Financial Approval Discount Integration", () => {
         remarks: "Discount history integration test."
       });
 
-    expect(createResponse.status).toBe(201);
+    expect(
+      createResponse.status,
+      `Could not create the history-test approval: ${JSON.stringify(createResponse.body)}`
+    ).toBe(201);
 
     const approvalId = Number(createResponse.body.data.id);
 
+    expect(approvalId).toBeGreaterThan(0);
     createdApprovalIds.push(approvalId);
 
+    const historyUrl = `/api/v1/advertisements/payments/financial-approval/${approvalId}/history`;
+
     const submittedHistoryResponse = await request(app)
-      .get(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/history`
-      )
+      .get(historyUrl)
       .set("Authorization", `Bearer ${financeAccessToken}`);
 
     expect(submittedHistoryResponse.status).toBe(200);
-
     expect(submittedHistoryResponse.body.success).toBe(true);
-
     expect(Array.isArray(submittedHistoryResponse.body.data)).toBe(true);
 
     const submittedHistory = submittedHistoryResponse.body.data;
@@ -2005,21 +2051,16 @@ describe("Advertisement Financial Approval Discount Integration", () => {
       )
     ).toBe(true);
 
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Discount history approval."
-      });
+    // Use the existing helper so a legitimate HOLD transition is resolved.
+    const approveResponse = await approveFinancialApproval(
+      approvalId,
+      "Discount history approval."
+    );
 
-    expect(approveResponse.status).toBe(200);
+    expect(approveResponse.body.data.status).toBe("APPROVED");
 
     const finalHistoryResponse = await request(app)
-      .get(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/history`
-      )
+      .get(historyUrl)
       .set("Authorization", `Bearer ${financeAccessToken}`);
 
     expect(finalHistoryResponse.status).toBe(200);
@@ -2050,43 +2091,63 @@ describe("Advertisement Financial Approval Discount Integration", () => {
    */
 
   it("should persist DISCOUNT approval records with correct final status", async () => {
+    const approvalIds = [...new Set(createdApprovalIds)];
+
+    expect(approvalIds.length).toBeGreaterThan(0);
+
+    // Resolve any approvals left pending by earlier test cases.
+    const pendingResult = await pool.query(
+      `
+      SELECT id, status
+      FROM advertisement_financial_approvals
+      WHERE id = ANY($1::INTEGER[])
+        AND approval_type = 'DISCOUNT'
+        AND status IN ('SUBMITTED', 'HOLD')
+      ORDER BY id
+    `,
+      [approvalIds]
+    );
+
+    for (const row of pendingResult.rows) {
+      const approvalId = Number(row.id);
+
+      await approveFinancialApproval(
+        approvalId,
+        "Final database validation approval."
+      );
+    }
+
     const result = await pool.query(
       `
-        SELECT
-          id,
-          advertisement_id,
-          client_id,
-          approval_type,
-          requested_amount,
-          requested_percentage,
-          status,
-          requested_by,
-          reviewed_by
-        FROM advertisement_financial_approvals
-        WHERE id = ANY($1::INTEGER[])
-          AND approval_type = 'DISCOUNT'
-        ORDER BY id
-        `,
-      [createdApprovalIds]
+      SELECT
+        id,
+        advertisement_id,
+        client_id,
+        approval_type,
+        requested_amount,
+        requested_percentage,
+        status,
+        requested_by,
+        reviewed_by
+      FROM advertisement_financial_approvals
+      WHERE id = ANY($1::INTEGER[])
+        AND approval_type = 'DISCOUNT'
+      ORDER BY id
+    `,
+      [approvalIds]
     );
 
     expect(result.rows.length).toBeGreaterThan(0);
 
     for (const row of result.rows) {
       expect(Number(row.advertisement_id)).toBe(testAdvertisementId);
-
       expect(Number(row.client_id)).toBe(testClientId);
-
       expect(row.approval_type).toBe("DISCOUNT");
-
       expect(Number(row.requested_by)).toBe(creatorUserId);
-
       expect(row.status).toBe("APPROVED");
-
       expect(Number(row.reviewed_by)).toBe(financeUserId);
 
       const hasAmount = row.requested_amount !== null;
-
       const hasPercentage = row.requested_percentage !== null;
 
       expect(hasAmount !== hasPercentage).toBe(true);

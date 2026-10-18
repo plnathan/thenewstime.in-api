@@ -96,6 +96,25 @@ export const findById = async (
   return result.rows[0] ? mapPlacementRule(result.rows[0]) : null;
 };
 
+export const getRuleReferenceState = async (
+  advertisementId: number,
+  placementId: number,
+  client?: PoolClient
+): Promise<{ advertisementExists: boolean; placementExists: boolean }> => {
+  const db = client ?? pool;
+  const result = await db.query(
+    `SELECT
+       EXISTS (SELECT 1 FROM advertisements WHERE id = $1) AS advertisement_exists,
+       EXISTS (SELECT 1 FROM advertisement_placements WHERE id = $2) AS placement_exists`,
+    [advertisementId, placementId]
+  );
+  const row = result.rows[0];
+  return {
+    advertisementExists: Boolean(row?.advertisement_exists),
+    placementExists: Boolean(row?.placement_exists)
+  };
+};
+
 export const findByAdvertisementAndPlacement = async (
   advertisementId: number,
   placementId: number,

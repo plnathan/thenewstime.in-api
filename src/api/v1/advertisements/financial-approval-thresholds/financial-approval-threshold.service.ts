@@ -12,7 +12,7 @@ import type {
 } from "./financial-approval-threshold.types.js";
 
 const VALID_APPROVAL_TYPES: readonly FinancialApprovalThresholdApprovalType[] =
-  ["DISCOUNT", "REFUND", "PARTIAL_REFUND", "ADJUSTMENT"];
+  ["DISCOUNT", "REFUND", "PARTIAL_REFUND", "ADJUSTMENT", "CREDIT_EXCEPTION"];
 
 const VALID_STATUSES: readonly FinancialApprovalThresholdStatus[] = [
   "ACTIVE",
@@ -45,6 +45,7 @@ const assertValidStatus: (
 };
 
 const validateThresholdValues = (
+  approvalType: FinancialApprovalThresholdApprovalType,
   amountThreshold: number | null | undefined,
   percentageThreshold: number | null | undefined
 ): void => {
@@ -52,6 +53,22 @@ const validateThresholdValues = (
 
   const hasPercentage =
     percentageThreshold !== null && percentageThreshold !== undefined;
+
+  if (approvalType === "CREDIT_EXCEPTION") {
+    if (!hasAmount) {
+      throw new ApiError(
+        400,
+        "A Credit Exception threshold must have an amount threshold."
+      );
+    }
+
+    if (hasPercentage) {
+      throw new ApiError(
+        400,
+        "Credit Exception thresholds must use an amount, not a percentage."
+      );
+    }
+  }
 
   if (!hasAmount && !hasPercentage) {
     throw new ApiError(400, "At least one threshold value is required.");
@@ -158,7 +175,11 @@ export const create = async (
 
   assertValidApprovalType(input.approvalType);
 
-  validateThresholdValues(input.amountThreshold, input.percentageThreshold);
+  validateThresholdValues(
+    input.approvalType,
+    input.amountThreshold,
+    input.percentageThreshold
+  );
 
   const existingActiveCount = await repository.countActiveByApprovalType(
     input.approvalType
@@ -207,11 +228,11 @@ export const update = async (
 
   assertValidApprovalType(approvalType);
 
-  validateThresholdValues(amountThreshold, percentageThreshold);
+  validateThresholdValues(approvalType, amountThreshold, percentageThreshold);
 
   /*
-   * If the current record is active, it cannot be changed to another
-   * approval type that already has an active configuration.
+   * An active threshold cannot be changed to an approval type
+   * that already has another active configuration.
    */
   if (current.status === "ACTIVE") {
     const activeCount = await repository.countActiveByApprovalType(
@@ -266,6 +287,16 @@ export const activate = async (
   if (current.status === "ACTIVE") {
     throw new ApiError(409, "Financial approval threshold is already active.");
   }
+
+  /*
+   * Validate persisted values before activation as a defensive check.
+   * This also protects against legacy or manually inserted records.
+   */
+  validateThresholdValues(
+    current.approvalType,
+    current.amountThreshold,
+    current.percentageThreshold
+  );
 
   const existingActive = await repository.findActiveByApprovalType(
     current.approvalType

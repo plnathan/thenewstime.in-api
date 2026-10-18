@@ -245,3 +245,11 @@ WHERE table_schema = 'public'
   )
 ORDER BY table_name, ordinal_position;
 --------------------------------
+SELECT
+    conname AS constraint_name,
+    pg_get_constraintdef(oid) AS constraint_definition
+FROM pg_constraint
+WHERE conrelid =
+    'public.advertisement_financial_approval_thresholds'::regclass
+  AND conname LIKE '%credit_except%';
+----------------------------------------  

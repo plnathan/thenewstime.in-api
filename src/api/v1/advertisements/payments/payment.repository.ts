@@ -912,15 +912,47 @@ export async function getSummary(
     SELECT
       a.id AS advertisement_id,
 
-      a.advertisement_amount,
+      /*
+       * Prefer the persisted negotiated advertisement amount.
+       *
+       * If it is NULL, derive the amount from the system-calculated
+       * standard amount and discount percentage, matching the pricing
+       * formula:
+       *
+       * Advertisement Amount =
+       *   Standard Amount - (Standard Amount * Discount Percentage / 100)
+       *
+       * If neither amount source is available, preserve NULL so that
+       * the API does not report a fabricated outstanding balance.
+       */
+      CASE
+        WHEN a.advertisement_amount IS NOT NULL THEN
+          a.advertisement_amount
+        WHEN a.standard_amount IS NOT NULL THEN
+          GREATEST(
+            a.standard_amount
+            - ROUND(
+                a.standard_amount
+                * COALESCE(a.discount_percentage, 0)
+                / 100.0,
+                2
+              ),
+            0
+          )
+        ELSE
+          NULL
+      END AS advertisement_amount,
 
-      COALESCE(a.discount_amount, 0)::numeric AS discount_amount,
+      COALESCE(a.discount_amount, 0)::numeric
+        AS discount_amount,
 
-      COALESCE(a.adjustment_amount, 0)::numeric AS adjustment_amount,
+      COALESCE(a.adjustment_amount, 0)::numeric
+        AS adjustment_amount,
 
       /*
        * Gross verified payments include fully refunded payments.
-       * Refunds are reported separately and subtracted for net paid.
+       * Refunds are reported separately and subtracted when calculating
+       * net payments.
        */
       COALESCE(
         (
@@ -933,7 +965,7 @@ export async function getSummary(
       )::numeric AS verified_payment_amount,
 
       /*
-       * Total refunds across all payment types for this advertisement.
+       * Total refunds recorded against this advertisement.
        */
       COALESCE(
         (
@@ -947,8 +979,10 @@ export async function getSummary(
       )::numeric AS refunded_amount,
 
       /*
-       * Net collected amount across all verified/refunded payments.
-       * This is the amount used by the outstanding-balance calculation.
+       * Net payments = gross verified payments - refunds.
+       *
+       * A Credit Exception is not a payment and is intentionally
+       * excluded from this calculation.
        */
       GREATEST(
         COALESCE(
@@ -975,20 +1009,15 @@ export async function getSummary(
       )::numeric AS net_paid_amount,
 
       /*
-       * Advance Required:
-       * Use the configured commercial amount directly.
-       * A zero value means no advance is required.
+       * Advance Required is a commercial collection target,
+       * not an additional charge.
        */
       COALESCE(a.advance_amount, 0)::numeric
         AS advance_required_amount,
 
       /*
-       * Advance Received:
-       * Sum verified ADVANCE payments, including those later marked
-       * REFUNDED, then subtract refunds linked specifically to those
-       * ADVANCE payments.
-       *
-       * RECEIVED, PENDING and CANCELLED payments do not count.
+       * Advance Received includes verified advance payments,
+       * less refunds associated with those advance payments.
        */
       GREATEST(
         COALESCE(
@@ -1018,9 +1047,7 @@ export async function getSummary(
       )::numeric AS advance_received_amount,
 
       /*
-       * Advance Pending:
-       * The outstanding portion of the configured advance requirement.
-       * It can never be negative if more advance has been collected.
+       * Advance Pending cannot be negative.
        */
       GREATEST(
         COALESCE(a.advance_amount, 0)

@@ -20,6 +20,7 @@ describe("Advertisement Workflow API Integration", () => {
   let rejectionAdvertisementId = 0;
 
   const permissionIds: Record<string, number> = {};
+  const paymentIds: number[] = [];
 
   const timestamp = Date.now();
 
@@ -42,6 +43,64 @@ describe("Advertisement Workflow API Integration", () => {
     "resume",
     "archive"
   ] as const;
+
+  const paymentPermissionActions = ["create", "verify"] as const;
+
+  /**
+   * Record and verify a payment through the public API.
+   *
+   * Workflow approval must not be allowed to bypass the outstanding-balance
+   * check. These integration scenarios therefore settle each advertisement
+   * before attempting an otherwise valid approval.
+   */
+  const createAndVerifyPayment = async (
+    advertisementId: number,
+    amount: number,
+    transactionReference: string
+  ): Promise<number> => {
+    const createResponse = await request(app)
+      .post("/api/v1/advertisements/payments")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        advertisementId,
+        amount,
+        paymentType: "REGULAR",
+        paymentMethod: "CASH",
+        transactionReference,
+        notes: "Advertisement Workflow API integration test payment."
+      });
+
+    expect(
+      createResponse.status,
+      `Payment creation failed: ${JSON.stringify(createResponse.body)}`
+    ).toBe(201);
+
+    expect(createResponse.body.success).toBe(true);
+    expect(createResponse.body.data).toBeDefined();
+
+    const paymentId = Number(createResponse.body.data.id);
+
+    expect(paymentId).toBeGreaterThan(0);
+
+    // Track immediately so cleanup can remove the payment even if verification
+    // subsequently fails.
+    paymentIds.push(paymentId);
+
+    const verifyResponse = await request(app)
+      .post(`/api/v1/advertisements/payments/${paymentId}/verify`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(
+      verifyResponse.status,
+      `Payment verification failed: ${JSON.stringify(verifyResponse.body)}`
+    ).toBe(200);
+
+    expect(verifyResponse.body.success).toBe(true);
+    expect(verifyResponse.body.data).toBeDefined();
+    expect(Number(verifyResponse.body.data.id)).toBe(paymentId);
+
+    return paymentId;
+  };
 
   beforeAll(async () => {
     /*
@@ -204,7 +263,7 @@ describe("Advertisement Workflow API Integration", () => {
 
     /*
      * ==========================================================================
-     * FIND WORKFLOW PERMISSIONS
+     * FIND AND GRANT WORKFLOW PERMISSIONS
      * ==========================================================================
      */
 
@@ -265,6 +324,72 @@ describe("Advertisement Workflow API Integration", () => {
 
     /*
      * ==========================================================================
+     * FIND AND GRANT PAYMENT PERMISSIONS
+     * ==========================================================================
+     *
+     * Payment creation and verification are exercised through the actual
+     * payment endpoints. The temporary role must have both permissions.
+     */
+
+    const paymentPermissionsResult = await pool.query(
+      `
+      SELECT
+        id,
+        action
+      FROM permissions
+      WHERE
+        LOWER(module) = LOWER('ADVERTISEMENT')
+        AND LOWER(resource) = LOWER('advertisements.payments')
+        AND LOWER(action) = ANY($1::text[])
+        AND status = 'ACTIVE'
+      ORDER BY id ASC
+      `,
+      [paymentPermissionActions.map((action) => action.toLowerCase())]
+    );
+
+    for (const action of paymentPermissionActions) {
+      const permission = paymentPermissionsResult.rows.find(
+        (row) => String(row.action).toLowerCase() === action
+      );
+
+      expect(
+        permission,
+        `Active ADVERTISEMENT/advertisements.payments/${action} permission must exist.`
+      ).toBeDefined();
+
+      const permissionId = Number(permission?.id ?? 0);
+
+      expect(permissionId).toBeGreaterThan(0);
+
+      permissionIds[`payment_${action}`] = permissionId;
+
+      await pool.query(
+        `
+        INSERT INTO role_permissions
+        (
+          role_id,
+          permission_id,
+          created_by
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3
+        )
+        ON CONFLICT
+        (
+          role_id,
+          permission_id
+        )
+        DO NOTHING
+        `,
+        [testRoleId, permissionId, testUserId]
+      );
+    }
+
+    /*
+     * ==========================================================================
      * CREATE TEMPORARY ADVERTISEMENT CLIENT
      * ==========================================================================
      */
@@ -309,12 +434,6 @@ describe("Advertisement Workflow API Integration", () => {
      * ==========================================================================
      * CREATE TEMPORARY ADVERTISEMENT PLACEMENT
      * ==========================================================================
-     *
-     * The advertisement service now requires every advertisement to have a
-     * valid active placement.
-     *
-     * The workflow tests deliberately create their own placement instead of
-     * relying on unrelated production/master-data records.
      */
 
     const placementResult = await pool.query(
@@ -381,13 +500,6 @@ describe("Advertisement Workflow API Integration", () => {
      * ==========================================================================
      * CREATE TEMPORARY RATE CARD
      * ==========================================================================
-     *
-     * The advertisement workflow test does not need to test rate-card
-     * calculation itself. The rate card exists only because the current
-     * advertisement create contract accepts placement through the nested
-     * pricing object and therefore requires an applicable rate card.
-     *
-     * FIXED / 15000 / quantity 1 produces a standard amount of 15000.
      */
 
     const rateCardResult = await pool.query(
@@ -451,12 +563,27 @@ describe("Advertisement Workflow API Integration", () => {
   afterAll(async () => {
     /*
      * ==========================================================================
-     * DELETE TEST ADVERTISEMENTS
+     * DELETE TEST PAYMENT RECORDS
      * ==========================================================================
      *
-     * Placement rules are explicitly removed first because the workflow
-     * advertisements created by this suite are linked to the temporary
-     * placement through advertisement_placement_rules.
+     * Remove payments created by this suite before deleting their associated
+     * advertisements so the payment foreign key cannot block cleanup.
+     */
+
+    if (paymentIds.length > 0) {
+      await pool.query(
+        `
+        DELETE FROM advertisement_payments
+        WHERE id = ANY($1::int[])
+        `,
+        [paymentIds]
+      );
+    }
+
+    /*
+     * ==========================================================================
+     * DELETE TEST ADVERTISEMENTS
+     * ==========================================================================
      */
 
     const advertisementIds = [
@@ -465,35 +592,46 @@ describe("Advertisement Workflow API Integration", () => {
     ].filter((id, index, array) => id > 0 && array.indexOf(id) === index);
 
     for (const advertisementId of advertisementIds) {
+      // Operational audit rows reference advertisements with ON DELETE RESTRICT.
+      // Remove only the audit rows created for these test advertisements before
+      // deleting the parent advertisement; do not weaken the production FK.
       await pool.query(
         `
-    DELETE FROM advertisement_workflow_history
-    WHERE advertisement_id = $1
-    `,
+        DELETE FROM advertisement_operational_audit
+        WHERE advertisement_id = $1
+        `,
         [advertisementId]
       );
 
       await pool.query(
         `
-    DELETE FROM advertisement_placement_rules
-    WHERE advertisement_id = $1
-    `,
+        DELETE FROM advertisement_workflow_history
+        WHERE advertisement_id = $1
+        `,
         [advertisementId]
       );
 
       await pool.query(
         `
-    DELETE FROM advertisement_pricing_snapshots
-    WHERE advertisement_id = $1
-    `,
+        DELETE FROM advertisement_placement_rules
+        WHERE advertisement_id = $1
+        `,
         [advertisementId]
       );
 
       await pool.query(
         `
-    DELETE FROM advertisements
-    WHERE id = $1
-    `,
+        DELETE FROM advertisement_pricing_snapshots
+        WHERE advertisement_id = $1
+        `,
+        [advertisementId]
+      );
+
+      await pool.query(
+        `
+        DELETE FROM advertisements
+        WHERE id = $1
+        `,
         [advertisementId]
       );
     }
@@ -564,7 +702,7 @@ describe("Advertisement Workflow API Integration", () => {
 
     /*
      * ==========================================================================
-     * DELETE USER SESSIONS
+     * DELETE USER SESSIONS AND ROLE ASSOCIATIONS
      * ==========================================================================
      */
 
@@ -618,9 +756,7 @@ describe("Advertisement Workflow API Integration", () => {
       );
     }
 
-    /*
-     * Do not call pool.end().
-     */
+    // Do not call pool.end().
   });
 
   /*
@@ -635,11 +771,11 @@ describe("Advertisement Workflow API Integration", () => {
 
   /*
    * ============================================================================
-   * CREATE MAIN WORKFLOW ADVERTISEMENT
+   * CREATE MAIN WORKFLOW ADVERTISEMENT AND SETTLE PAYMENT
    * ============================================================================
    */
 
-  it("POST /api/v1/advertisements - should create a draft advertisement", async () => {
+  it("POST /api/v1/advertisements - should create a draft advertisement and verify its payment", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements")
       .set("Authorization", `Bearer ${accessToken}`)
@@ -676,6 +812,12 @@ describe("Advertisement Workflow API Integration", () => {
     expect(response.body.data.status).toBe("DRAFT");
     expect(response.body.data.isHouseAd).toBe(false);
     expect(Number(response.body.data.advertisementAmount)).toBe(15000);
+
+    await createAndVerifyPayment(
+      workflowAdvertisementId,
+      15000,
+      `AD-WORKFLOW-MAIN-${timestamp}`
+    );
   });
 
   /*
@@ -776,7 +918,7 @@ describe("Advertisement Workflow API Integration", () => {
    * ============================================================================
    */
 
-  it("POST /api/v1/advertisements/:id/approve - should transition SUBMITTED to APPROVED", async () => {
+  it("POST /api/v1/advertisements/:id/approve - should transition SUBMITTED to APPROVED after settlement", async () => {
     const response = await request(app)
       .post(`/api/v1/advertisements/${workflowAdvertisementId}/approve`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -792,9 +934,7 @@ describe("Advertisement Workflow API Integration", () => {
     expect(response.body.data.approvedBy).toBe(testUserId);
     expect(response.body.data.approvedAt).toBeTruthy();
 
-    /*
-     * Approval must not automatically change operational advertisement status.
-     */
+    // Workflow approval must not automatically change operational status.
     expect(response.body.data.status).toBe("DRAFT");
   });
 
@@ -895,9 +1035,7 @@ describe("Advertisement Workflow API Integration", () => {
     expect(Number(response.body.data.id)).toBe(workflowAdvertisementId);
     expect(response.body.data.workflowStatus).toBe("APPROVED");
 
-    /*
-     * Hold audit information should remain available after resume.
-     */
+    // Hold audit information should remain available after resume.
     expect(response.body.data.onHoldReason).toBe(
       "Payment reconciliation pending."
     );
@@ -976,16 +1114,6 @@ describe("Advertisement Workflow API Integration", () => {
 
     const history = response.body.data;
 
-    /*
-     * Main workflow is returned in chronological order by the API:
-     *
-     * DRAFT -> SUBMITTED
-     * SUBMITTED -> APPROVED
-     * APPROVED -> ON_HOLD
-     * ON_HOLD -> APPROVED
-     * APPROVED -> ARCHIVED
-     */
-
     expect(history.length).toBe(5);
 
     expect(history[0].fromStatus).toBe("DRAFT");
@@ -1012,11 +1140,11 @@ describe("Advertisement Workflow API Integration", () => {
 
   /*
    * ============================================================================
-   * CREATE REJECTION WORKFLOW ADVERTISEMENT
+   * CREATE REJECTION WORKFLOW ADVERTISEMENT AND SETTLE PAYMENT
    * ============================================================================
    */
 
-  it("POST /api/v1/advertisements - should create a second advertisement for rejection workflow testing", async () => {
+  it("POST /api/v1/advertisements - should create a second advertisement and verify its payment", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements")
       .set("Authorization", `Bearer ${accessToken}`)
@@ -1042,15 +1170,6 @@ describe("Advertisement Workflow API Integration", () => {
         }
       });
 
-    /*
-     * The temporary rate card used by this test is intentionally 15000.
-     * The second advertisement therefore must not rely on the rate-card
-     * standard amount for its negotiated advertisement amount.
-     *
-     * The current pricing implementation keeps advertisementAmount as the
-     * negotiated/agreed amount while standardAmount is calculated separately.
-     */
-
     expect(response.status).toBe(201);
     expect(response.body.success).toBe(true);
 
@@ -1061,6 +1180,12 @@ describe("Advertisement Workflow API Integration", () => {
     expect(response.body.data.status).toBe("DRAFT");
     expect(response.body.data.isHouseAd).toBe(false);
     expect(Number(response.body.data.advertisementAmount)).toBe(12000);
+
+    await createAndVerifyPayment(
+      rejectionAdvertisementId,
+      12000,
+      `AD-WORKFLOW-REJECTION-${timestamp}`
+    );
   });
 
   /*
@@ -1139,9 +1264,6 @@ describe("Advertisement Workflow API Integration", () => {
     expect(Number(response.body.data.id)).toBe(rejectionAdvertisementId);
     expect(response.body.data.workflowStatus).toBe("SUBMITTED");
 
-    /*
-     * A new review cycle should clear the previous rejection state.
-     */
     expect(response.body.data.rejectionReason).toBeNull();
     expect(response.body.data.rejectedBy).toBeNull();
     expect(response.body.data.rejectedAt).toBeNull();
@@ -1156,7 +1278,7 @@ describe("Advertisement Workflow API Integration", () => {
    * ============================================================================
    */
 
-  it("POST /api/v1/advertisements/:id/approve - should approve a resubmitted REJECTED advertisement", async () => {
+  it("POST /api/v1/advertisements/:id/approve - should approve a resubmitted REJECTED advertisement after settlement", async () => {
     const response = await request(app)
       .post(`/api/v1/advertisements/${rejectionAdvertisementId}/approve`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -1189,15 +1311,6 @@ describe("Advertisement Workflow API Integration", () => {
     expect(Array.isArray(response.body.data)).toBe(true);
 
     const history = response.body.data;
-
-    /*
-     * API returns workflow history in chronological order:
-     *
-     * DRAFT -> SUBMITTED
-     * SUBMITTED -> REJECTED
-     * REJECTED -> SUBMITTED
-     * SUBMITTED -> APPROVED
-     */
 
     expect(history.length).toBe(4);
 
@@ -1277,10 +1390,6 @@ describe("Advertisement Workflow API Integration", () => {
    * ============================================================================
    * AUTHORIZATION TEST
    * ============================================================================
-   *
-   * Use the currently APPROVED second advertisement because the test role can
-   * safely have its APPROVE permission removed without disturbing the remaining
-   * workflow tests.
    */
 
   it("should remove APPROVE permission from the temporary role", async () => {

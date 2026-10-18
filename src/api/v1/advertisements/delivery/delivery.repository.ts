@@ -568,8 +568,17 @@ LEFT JOIN LATERAL (
     active_creative.is_primary,
     active_creative.format_id
   FROM advertisement_creatives active_creative
+    LEFT JOIN advertisement_formats active_creative_format
+    ON active_creative_format.id = active_creative.format_id
+   AND active_creative_format.status = 'ACTIVE'
+       AND NULLIF(BTRIM(active_creative.media_url), '') IS NOT NULL
+           AND (
+      active_creative.format_id IS NULL
+      OR active_creative_format.id IS NOT NULL
+    )
   WHERE active_creative.advertisement_id = a.id
     AND active_creative.status = 'ACTIVE'
+    AND NULLIF(BTRIM(active_creative.media_url), '') IS NOT NULL
   ORDER BY
     active_creative.is_primary DESC,
     active_creative.display_order ASC,
@@ -622,8 +631,13 @@ LEFT JOIN LATERAL (
   LEFT JOIN advertisement_formats active_format
     ON active_format.id = active_creative.format_id
    AND active_format.status = 'ACTIVE'
-  WHERE active_creative.advertisement_id = a.id
+    WHERE active_creative.advertisement_id = a.id
     AND active_creative.status = 'ACTIVE'
+    AND (
+      active_creative.format_id IS NULL
+      OR active_format.id IS NOT NULL
+    )
+    AND NULLIF(BTRIM(active_creative.media_url), '') IS NOT NULL
 ) creative_set
   ON TRUE
 
@@ -631,15 +645,15 @@ WHERE a.workflow_status = 'APPROVED'
   AND a.status = 'ACTIVE'
   AND a.is_house_ad = ${houseAdOnly ? "TRUE" : "FALSE"}
   ${houseAdOnly ? "AND p.fallback_behavior = 'HOUSE_AD'" : ""}
-  AND (
-    a.start_at IS NULL
-    OR a.start_at <= $3
-  )
-  AND (
-    a.end_at IS NULL
-    OR a.end_at > $3
-  )
-
+  AND a.start_at IS NOT NULL
+  AND a.end_at IS NOT NULL
+  AND a.end_at > a.start_at
+  AND a.start_at <= $3
+  AND a.end_at > $3
+  -- Rotation-enabled placements may deliver only advertisements that are
+  -- explicitly configured as active members of that placement's rotation.
+  AND (COALESCE(p.rotation_enabled, FALSE) = FALSE OR rm.id IS NOT NULL)
+    AND c.id IS NOT NULL
 ORDER BY
   s.priority DESC,
   a.priority DESC,

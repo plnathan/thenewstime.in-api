@@ -8,27 +8,76 @@ import type {
   UpdateAdvertisementPlacementInput
 } from "./placement.types.js";
 
-const validateCreateConfiguration = (
-  input: CreateAdvertisementPlacementInput
+const placementTypesByPage = {
+  HOME: ["HOME_BANNER", "HOME_TOP", "HOME_BETWEEN_SECTIONS", "HOME_SIDEBAR"],
+  NEWS_LIST: [
+    "NEWS_LIST_TOP",
+    "NEWS_LIST_BETWEEN",
+    "NEWS_LIST_BOTTOM",
+    "NEWS_LIST_SIDEBAR",
+    "NEWS_LIST_MODAL"
+  ],
+  NEWS_DETAIL: [
+    "NEWS_DETAIL_TOP",
+    "NEWS_DETAIL_BETWEEN",
+    "NEWS_DETAIL_SIDEBAR",
+    "NEWS_DETAIL_BOTTOM",
+    "NEWS_DETAIL_MODAL"
+  ]
+} as const;
+
+const validatePagePlacementPair = (
+  pageType: AdvertisementPlacement["pageType"],
+  placementType: AdvertisementPlacement["placementType"]
 ): void => {
   if (
-    input.displayFrequency === "ONCE_PER_PERIOD" &&
-    input.frequencyValue === undefined
+    !(placementTypesByPage[pageType] as readonly string[]).includes(
+      placementType
+    )
   ) {
-    throw new ApiError(400, "frequencyValue is required for ONCE_PER_PERIOD.");
-  }
-
-  if (input.autoCloseEnabled === true && input.autoCloseSeconds === undefined) {
     throw new ApiError(
       400,
-      "autoCloseSeconds is required when autoCloseEnabled is true."
+      `Placement type ${placementType} is not valid for page type ${pageType}.`
+    );
+  }
+};
+
+const validateConfiguration = (
+  displayFrequency: AdvertisementPlacement["displayFrequency"],
+  frequencyValue: number | null | undefined,
+  autoCloseEnabled: boolean,
+  autoCloseSeconds: number | null | undefined
+): void => {
+  if (
+    displayFrequency === "ONCE_PER_PERIOD" &&
+    (!Number.isInteger(frequencyValue) ||
+      frequencyValue === null ||
+      frequencyValue === undefined ||
+      frequencyValue <= 0)
+  ) {
+    throw new ApiError(
+      400,
+      "frequencyValue must be a positive integer for ONCE_PER_PERIOD."
     );
   }
 
   if (
-    input.autoCloseEnabled === false &&
-    input.autoCloseSeconds !== undefined &&
-    input.autoCloseSeconds !== null
+    autoCloseEnabled &&
+    (!Number.isInteger(autoCloseSeconds) ||
+      autoCloseSeconds === null ||
+      autoCloseSeconds === undefined ||
+      autoCloseSeconds <= 0)
+  ) {
+    throw new ApiError(
+      400,
+      "autoCloseSeconds must be a positive integer when auto-close is enabled."
+    );
+  }
+
+  if (
+    !autoCloseEnabled &&
+    autoCloseSeconds !== null &&
+    autoCloseSeconds !== undefined
   ) {
     throw new ApiError(
       400,
@@ -37,42 +86,48 @@ const validateCreateConfiguration = (
   }
 };
 
+const validateCreateConfiguration = (
+  input: CreateAdvertisementPlacementInput
+): void => {
+  validateConfiguration(
+    input.displayFrequency ?? null,
+    input.frequencyValue,
+    input.autoCloseEnabled ?? false,
+    input.autoCloseSeconds
+  );
+  validatePagePlacementPair(input.pageType, input.placementType);
+};
+
 const validateUpdateConfiguration = (
   existing: AdvertisementPlacement,
   input: UpdateAdvertisementPlacementInput
 ): void => {
-  if (
-    input.displayFrequency === "ONCE_PER_PERIOD" &&
-    input.frequencyValue === undefined &&
-    existing.displayFrequency !== "ONCE_PER_PERIOD"
-  ) {
-    throw new ApiError(
-      400,
-      "frequencyValue is required when changing displayFrequency to ONCE_PER_PERIOD."
-    );
-  }
+  const displayFrequency =
+    input.displayFrequency !== undefined
+      ? input.displayFrequency
+      : existing.displayFrequency;
+  const frequencyValue =
+    input.frequencyValue !== undefined
+      ? input.frequencyValue
+      : existing.frequencyValue;
+  const autoCloseEnabled = input.autoCloseEnabled ?? existing.autoCloseEnabled;
+  const autoCloseSeconds =
+    input.autoCloseEnabled === false && input.autoCloseSeconds === undefined
+      ? null
+      : input.autoCloseSeconds !== undefined
+        ? input.autoCloseSeconds
+        : existing.autoCloseSeconds;
 
-  if (
-    input.autoCloseEnabled === true &&
-    input.autoCloseSeconds === undefined &&
-    existing.autoCloseSeconds === null
-  ) {
-    throw new ApiError(
-      400,
-      "autoCloseSeconds is required when enabling auto-close."
-    );
-  }
-
-  if (
-    input.autoCloseEnabled === false &&
-    input.autoCloseSeconds !== undefined &&
-    input.autoCloseSeconds !== null
-  ) {
-    throw new ApiError(
-      400,
-      "autoCloseSeconds must be null or omitted when autoCloseEnabled is false."
-    );
-  }
+  validateConfiguration(
+    displayFrequency,
+    frequencyValue,
+    autoCloseEnabled,
+    autoCloseSeconds
+  );
+  validatePagePlacementPair(
+    input.pageType ?? existing.pageType,
+    input.placementType ?? existing.placementType
+  );
 };
 
 const validateFormat = async (
@@ -117,7 +172,7 @@ export const create = async (
     throw new ApiError(409, "Advertisement placement code already exists.");
   }
 
-  return repository.create(input, userId);
+  return repository.create({ ...input, code: input.code.trim() }, userId);
 };
 
 export const update = async (
@@ -135,7 +190,11 @@ export const update = async (
 
   await validateFormat(input.formatId);
 
-  const updated = await repository.update(id, input, userId);
+  const normalizedInput =
+    input.autoCloseEnabled === false && input.autoCloseSeconds === undefined
+      ? { ...input, autoCloseSeconds: null }
+      : input;
+  const updated = await repository.update(id, normalizedInput, userId);
 
   if (!updated) {
     throw new ApiError(404, "Advertisement placement not found.");

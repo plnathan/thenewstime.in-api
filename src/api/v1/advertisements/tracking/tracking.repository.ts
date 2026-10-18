@@ -65,12 +65,22 @@ export const findTrackingRelationship = async (
         a.id AS advertisement_id,
         a.status AS advertisement_status,
         a.workflow_status AS advertisement_workflow_status,
+        a.start_at AS advertisement_start_at,
+        a.end_at AS advertisement_end_at,
 
         p.id AS placement_id,
         p.page_type,
         p.placement_type,
         p.is_enabled AS placement_enabled,
         p.status AS placement_status,
+        COALESCE(p.rotation_enabled, FALSE) AS rotation_enabled,
+        EXISTS (
+          SELECT 1
+          FROM advertisement_rotation_members arm
+          WHERE arm.placement_id = p.id
+            AND arm.advertisement_id = a.id
+            AND arm.status = 'ACTIVE'
+        ) AS rotation_member_active,
 
         pr.id AS placement_rule_id,
         pr.status AS placement_rule_status,
@@ -162,6 +172,16 @@ export const findTrackingRelationship = async (
     advertisementStatus: row.advertisement_status,
 
     advertisementWorkflowStatus: row.advertisement_workflow_status,
+    advertisementStartAt:
+      row.advertisement_start_at === null
+        ? null
+        : new Date(row.advertisement_start_at),
+    advertisementEndAt:
+      row.advertisement_end_at === null
+        ? null
+        : new Date(row.advertisement_end_at),
+    rotationEnabled: row.rotation_enabled ?? false,
+    rotationMemberActive: row.rotation_member_active ?? false,
 
     creativeStatus: row.creative_status === null ? null : row.creative_status
   };
@@ -293,9 +313,11 @@ export const createImpression = async (
 };
 
 export const createClick = async (
-  input: AdvertisementTrackingRequest
+  input: AdvertisementTrackingRequest,
+  client?: PoolClient
 ): Promise<TrackingInsertResult> => {
-  const result = await pool.query(
+  const executor = client ?? pool;
+  const result = await executor.query(
     `
       INSERT INTO advertisement_clicks (
         advertisement_id,

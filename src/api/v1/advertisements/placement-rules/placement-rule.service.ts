@@ -15,10 +15,7 @@ const validateInsertionConfiguration = (
   const resolvedInsertionType = insertionType ?? "FIXED";
 
   if (resolvedInsertionType === "FIXED") {
-    if (
-      insertionPosition !== null &&
-      insertionPosition !== undefined
-    ) {
+    if (insertionPosition !== null && insertionPosition !== undefined) {
       throw new ApiError(
         400,
         "insertionPosition must be null when insertionType is FIXED"
@@ -58,25 +55,18 @@ const normalizeCreateInput = (
   return input;
 };
 
-export const getAll = async (
-  query: PlacementRuleQuery = {}
-) => repository.findAll(query);
+export const getAll = async (query: PlacementRuleQuery = {}) =>
+  repository.findAll(query);
 
 export const getById = async (id: number) => {
   if (!Number.isInteger(id) || id <= 0) {
-    throw new ApiError(
-      400,
-      "Invalid advertisement placement rule id"
-    );
+    throw new ApiError(400, "Invalid advertisement placement rule id");
   }
 
   const rule = await repository.findById(id);
 
   if (!rule) {
-    throw new ApiError(
-      404,
-      "Advertisement placement rule not found"
-    );
+    throw new ApiError(404, "Advertisement placement rule not found");
   }
 
   return rule;
@@ -87,10 +77,7 @@ export const create = async (
   userId: number
 ) => {
   if (!Number.isInteger(userId) || userId <= 0) {
-    throw new ApiError(
-      401,
-      "Authenticated user is required"
-    );
+    throw new ApiError(401, "Authenticated user is required");
   }
 
   /*
@@ -103,18 +90,25 @@ export const create = async (
    * must be rejected rather than silently converting insertionPosition
    * to null before validation.
    */
-  validateInsertionConfiguration(
-    input.insertionType,
-    input.insertionPosition
-  );
+  validateInsertionConfiguration(input.insertionType, input.insertionPosition);
 
   const normalizedInput = normalizeCreateInput(input);
 
-  const existing =
-    await repository.findByAdvertisementAndPlacement(
-      normalizedInput.advertisementId,
-      normalizedInput.placementId
-    );
+  const references = await repository.getRuleReferenceState(
+    normalizedInput.advertisementId,
+    normalizedInput.placementId
+  );
+  if (!references.advertisementExists) {
+    throw new ApiError(404, "Advertisement not found");
+  }
+  if (!references.placementExists) {
+    throw new ApiError(404, "Advertisement placement not found");
+  }
+
+  const existing = await repository.findByAdvertisementAndPlacement(
+    normalizedInput.advertisementId,
+    normalizedInput.placementId
+  );
 
   if (existing) {
     throw new ApiError(
@@ -124,10 +118,7 @@ export const create = async (
   }
 
   try {
-    return await repository.create(
-      normalizedInput,
-      userId
-    );
+    return await repository.create(normalizedInput, userId);
   } catch (error: unknown) {
     if (
       error &&
@@ -151,10 +142,7 @@ export const update = async (
   userId: number
 ) => {
   if (!Number.isInteger(userId) || userId <= 0) {
-    throw new ApiError(
-      401,
-      "Authenticated user is required"
-    );
+    throw new ApiError(401, "Authenticated user is required");
   }
 
   const existing = await getById(id);
@@ -168,8 +156,8 @@ export const update = async (
    */
   const resolvedInsertionType =
     input.insertionType !== undefined
-      ? input.insertionType ?? "FIXED"
-      : existing.insertionType ?? "FIXED";
+      ? (input.insertionType ?? "FIXED")
+      : (existing.insertionType ?? "FIXED");
 
   const resolvedInsertionPosition =
     input.insertionPosition !== undefined
@@ -200,52 +188,30 @@ export const update = async (
    * Do not add insertionType/insertionPosition merely because
    * they were needed for validation.
    */
-  const updated = await repository.update(
-    id,
-    input,
-    userId
-  );
+  const updated = await repository.update(id, input, userId);
 
   if (!updated) {
-    throw new ApiError(
-      404,
-      "Advertisement placement rule not found"
-    );
+    throw new ApiError(404, "Advertisement placement rule not found");
   }
 
   return updated;
 };
 
-export const deactivate = async (
-  id: number,
-  userId: number
-) => {
+export const deactivate = async (id: number, userId: number) => {
   if (!Number.isInteger(userId) || userId <= 0) {
-    throw new ApiError(
-      401,
-      "Authenticated user is required"
-    );
+    throw new ApiError(401, "Authenticated user is required");
   }
 
   const existing = await getById(id);
 
   if (existing.status === "INACTIVE") {
-    throw new ApiError(
-      409,
-      "Advertisement placement rule is already inactive"
-    );
+    throw new ApiError(409, "Advertisement placement rule is already inactive");
   }
 
-  const updated = await repository.deactivate(
-    id,
-    userId
-  );
+  const updated = await repository.deactivate(id, userId);
 
   if (!updated) {
-    throw new ApiError(
-      404,
-      "Advertisement placement rule not found"
-    );
+    throw new ApiError(404, "Advertisement placement rule not found");
   }
 
   return updated;

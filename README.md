@@ -287,3 +287,10 @@ updated_at = NOW()
 WHERE username = 'admin';
 
 // $2b$12$P47gzf9qbo3FNam6YL9lIuIY3q8cYpvAOCT.pB/DZmCHxIqGByxgK
+
+
+## build command
+
+npx tsc -p tsconfig.vercel.json
+
+npx vitest run src/api/v1/advertisements/schedules/tests/schedule.integration.test.ts --hookTimeout 30000

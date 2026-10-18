@@ -48,7 +48,7 @@ router.post(
 router.get(
   "/metrics/:advertisementId",
   authenticate,
-  authorize("ADVERTISEMENTS", "advertisements", "read"),
+  authorize("ADVERTISEMENT", "advertisements", "read"),
   validate(advertisementMetricsParamsSchema, "params"),
   validate(advertisementMetricsQuerySchema, "query"),
   controller.getMetrics

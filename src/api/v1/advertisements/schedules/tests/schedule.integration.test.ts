@@ -14,6 +14,7 @@ describe("Advertisement Schedule API Integration", () => {
 
   let testClientId = 0;
   let advertisementId = 0;
+  let nonApprovedAdvertisementId = 0;
   let placementId = 0;
   let placementRuleId = 0;
 
@@ -490,19 +491,29 @@ describe("Advertisement Schedule API Integration", () => {
      * APPROVE TEST ADVERTISEMENT
      * --------------------------------------------------
      */
-    await pool.query(
-      `
+        await pool.query(
+          `
       UPDATE advertisements
       SET
+        start_at = $2,
+        end_at = $3,
+        status = 'ACTIVE',
         workflow_status = 'APPROVED',
         submitted_at = CURRENT_TIMESTAMP,
-        submitted_by = $2,
+        submitted_by = $4,
         approved_at = CURRENT_TIMESTAMP,
-        approved_by = $2
+        approved_by = $4,
+        updated_by = $4,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
     `,
-      [advertisementId, testUserId]
-    );
+          [
+            advertisementId,
+            "2026-01-01T00:00:00.000Z",
+            "2027-12-31T23:59:59.000Z",
+            testUserId
+          ]
+        );
 
     /*
      * --------------------------------------------------
@@ -568,147 +579,239 @@ describe("Advertisement Schedule API Integration", () => {
     expect(placementRuleId).toBeGreaterThan(0);
   });
 
-  afterAll(async () => {
-    const scheduleIds = [
-      scheduleId,
-      cancelScheduleId,
-      activeScheduleId,
-      overlappingScheduleId
-    ].filter((id, index, array) => id > 0 && array.indexOf(id) === index);
+   afterAll(async () => {
+     /*
+      * Remove schedules associated with the primary test
+      * advertisement first. This also catches schedules whose
+      * IDs were not saved because an earlier assertion failed.
+      */
+     if (advertisementId > 0) {
+       await pool.query(
+         `
+        DELETE FROM advertisement_schedules
+        WHERE advertisement_id = $1
+      `,
+         [advertisementId]
+       );
+     }
 
-    for (const id of scheduleIds) {
-      await pool.query(
-        `
+     /*
+      * Remove any remaining schedules explicitly tracked by
+      * the test, including a schedule created directly for
+      * the activation-overlap test.
+      */
+     const scheduleIds = [
+       scheduleId,
+       cancelScheduleId,
+       activeScheduleId,
+       overlappingScheduleId
+     ].filter((id, index, array) => id > 0 && array.indexOf(id) === index);
+
+     for (const id of scheduleIds) {
+       await pool.query(
+         `
         DELETE FROM advertisement_schedules
         WHERE id = $1
       `,
-        [id]
-      );
-    }
+         [id]
+       );
+     }
 
-    if (placementRuleId > 0) {
-      await pool.query(
-        `
+     /*
+      * Clean up a temporary non-approved advertisement if
+      * the test was interrupted before its own finally block.
+      */
+     if (nonApprovedAdvertisementId > 0) {
+       await pool.query(
+         `
+        DELETE FROM advertisement_schedules
+        WHERE advertisement_id = $1
+      `,
+         [nonApprovedAdvertisementId]
+       );
+
+       await pool.query(
+         `
         DELETE FROM advertisement_placement_rules
-        WHERE id = $1
+        WHERE advertisement_id = $1
       `,
-        [placementRuleId]
-      );
-    }
+         [nonApprovedAdvertisementId]
+       );
 
-    if (placementId > 0) {
-      await pool.query(
-        `
-        DELETE FROM advertisement_placements
-        WHERE id = $1
-      `,
-        [placementId]
-      );
-    }
-
-    if (advertisementId > 0) {
-      await pool.query(
-        `
+       await pool.query(
+         `
         DELETE FROM advertisement_payments
         WHERE advertisement_id = $1
       `,
-        [advertisementId]
-      );
+         [nonApprovedAdvertisementId]
+       );
 
-      await pool.query(
-        `
+       await pool.query(
+         `
         DELETE FROM advertisement_workflow_history
         WHERE advertisement_id = $1
       `,
-        [advertisementId]
-      );
+         [nonApprovedAdvertisementId]
+       );
 
-      await pool.query(
-        `
+       await pool.query(
+         `
         DELETE FROM advertisements
         WHERE id = $1
       `,
-        [advertisementId]
-      );
-    }
+         [nonApprovedAdvertisementId]
+       );
+     }
 
-    if (testClientId > 0) {
-      await pool.query(
-        `
+     /*
+      * Remove placement rules before removing their
+      * advertisement and placement references.
+      */
+     if (advertisementId > 0) {
+       await pool.query(
+         `
+        DELETE FROM advertisement_placement_rules
+        WHERE advertisement_id = $1
+      `,
+         [advertisementId]
+       );
+
+       await pool.query(
+         `
+        DELETE FROM advertisement_payments
+        WHERE advertisement_id = $1
+      `,
+         [advertisementId]
+       );
+
+       await pool.query(
+         `
+        DELETE FROM advertisement_workflow_history
+        WHERE advertisement_id = $1
+      `,
+         [advertisementId]
+       );
+
+       await pool.query(
+         `
+        DELETE FROM advertisements
+        WHERE id = $1
+      `,
+         [advertisementId]
+       );
+     }
+
+     /*
+      * Only delete the placement after all schedules,
+      * placement rules, and advertisements referencing it
+      * have been removed.
+      */
+     if (placementId > 0) {
+       await pool.query(
+         `
+        DELETE FROM advertisement_placement_rules
+        WHERE placement_id = $1
+      `,
+         [placementId]
+       );
+
+       await pool.query(
+         `
+        DELETE FROM advertisement_placements
+        WHERE id = $1
+      `,
+         [placementId]
+       );
+     }
+
+     /*
+      * The client is referenced by the advertisements above,
+      * so remove it only after their cleanup.
+      */
+     if (testClientId > 0) {
+       await pool.query(
+         `
         DELETE FROM advertisement_clients
         WHERE id = $1
       `,
-        [testClientId]
-      );
-    }
+         [testClientId]
+       );
+     }
 
-    if (testRoleId > 0) {
-      await pool.query(
-        `
+     /*
+      * Remove test RBAC assignments and authentication data.
+      */
+     if (testRoleId > 0) {
+       await pool.query(
+         `
         DELETE FROM role_permissions
         WHERE role_id = $1
       `,
-        [testRoleId]
-      );
-    }
+         [testRoleId]
+       );
+     }
 
-    if (testUserId > 0) {
-      await pool.query(
-        `
+     if (testUserId > 0) {
+       await pool.query(
+         `
         DELETE FROM user_roles
         WHERE user_id = $1
       `,
-        [testUserId]
-      );
+         [testUserId]
+       );
 
-      await pool.query(
-        `
+       await pool.query(
+         `
         DELETE FROM user_sessions
         WHERE user_id = $1
       `,
-        [testUserId]
-      );
+         [testUserId]
+       );
 
-      await pool.query(
-        `
+       await pool.query(
+         `
         UPDATE users
         SET role_id = NULL
         WHERE id = $1
       `,
-        [testUserId]
-      );
-    }
+         [testUserId]
+       );
+     }
 
-    if (testRoleId > 0) {
-      await pool.query(
-        `
+     if (testRoleId > 0) {
+       await pool.query(
+         `
         DELETE FROM roles
         WHERE id = $1
       `,
-        [testRoleId]
-      );
-    }
+         [testRoleId]
+       );
+     }
 
-    if (testUserId > 0) {
-      await pool.query(
-        `
+     if (testUserId > 0) {
+       await pool.query(
+         `
         DELETE FROM users
         WHERE id = $1
       `,
-        [testUserId]
-      );
-    }
+         [testUserId]
+       );
+     }
 
-    for (const permissionId of createdPermissionIds) {
-      await pool.query(
-        `
+     /*
+      * Delete only permissions created by this test.
+      * Pre-existing shared permissions must remain intact.
+      */
+     for (const permissionId of createdPermissionIds) {
+       await pool.query(
+         `
         DELETE FROM permissions
         WHERE id = $1
       `,
-        [permissionId]
-      );
-    }
-  });
+         [permissionId]
+       );
+     }
+   });
 
   it("should have a valid authentication token", () => {
     expect(accessToken).toBeTruthy();
@@ -900,6 +1003,8 @@ describe("Advertisement Schedule API Integration", () => {
         workflow_status,
         advertisement_amount,
         currency_code,
+        start_at,
+        end_at,
         created_by,
         updated_by
       )
@@ -917,39 +1022,81 @@ describe("Advertisement Schedule API Integration", () => {
         100,
         'INR',
         $3,
-        $3
+        $4,
+        $5,
+        $5
       )
       RETURNING id
     `,
       [
         testClientId,
         `Non Approved Schedule Advertisement ${timestamp}`,
+        "2026-01-01T00:00:00.000Z",
+        "2027-12-31T23:59:59.000Z",
         testUserId
       ]
     );
 
-    const nonApprovedAdvertisementId = Number(advertisementResult.rows[0].id);
+    nonApprovedAdvertisementId = Number(advertisementResult.rows[0].id);
 
-    const response = await request(app)
-      .post("/api/v1/advertisements/schedules")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        advertisementId: nonApprovedAdvertisementId,
-        placementId,
-        startAt: "2026-11-05T10:00:00.000Z",
-        endAt: "2026-11-05T12:00:00.000Z",
-        status: "SCHEDULED"
-      });
+    try {
+      expect(nonApprovedAdvertisementId).toBeGreaterThan(0);
 
-    expect(response.status).toBe(400);
+      const response = await request(app)
+        .post("/api/v1/advertisements/schedules")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({
+          advertisementId: nonApprovedAdvertisementId,
+          placementId,
+          startAt: "2026-11-05T10:00:00.000Z",
+          endAt: "2026-11-05T12:00:00.000Z",
+          status: "SCHEDULED"
+        });
 
-    await pool.query(
-      `
-      DELETE FROM advertisements
-      WHERE id = $1
-    `,
-      [nonApprovedAdvertisementId]
-    );
+      expect(response.status).toBe(400);
+    } finally {
+      await pool.query(
+        `
+        DELETE FROM advertisement_schedules
+        WHERE advertisement_id = $1
+      `,
+        [nonApprovedAdvertisementId]
+      );
+
+      await pool.query(
+        `
+        DELETE FROM advertisement_placement_rules
+        WHERE advertisement_id = $1
+      `,
+        [nonApprovedAdvertisementId]
+      );
+
+      await pool.query(
+        `
+        DELETE FROM advertisement_payments
+        WHERE advertisement_id = $1
+      `,
+        [nonApprovedAdvertisementId]
+      );
+
+      await pool.query(
+        `
+        DELETE FROM advertisement_workflow_history
+        WHERE advertisement_id = $1
+      `,
+        [nonApprovedAdvertisementId]
+      );
+
+      await pool.query(
+        `
+        DELETE FROM advertisements
+        WHERE id = $1
+      `,
+        [nonApprovedAdvertisementId]
+      );
+
+      nonApprovedAdvertisementId = 0;
+    }
   });
 
   /*

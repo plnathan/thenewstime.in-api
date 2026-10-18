@@ -181,7 +181,11 @@ export const getFinancialApprovals = async (
       ...(req.query.approvalType
         ? {
             approvalType: req.query.approvalType as
-              "DISCOUNT" | "ADJUSTMENT" | "REFUND" | "PARTIAL_REFUND"
+              | "DISCOUNT"
+              | "ADJUSTMENT"
+              | "REFUND"
+              | "PARTIAL_REFUND"
+              | "CREDIT_EXCEPTION"
           }
         : {}),
 

@@ -72,6 +72,93 @@ const commonConfigurationSchema = {
   status: statusSchema.optional()
 };
 
+const pagePlacementPairs: Record<string, readonly string[]> = {
+  HOME: ["HOME_BANNER", "HOME_TOP", "HOME_BETWEEN_SECTIONS", "HOME_SIDEBAR"],
+  NEWS_LIST: [
+    "NEWS_LIST_TOP",
+    "NEWS_LIST_BETWEEN",
+    "NEWS_LIST_BOTTOM",
+    "NEWS_LIST_SIDEBAR",
+    "NEWS_LIST_MODAL"
+  ],
+  NEWS_DETAIL: [
+    "NEWS_DETAIL_TOP",
+    "NEWS_DETAIL_BETWEEN",
+    "NEWS_DETAIL_SIDEBAR",
+    "NEWS_DETAIL_BOTTOM",
+    "NEWS_DETAIL_MODAL"
+  ]
+};
+
+const addPagePlacementIssue = (
+  value: {
+    pageType?: string | undefined;
+    placementType?: string | undefined;
+  },
+  ctx: z.RefinementCtx
+) => {
+  if (
+    value.pageType &&
+    value.placementType &&
+    !pagePlacementPairs[value.pageType]?.includes(value.placementType)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["placementType"],
+      message: `Placement type ${value.placementType} is not valid for page type ${value.pageType}.`
+    });
+  }
+};
+
+const addFrequencyAndAutoCloseIssues = (
+  value: {
+    displayFrequency?: string | null | undefined;
+    frequencyValue?: number | null | undefined;
+    autoCloseEnabled?: boolean | undefined;
+    autoCloseSeconds?: number | null | undefined;
+  },
+  ctx: z.RefinementCtx
+) => {
+  if (
+    value.displayFrequency === "ONCE_PER_PERIOD" &&
+    (value.frequencyValue === undefined ||
+      value.frequencyValue === null ||
+      value.frequencyValue <= 0)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["frequencyValue"],
+      message: "frequencyValue is required for ONCE_PER_PERIOD."
+    });
+  }
+
+  if (
+    value.autoCloseEnabled === true &&
+    (value.autoCloseSeconds === undefined ||
+      value.autoCloseSeconds === null ||
+      value.autoCloseSeconds <= 0)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["autoCloseSeconds"],
+      message: "autoCloseSeconds is required when autoCloseEnabled is true."
+    });
+  }
+
+  if (
+    value.autoCloseEnabled === false &&
+    value.autoCloseSeconds !== undefined &&
+    value.autoCloseSeconds !== null
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["autoCloseSeconds"],
+      message:
+        "autoCloseSeconds must be null or omitted when autoCloseEnabled is false."
+    });
+  }
+};
+
 export const createPlacementSchema = z
   .object({
     code: z
@@ -94,40 +181,8 @@ export const createPlacementSchema = z
     ...commonConfigurationSchema
   })
   .superRefine((value, ctx) => {
-    if (
-      value.displayFrequency === "ONCE_PER_PERIOD" &&
-      value.frequencyValue === undefined
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["frequencyValue"],
-        message: "frequencyValue is required for ONCE_PER_PERIOD."
-      });
-    }
-
-    if (
-      value.autoCloseEnabled === true &&
-      value.autoCloseSeconds === undefined
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["autoCloseSeconds"],
-        message: "autoCloseSeconds is required when autoCloseEnabled is true."
-      });
-    }
-
-    if (
-      value.autoCloseEnabled === false &&
-      value.autoCloseSeconds !== undefined &&
-      value.autoCloseSeconds !== null
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["autoCloseSeconds"],
-        message:
-          "autoCloseSeconds must be null or omitted when autoCloseEnabled is false."
-      });
-    }
+    addPagePlacementIssue(value, ctx);
+    addFrequencyAndAutoCloseIssues(value, ctx);
   });
 
 export const updatePlacementSchema = z
@@ -145,41 +200,8 @@ export const updatePlacementSchema = z
     ...commonConfigurationSchema
   })
   .superRefine((value, ctx) => {
-    if (
-      value.displayFrequency === "ONCE_PER_PERIOD" &&
-      value.frequencyValue === undefined
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["frequencyValue"],
-        message:
-          "frequencyValue is required when displayFrequency is ONCE_PER_PERIOD."
-      });
-    }
-
-    if (
-      value.autoCloseEnabled === true &&
-      value.autoCloseSeconds === undefined
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["autoCloseSeconds"],
-        message: "autoCloseSeconds is required when autoCloseEnabled is true."
-      });
-    }
-
-    if (
-      value.autoCloseEnabled === false &&
-      value.autoCloseSeconds !== undefined &&
-      value.autoCloseSeconds !== null
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["autoCloseSeconds"],
-        message:
-          "autoCloseSeconds must be null or omitted when autoCloseEnabled is false."
-      });
-    }
+    addPagePlacementIssue(value, ctx);
+    addFrequencyAndAutoCloseIssues(value, ctx);
   });
 
 export const placementIdSchema = z.object({

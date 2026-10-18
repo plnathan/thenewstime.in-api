@@ -4,13 +4,13 @@ const approvalTypeSchema = z.enum([
   "DISCOUNT",
   "REFUND",
   "PARTIAL_REFUND",
-  "ADJUSTMENT"
+  "ADJUSTMENT",
+  "CREDIT_EXCEPTION"
 ]);
 
 const thresholdValuesSchema = z
   .object({
     amountThreshold: z.number().positive().optional(),
-
     percentageThreshold: z.number().min(0).max(100).optional()
   })
   .refine(
@@ -41,7 +41,19 @@ export const createFinancialApprovalThresholdSchema = z
   .object({
     approvalType: approvalTypeSchema
   })
-  .and(thresholdValuesSchema);
+  .and(thresholdValuesSchema)
+  .superRefine((value, context) => {
+    if (
+      value.approvalType === "CREDIT_EXCEPTION" &&
+      value.amountThreshold === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["amountThreshold"],
+        message: "Credit Exception thresholds require an amount threshold."
+      });
+    }
+  });
 
 export const updateFinancialApprovalThresholdSchema = z
   .object({

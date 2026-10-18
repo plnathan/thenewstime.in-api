@@ -8,13 +8,34 @@ import type {
   CreateScheduleInput
 } from "../schedule.types.js";
 
+const { connectMock, clientQueryMock, releaseMock, mockClient } = vi.hoisted(
+  () => {
+    const clientQueryMock = vi.fn();
+    const releaseMock = vi.fn();
+    const mockClient = { query: clientQueryMock, release: releaseMock };
+    return {
+      connectMock: vi.fn(),
+      clientQueryMock,
+      releaseMock,
+      mockClient
+    };
+  }
+);
+
+vi.mock("../../../../../shared/config/db.js", () => ({
+  pool: { connect: connectMock }
+}));
+
 vi.mock("../schedule.repository.js", () => ({
   findAll: vi.fn(),
   findById: vi.fn(),
   findAdvertisementWorkflowStatus: vi.fn(),
+  findAdvertisementOperationalStatus: vi.fn(),
+  findAdvertisementCampaignWindow: vi.fn(),
   findPlacement: vi.fn(),
   findPlacementRule: vi.fn(),
   findOverlapping: vi.fn(),
+  lockPlacementScheduleScope: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   activate: vi.fn(),
@@ -58,10 +79,22 @@ const validInput: CreateScheduleInput = {
 describe("Advertisement Schedule Service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    connectMock.mockResolvedValue(mockClient);
+    clientQueryMock.mockResolvedValue({ rows: [] });
+    vi.mocked(repository.lockPlacementScheduleScope).mockResolvedValue(
+      undefined
+    );
 
     vi.mocked(repository.findAdvertisementWorkflowStatus).mockResolvedValue(
       "APPROVED"
     );
+    vi.mocked(repository.findAdvertisementOperationalStatus).mockResolvedValue(
+      "ACTIVE"
+    );
+    vi.mocked(repository.findAdvertisementCampaignWindow).mockResolvedValue({
+      startAt: new Date("2026-09-01T00:00:00.000Z"),
+      endAt: new Date("2026-12-01T00:00:00.000Z")
+    });
 
     vi.mocked(repository.findPlacement).mockResolvedValue({
       id: 20,
@@ -156,7 +189,7 @@ describe("Advertisement Schedule Service", () => {
 
     expect(result.id).toBe(1);
 
-    expect(repository.create).toHaveBeenCalledWith(validInput, 100);
+    expect(repository.create).toHaveBeenCalledWith(validInput, 100, mockClient);
   });
 
   it("should reject scheduling a missing advertisement", async () => {
@@ -262,7 +295,8 @@ describe("Advertisement Schedule Service", () => {
       {
         priority: 10
       },
-      100
+      100,
+      mockClient
     );
   });
 
@@ -285,6 +319,20 @@ describe("Advertisement Schedule Service", () => {
     ).rejects.toMatchObject({
       statusCode: 409
     });
+  });
+
+  it("rejects direct schedule activation while the advertisement is operationally inactive", async () => {
+    vi.mocked(repository.findById).mockResolvedValue(
+      createMockSchedule({ status: "PAUSED" })
+    );
+    vi.mocked(repository.findAdvertisementOperationalStatus).mockResolvedValue(
+      "INACTIVE"
+    );
+
+    await expect(service.resume(1, 100)).rejects.toThrow(
+      "A schedule can only be activated or resumed while its advertisement is operationally ACTIVE. Use the advertisement activation action to resume delivery."
+    );
+    expect(repository.resume).not.toHaveBeenCalled();
   });
 
   it("should activate a scheduled schedule", async () => {

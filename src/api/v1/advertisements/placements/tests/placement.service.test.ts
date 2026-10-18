@@ -114,6 +114,45 @@ describe("Advertisement Placement Service", () => {
       expect(repository.findActiveFormatById).not.toHaveBeenCalled();
     });
 
+    it("should reject a placement type that does not belong to its page type", async () => {
+      const input: CreateAdvertisementPlacementInput = {
+        code: "INVALID_HOME_NEWS",
+        displayName: "Invalid Homepage Placement",
+        pageType: "HOME",
+        placementType: "NEWS_LIST_TOP"
+      };
+
+      await expect(service.create(input, 10)).rejects.toEqual(
+        new ApiError(
+          400,
+          "Placement type NEWS_LIST_TOP is not valid for page type HOME."
+        )
+      );
+
+      expect(repository.findByCode).not.toHaveBeenCalled();
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it("should reject null frequency for ONCE_PER_PERIOD", async () => {
+      const input = {
+        code: "HOME_PERIOD_NULL",
+        displayName: "Periodic Homepage Ad",
+        pageType: "HOME",
+        placementType: "HOME_TOP",
+        displayFrequency: "ONCE_PER_PERIOD",
+        frequencyValue: null
+      } as CreateAdvertisementPlacementInput;
+
+      await expect(service.create(input, 10)).rejects.toEqual(
+        new ApiError(
+          400,
+          "frequencyValue must be a positive integer for ONCE_PER_PERIOD."
+        )
+      );
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it("should validate an explicitly supplied format", async () => {
       const input: CreateAdvertisementPlacementInput = {
         code: "HOME_TOP",
@@ -176,12 +215,17 @@ describe("Advertisement Placement Service", () => {
       expect(repository.create).toHaveBeenCalledWith(input, 10);
     });
 
-    it("should trim the code before duplicate checking", async () => {
+    it("should trim the code before duplicate checking and repository creation", async () => {
       const input: CreateAdvertisementPlacementInput = {
         code: "  HOME_TOP  ",
         displayName: "Homepage Top",
         pageType: "HOME",
         placementType: "HOME_TOP"
+      };
+
+      const normalizedInput: CreateAdvertisementPlacementInput = {
+        ...input,
+        code: "HOME_TOP"
       };
 
       vi.mocked(repository.findByCode).mockResolvedValue(null);
@@ -190,7 +234,7 @@ describe("Advertisement Placement Service", () => {
       await service.create(input, 10);
 
       expect(repository.findByCode).toHaveBeenCalledWith("HOME_TOP");
-      expect(repository.create).toHaveBeenCalledWith(input, 10);
+      expect(repository.create).toHaveBeenCalledWith(normalizedInput, 10);
     });
 
     it("should reject duplicate placement code", async () => {
@@ -220,7 +264,10 @@ describe("Advertisement Placement Service", () => {
       } as CreateAdvertisementPlacementInput;
 
       await expect(service.create(input, 10)).rejects.toEqual(
-        new ApiError(400, "frequencyValue is required for ONCE_PER_PERIOD.")
+        new ApiError(
+          400,
+          "frequencyValue must be a positive integer for ONCE_PER_PERIOD."
+        )
       );
 
       expect(repository.findByCode).not.toHaveBeenCalled();
@@ -239,7 +286,7 @@ describe("Advertisement Placement Service", () => {
       await expect(service.create(input, 10)).rejects.toEqual(
         new ApiError(
           400,
-          "autoCloseSeconds is required when autoCloseEnabled is true."
+          "autoCloseSeconds must be a positive integer when auto-close is enabled."
         )
       );
 
@@ -428,7 +475,7 @@ describe("Advertisement Placement Service", () => {
       await expect(service.update(1, input, 20)).rejects.toEqual(
         new ApiError(
           400,
-          "frequencyValue is required when changing displayFrequency to ONCE_PER_PERIOD."
+          "frequencyValue must be a positive integer for ONCE_PER_PERIOD."
         )
       );
 
@@ -469,7 +516,7 @@ describe("Advertisement Placement Service", () => {
       await expect(service.update(1, input, 20)).rejects.toEqual(
         new ApiError(
           400,
-          "autoCloseSeconds is required when enabling auto-close."
+          "autoCloseSeconds must be a positive integer when auto-close is enabled."
         )
       );
 
@@ -505,6 +552,42 @@ describe("Advertisement Placement Service", () => {
       ).rejects.toEqual(
         new ApiError(404, "Advertisement placement not found.")
       );
+    });
+  });
+
+  describe("update effective configuration", () => {
+    it("rejects clearing frequencyValue while ONCE_PER_PERIOD remains configured", async () => {
+      vi.mocked(repository.findById).mockResolvedValue({
+        ...placement,
+        displayFrequency: "ONCE_PER_PERIOD",
+        frequencyValue: 3
+      });
+
+      await expect(
+        service.update(1, { frequencyValue: null }, 10)
+      ).rejects.toEqual(
+        new ApiError(
+          400,
+          "frequencyValue must be a positive integer for ONCE_PER_PERIOD."
+        )
+      );
+
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects page-type changes that conflict with the persisted placement type", async () => {
+      vi.mocked(repository.findById).mockResolvedValue(placement);
+
+      await expect(
+        service.update(1, { pageType: "NEWS_LIST" }, 10)
+      ).rejects.toEqual(
+        new ApiError(
+          400,
+          "Placement type HOME_TOP is not valid for page type NEWS_LIST."
+        )
+      );
+
+      expect(repository.update).not.toHaveBeenCalled();
     });
   });
 

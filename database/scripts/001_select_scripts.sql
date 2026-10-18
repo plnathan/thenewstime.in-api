@@ -684,3 +684,95 @@ SELECT
 FROM advertisements
 WHERE id = 1525;
 ------------------------------------
+SELECT
+    approval_type,
+    COUNT(*) AS active_count,
+    ARRAY_AGG(id ORDER BY updated_at DESC NULLS LAST, id DESC) AS threshold_ids
+FROM public.advertisement_financial_approval_thresholds
+WHERE status = 'ACTIVE'
+GROUP BY approval_type
+HAVING COUNT(*) > 1
+ORDER BY approval_type;
+-------------------------------------
+SELECT
+    id,
+    approval_type,
+    amount_threshold,
+    percentage_threshold,
+    status,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by
+FROM public.advertisement_financial_approval_thresholds
+WHERE approval_type in('DISCOUNT','REFUND') 
+  AND status = 'ACTIVE'
+ORDER BY updated_at DESC NULLS LAST, id DESC;  
+--------------------------------------------
+SELECT
+    id,
+    approval_type,
+    amount_threshold,
+    percentage_threshold,
+    status
+FROM public.advertisement_financial_approval_thresholds
+WHERE amount_threshold IS NOT NULL
+  AND percentage_threshold IS NOT NULL;
+--------------------------------------------
+SELECT
+    approval_type,
+    COUNT(*) AS active_count,
+    ARRAY_AGG(id ORDER BY id) AS threshold_ids
+FROM public.advertisement_financial_approval_thresholds
+WHERE status = 'ACTIVE'
+GROUP BY approval_type
+HAVING COUNT(*) > 1;
+--------------------------------------------
+SELECT
+    payment_status,
+    payment_type,
+    COUNT(*) AS payment_count,
+    COALESCE(SUM(amount), 0) AS total_amount
+FROM advertisement_payments
+WHERE advertisement_id = 2122 
+GROUP BY payment_status, payment_type
+ORDER BY payment_status, payment_type;
+------------------------------------------
+SELECT
+    a.id AS advertisement_id,
+    a.name AS advertisement_name,
+    a.advertisement_amount,
+    a.discount_amount,
+    a.adjustment_amount,
+    a.advance_amount,
+
+    COALESCE(
+        (
+            SELECT SUM(p.amount)
+            FROM advertisement_payments p
+            WHERE p.advertisement_id = a.id
+              AND p.payment_status IN ('VERIFIED', 'REFUNDED')
+        ),
+        0
+    ) AS verified_payment_amount,
+
+    COALESCE(
+        (
+            SELECT SUM(pr.amount)
+            FROM advertisement_payment_refunds pr
+            INNER JOIN advertisement_payments p
+                ON p.id = pr.payment_id
+            WHERE p.advertisement_id = a.id
+        ),
+        0
+    ) AS refunded_amount,
+
+    (
+        SELECT COUNT(*)
+        FROM advertisement_payments p
+        WHERE p.advertisement_id = a.id
+    ) AS total_payment_records
+
+FROM advertisements a
+WHERE a.id = 2122;
+------------------------------------------
