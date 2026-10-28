@@ -1048,6 +1048,8 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
       .post(`/api/v1/advertisements/payments/${paymentId}/refunds`)
       .set("Authorization", `Bearer ${financeAccessToken}`)
       .send({
+        paymentId,
+        financialApprovalId: approvalId,
         amount: 5000,
         refundReference: `FIN-REFUND-${uniqueSuffix}`,
         refundReason: "Approved partial customer refund."
@@ -1174,6 +1176,8 @@ describe("Advertisement Financial Approval + Payment/Refund Interaction Integrat
       .post(`/api/v1/advertisements/payments/${paymentId}/refunds`)
       .set("Authorization", `Bearer ${financeAccessToken}`)
       .send({
+        paymentId,
+        financialApprovalId: approvalId,
         amount: 10000,
         refundReference: `FIN-FULL-REFUND-${uniqueSuffix}`,
         refundReason: "Full refund after financial approval."

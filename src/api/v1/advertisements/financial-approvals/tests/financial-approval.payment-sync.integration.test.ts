@@ -1106,7 +1106,7 @@ describe("Advertisement Financial Approval Payment Sync API Integration", () => 
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
-        requestedPercentage: 20,
+        requestedAmount: 5000,
         remarks:
           "Financial approval linked to verified payment for synchronization testing."
       });
@@ -1124,7 +1124,7 @@ describe("Advertisement Financial Approval Payment Sync API Integration", () => 
     expect(Number(response.body.data.clientId)).toBe(testClientId);
     expect(Number(response.body.data.paymentId)).toBe(testPaymentId);
     expect(response.body.data.approvalType).toBe("PARTIAL_REFUND");
-    expect(Number(response.body.data.requestedPercentage)).toBe(20);
+    expect(Number(response.body.data.requestedAmount)).toBe(5000);
     expect(response.body.data.status).toBe("SUBMITTED");
     expect(Number(response.body.data.requestedBy)).toBe(creatorUserId);
   });

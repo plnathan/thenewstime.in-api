@@ -21,7 +21,8 @@ const advertisementWorkflowStatuses = [
 const advertisementStatuses = [
   "DRAFT",
   "ACTIVE",
-  "INACTIVE",
+  "PAUSED",
+  "COMPLETED",
   "ARCHIVED"
 ] as const;
 

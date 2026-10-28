@@ -89,6 +89,10 @@ function createCandidate(
   };
 
   const base: AdvertisementDeliveryCandidate = {
+    creativeRotationEnabled: false,
+    creativeRotationIntervalSeconds: 10,
+    creativeRotationStrategy: "ROUND_ROBIN",
+    
     advertisementId: 100,
     advertisementName: "Test Advertisement",
     advertisementType: "DISPLAY",
@@ -181,6 +185,69 @@ describe("Advertisement Delivery Service", () => {
     vi.clearAllMocks();
 
     mockedFindEligibleHouseAdCandidates.mockResolvedValue([]);
+  });
+
+  it.each([
+    ["HOME", "HOME_SIDEBAR"],
+    ["NEWS_LIST", "NEWS_LIST_SIDEBAR"],
+    ["NEWS_DETAIL", "NEWS_DETAIL_SIDEBAR"]
+  ] as const)(
+    "uses house inventory by default for %s %s",
+    async (pageType, placementType) => {
+      const placement = createPlacement({
+        id: 15,
+        pageType,
+        placementType,
+        fallbackBehavior: "HIDE"
+      });
+      mockedFindPlacementById.mockResolvedValue(placement);
+      mockedFindEligibleCandidates.mockResolvedValue([]);
+      mockedFindEligibleHouseAdCandidates.mockResolvedValue([
+        createCandidate({
+          advertisementId: 200,
+          isHouseAd: true,
+          placementId: 15,
+          pageType,
+          placementType,
+          fallbackBehavior: "HIDE"
+        })
+      ]);
+
+      const result = await getEligibleAdvertisements({
+        pageType,
+        placementType,
+        placementId: 15
+      });
+      expect(mockedFindEligibleHouseAdCandidates).toHaveBeenCalledWith(
+        pageType,
+        placementType,
+        15,
+        undefined
+      );
+      expect(result.fallbackApplied).toBe(true);
+      expect(result.advertisements).toHaveLength(1);
+      expect(result.advertisements[0]?.isHouseAd).toBe(true);
+    }
+  );
+
+  it("prefers paid inventory over house fallback for sidebar placements", async () => {
+    mockedFindPlacementById.mockResolvedValue(
+      createPlacement({
+        id: 15,
+        pageType: "NEWS_DETAIL",
+        placementType: "NEWS_DETAIL_SIDEBAR"
+      })
+    );
+    mockedFindEligibleCandidates.mockResolvedValue([
+      createCandidate({ placementId: 15, placementType: "NEWS_DETAIL_SIDEBAR" })
+    ]);
+    const result = await getEligibleAdvertisements({
+      pageType: "NEWS_DETAIL",
+      placementType: "NEWS_DETAIL_SIDEBAR",
+      placementId: 15
+    });
+    expect(result.fallbackApplied).toBe(false);
+    expect(mockedFindEligibleHouseAdCandidates).not.toHaveBeenCalled();
   });
 
   it("should retrieve eligible advertisements for a valid page and placement", async () => {

@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 
 import { sendSuccess } from "../../../../shared/utils/response.js";
 
+import * as placementRepository from "../placements/placement.repository.js";
+
 import * as deliveryService from "./delivery.service.js";
 
 import type {
@@ -69,6 +71,46 @@ export const getEligibleAdvertisements = async (
     const result = await deliveryService.getEligibleAdvertisements(request);
 
     sendSuccess(res, "Eligible advertisements retrieved successfully.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Public, read-only placement identity discovery. Never exposes administrative fields. */
+export const getPublicPlacementSlots = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const pageType = String(req.query.pageType ?? "");
+    const placementType = String(req.query.placementType ?? "");
+    if (
+      !["HOME", "NEWS_LIST", "NEWS_DETAIL"].includes(pageType) ||
+      !/^(HOME|NEWS_LIST|NEWS_DETAIL)_[A-Z_]+$/.test(placementType) ||
+      !placementType.startsWith(`${pageType}_`)
+    ) {
+      res
+        .status(400)
+        .json({ success: false, message: "Invalid placement query" });
+      return;
+    }
+    const placements = await placementRepository.findAll();
+    const slots = placements
+      .filter(
+        (placement) =>
+          placement.pageType === pageType &&
+          placement.placementType === placementType &&
+          placement.status === "ACTIVE" &&
+          placement.isEnabled
+      )
+      .map((placement) => ({
+        id: placement.id,
+        code: placement.code,
+        displayOrder: placement.displayOrder,
+        fallbackBehavior: placement.fallbackBehavior
+      }));
+    sendSuccess(res, "Public placement slots retrieved.", slots);
   } catch (error) {
     next(error);
   }

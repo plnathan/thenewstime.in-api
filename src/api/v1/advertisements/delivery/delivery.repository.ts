@@ -79,6 +79,10 @@ export interface AdvertisementDeliveryCandidate {
   rotationIntervalSeconds: number;
   rotationStrategy: "ROUND_ROBIN";
 
+  creativeRotationEnabled: boolean;
+  creativeRotationIntervalSeconds: number;
+  creativeRotationStrategy: "ROUND_ROBIN";
+
   rotationMemberId: number | null;
   rotationPriority: number | null;
 
@@ -139,6 +143,10 @@ interface AdvertisementDeliveryCandidateDbRow {
   rotation_mode: "TIME_BASED";
   rotation_interval_seconds: number | string;
   rotation_strategy: "ROUND_ROBIN";
+
+  creative_rotation_enabled: boolean;
+  creative_rotation_interval_seconds: number | string;
+  creative_rotation_strategy: "ROUND_ROBIN";
 
   rotation_member_id: string | number | null;
   rotation_priority: number | string | null;
@@ -365,6 +373,11 @@ function mapCandidate(
     closeButtonEnabled: row.close_button_enabled,
     closeOnOverlayClick: row.close_on_overlay_click,
 
+    creativeRotationEnabled: row.creative_rotation_enabled,
+    creativeRotationIntervalSeconds: toNumber(
+      row.creative_rotation_interval_seconds
+    ),
+    creativeRotationStrategy: row.creative_rotation_strategy,
     rotationEnabled: row.rotation_enabled,
     rotationMode: row.rotation_mode,
     rotationIntervalSeconds: toNumber(row.rotation_interval_seconds),
@@ -465,6 +478,10 @@ SELECT
   COALESCE(p.rotation_interval_seconds, 10) AS rotation_interval_seconds,
   COALESCE(p.rotation_strategy, 'ROUND_ROBIN') AS rotation_strategy,
 
+  COALESCE(crc.rotation_enabled, FALSE) AS creative_rotation_enabled,
+  COALESCE(crc.rotation_interval_seconds, 10) AS creative_rotation_interval_seconds,
+  COALESCE(crc.rotation_strategy, 'ROUND_ROBIN') AS creative_rotation_strategy,
+
   rm.id AS rotation_member_id,
   rm.priority AS rotation_priority,
 
@@ -547,6 +564,9 @@ INNER JOIN advertisement_schedules s
  AND s.start_at <= $3
  AND s.end_at > $3
 
+LEFT JOIN advertisement_creative_rotation_configs crc
+  ON crc.advertisement_id = a.id
+
 LEFT JOIN advertisement_rotation_members rm
   ON rm.placement_id = p.id
  AND rm.advertisement_id = a.id
@@ -568,21 +588,24 @@ LEFT JOIN LATERAL (
     active_creative.is_primary,
     active_creative.format_id
   FROM advertisement_creatives active_creative
-    LEFT JOIN advertisement_formats active_creative_format
+    
+  LEFT JOIN advertisement_formats active_creative_format
     ON active_creative_format.id = active_creative.format_id
    AND active_creative_format.status = 'ACTIVE'
-       AND NULLIF(BTRIM(active_creative.media_url), '') IS NOT NULL
-           AND (
-      active_creative.format_id IS NULL
-      OR active_creative_format.id IS NOT NULL
-    )
+
   WHERE active_creative.advertisement_id = a.id
     AND active_creative.status = 'ACTIVE'
     AND NULLIF(BTRIM(active_creative.media_url), '') IS NOT NULL
+    AND (
+      active_creative.format_id IS NULL
+      OR active_creative_format.id IS NOT NULL
+    )
+
   ORDER BY
     active_creative.is_primary DESC,
     active_creative.display_order ASC,
     active_creative.id ASC
+
   LIMIT 1
 ) c
   ON TRUE
@@ -644,7 +667,7 @@ LEFT JOIN LATERAL (
 WHERE a.workflow_status = 'APPROVED'
   AND a.status = 'ACTIVE'
   AND a.is_house_ad = ${houseAdOnly ? "TRUE" : "FALSE"}
-  ${houseAdOnly ? "AND p.fallback_behavior = 'HOUSE_AD'" : ""}
+  ${houseAdOnly ? "AND p.fallback_behavior = 'HOUSE_AD' AND p.fallback_advertisement_id = a.id" : ""}
   AND a.start_at IS NOT NULL
   AND a.end_at IS NOT NULL
   AND a.end_at > a.start_at

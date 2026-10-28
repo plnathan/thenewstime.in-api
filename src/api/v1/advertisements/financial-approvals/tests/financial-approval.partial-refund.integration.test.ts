@@ -1287,8 +1287,8 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
    * ==========================================================================
    */
 
-  it("should create a PARTIAL_REFUND approval using requestedPercentage", async () => {
-    const requestedPercentage = 25;
+  it("should create a PARTIAL_REFUND approval using requestedAmount", async () => {
+    const requestedAmount = 6250;
 
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
@@ -1298,7 +1298,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
-        requestedPercentage,
+        requestedAmount,
         remarks: "Partial refund requested for verified payment."
       });
 
@@ -1315,11 +1315,9 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
 
     expect(Number(response.body.data.paymentId)).toBe(testPaymentId);
 
-    expect(Number(response.body.data.requestedPercentage)).toBe(
-      requestedPercentage
-    );
+    expect(Number(response.body.data.requestedAmount)).toBe(requestedAmount);
 
-    expect(response.body.data.requestedAmount).toBeNull();
+    expect(response.body.data.requestedPercentage).toBeNull();
 
     expect(response.body.data.status).toBe("SUBMITTED");
 
@@ -1348,7 +1346,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
 
     expect(Number(response.body.data.paymentId)).toBe(testPaymentId);
 
-    expect(Number(response.body.data.requestedPercentage)).toBe(25);
+    expect(Number(response.body.data.requestedAmount)).toBe(6250);
   });
 
   /*
@@ -1396,7 +1394,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
     const approvalId = createdApprovalIds[createdApprovalIds.length - 1];
 
     const approvalRemarks =
-      "Partial refund percentage approved after financial verification.";
+      "Partial refund amount approved after financial verification.";
 
     const response = await request(app)
       .post(
@@ -1418,7 +1416,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
 
     expect(Number(response.body.data.paymentId)).toBe(testPaymentId);
 
-    expect(Number(response.body.data.requestedPercentage)).toBe(25);
+    expect(Number(response.body.data.requestedAmount)).toBe(6250);
 
     expect(Number(response.body.data.reviewedBy)).toBe(financeUserId);
 
@@ -1457,7 +1455,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
           item.toStatus === "APPROVED" &&
           Number(item.actionBy) === financeUserId &&
           item.remarks ===
-            "Partial refund percentage approved after financial verification."
+            "Partial refund amount approved after financial verification."
       )
     ).toBe(true);
   });
@@ -1468,7 +1466,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
    * ==========================================================================
    */
 
-  it("should accept a PARTIAL_REFUND requestedPercentage of zero", async () => {
+  it("should reject a PARTIAL_REFUND requestedPercentage of zero because refunds require an amount", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
@@ -1478,33 +1476,11 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
         requestedPercentage: 0,
-        remarks: "Zero percentage partial refund boundary test."
+        remarks: "Refund percentage is not supported."
       });
 
-    expect(response.status).toBe(201);
-    expect(response.body.success).toBe(true);
-
-    const approvalId = Number(response.body.data.id);
-
-    expect(approvalId).toBeGreaterThan(0);
-
-    createdApprovalIds.push(approvalId);
-
-    expect(Number(response.body.data.requestedPercentage)).toBe(0);
-
-    expect(response.body.data.requestedAmount).toBeNull();
-
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Zero percentage partial refund approved."
-      });
-
-    expect(approveResponse.status).toBe(200);
-    expect(approveResponse.body.data.status).toBe("APPROVED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
   });
 
   /*
@@ -1513,7 +1489,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
    * ==========================================================================
    */
 
-  it("should accept a PARTIAL_REFUND requestedPercentage of 100", async () => {
+  it("should reject a PARTIAL_REFUND requestedPercentage of 100 because refunds require an amount", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
@@ -1523,31 +1499,11 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
         requestedPercentage: 100,
-        remarks: "Maximum percentage partial refund boundary test."
+        remarks: "Refund percentage is not supported."
       });
 
-    expect(response.status).toBe(201);
-    expect(response.body.success).toBe(true);
-
-    const approvalId = Number(response.body.data.id);
-
-    expect(approvalId).toBeGreaterThan(0);
-
-    createdApprovalIds.push(approvalId);
-
-    expect(Number(response.body.data.requestedPercentage)).toBe(100);
-
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Maximum percentage partial refund approved."
-      });
-
-    expect(approveResponse.status).toBe(200);
-    expect(approveResponse.body.data.status).toBe("APPROVED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
   });
 
   /*
@@ -1703,7 +1659,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
-        requestedPercentage: 30,
+        requestedAmount: 1000,
         remarks: "Creator approval authorization test."
       });
 
@@ -1755,7 +1711,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
-        requestedPercentage: 35,
+        requestedAmount: 1000,
         remarks: "First pending partial refund approval."
       });
 
@@ -1775,7 +1731,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
-        requestedPercentage: 40,
+        requestedAmount: 24000,
         remarks: "Second pending partial refund approval."
       });
 
@@ -1810,7 +1766,7 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "PARTIAL_REFUND",
-        requestedPercentage: 45,
+        requestedAmount: 1000,
         remarks: "Already approved partial refund test."
       });
 
@@ -1894,7 +1850,9 @@ describe("Advertisement Financial Approval Partial Refund Integration", () => {
 
       const hasPercentage = row.requested_percentage !== null;
 
-      expect(hasAmount !== hasPercentage).toBe(true);
+      expect(hasAmount).toBe(true);
+      expect(hasPercentage).toBe(false);
+      expect(Number(row.requested_amount)).toBeGreaterThan(0);
     }
   });
 

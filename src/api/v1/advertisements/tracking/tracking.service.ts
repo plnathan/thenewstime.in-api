@@ -435,5 +435,18 @@ export const getMetrics = async (
     throw new ApiError(404, "Advertisement not found.");
   }
 
-  return repository.getMetrics(advertisementId, query.from, query.to);
+  // HTML date inputs represent calendar days in India, not UTC instants.
+  // Use [start of FROM day, start of day AFTER TO) to include the entire
+  // selected final day without losing events after midnight UTC.
+  const indiaOffsetMs = 5.5 * 60 * 60 * 1000;
+  const from =
+    query.from === undefined
+      ? undefined
+      : new Date(query.from.getTime() - indiaOffsetMs);
+  const toExclusive =
+    query.to === undefined
+      ? undefined
+      : new Date(query.to.getTime() + 24 * 60 * 60 * 1000 - indiaOffsetMs);
+
+  return repository.getMetrics(advertisementId, from, toExclusive);
 };

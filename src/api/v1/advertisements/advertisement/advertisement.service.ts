@@ -788,6 +788,19 @@ const changeWorkflowStatus = async (
       throw new ApiError(404, "Advertisement not found.");
     }
 
+    // Never archive an advertisement that is still live or paused.
+    // Complete/stop its delivery first; this also prevents accidental
+    // cancellation of a live booking through the workflow endpoint.
+    if (
+      nextStatus === "ARCHIVED" &&
+      (advertisement.status === "ACTIVE" || advertisement.status === "PAUSED")
+    ) {
+      throw new ApiError(
+        409,
+        "Stop delivery before archiving this advertisement."
+      );
+    }
+
     validateWorkflowTransition(advertisement.workflowStatus, nextStatus);
 
     /*
@@ -881,7 +894,7 @@ const changeWorkflowStatus = async (
      */
     if (nextStatus === "ON_HOLD") {
       // A hold must pause any active schedule even if the advertisement's
-      // operational status was already INACTIVE (for example, a prior pause).
+      // operational status was already PAUSED (for example, a prior pause).
       await client.query(
         `UPDATE advertisement_schedules
          SET status = 'PAUSED', updated_by = $2, updated_at = CURRENT_TIMESTAMP
@@ -892,14 +905,14 @@ const changeWorkflowStatus = async (
       if (advertisement.status === "ACTIVE") {
         await client.query(
           `UPDATE advertisements
-           SET status = 'INACTIVE', updated_by = $2, updated_at = CURRENT_TIMESTAMP
+           SET status = 'PAUSED', updated_by = $2, updated_at = CURRENT_TIMESTAMP
            WHERE id = $1 AND status = 'ACTIVE'`,
           [id, performedBy]
         );
         await client.query(
           `INSERT INTO public.advertisement_operational_audit
            (advertisement_id, event_type, previous_status, new_status, remarks, performed_by)
-           VALUES ($1, 'HELD', 'ACTIVE', 'INACTIVE', $2, $3)`,
+           VALUES ($1, 'HELD', 'ACTIVE', 'PAUSED', $2, $3)`,
           [id, transitionReason, performedBy]
         );
         const reloaded = await repository.findById(id, client);
@@ -1567,10 +1580,10 @@ const changeOperationalState = async (
 
     const updated = await client.query<{ id: number | string }>(
       `UPDATE advertisements
-       SET status = 'INACTIVE', updated_by = $2, updated_at = CURRENT_TIMESTAMP
+       SET status = $3, updated_by = $2, updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND status = 'ACTIVE' AND workflow_status = 'APPROVED'
        RETURNING id`,
-      [id, performedBy]
+      [id, performedBy, action === "PAUSE" ? "PAUSED" : "COMPLETED"]
     );
     if (!updated.rows[0]) {
       throw new ApiError(
@@ -1581,8 +1594,14 @@ const changeOperationalState = async (
     await client.query(
       `INSERT INTO public.advertisement_operational_audit
        (advertisement_id, event_type, previous_status, new_status, remarks, performed_by)
-       VALUES ($1, $2, 'ACTIVE', 'INACTIVE', $3, $4)`,
-      [id, action === "PAUSE" ? "PAUSED" : "STOPPED", remarks, performedBy]
+       VALUES ($1, $2, 'ACTIVE', $5, $3, $4)`,
+      [
+        id,
+        action === "PAUSE" ? "PAUSED" : "STOPPED",
+        remarks,
+        performedBy,
+        action === "PAUSE" ? "PAUSED" : "COMPLETED"
+      ]
     );
     const result = await repository.findById(id, client);
     if (!result)
@@ -1657,7 +1676,7 @@ interface ActivationCreativeDimensions {
   height: number;
 }
 
-const ACTIVATION_DIMENSION_TOLERANCE_PX = 10;
+const ACTIVATION_DIMENSION_TOLERANCE_PX = 30;
 
 const parseActivationDimension = (
   value: number | string | null,
@@ -1691,13 +1710,12 @@ const validateActivationCreativeDimensions = (
   );
 
   if (
-    Math.abs(actualWidth - expected.width) >
-      ACTIVATION_DIMENSION_TOLERANCE_PX ||
-    Math.abs(actualHeight - expected.height) > ACTIVATION_DIMENSION_TOLERANCE_PX
+    actualWidth < expected.width - ACTIVATION_DIMENSION_TOLERANCE_PX ||
+    actualHeight < expected.height - ACTIVATION_DIMENSION_TOLERANCE_PX
   ) {
     throw new ApiError(
       409,
-      `Creative ${creative.id} does not match its placement format. Expected ${expected.width} × ${expected.height}px, received ${actualWidth} × ${actualHeight}px. The permitted difference is ${ACTIVATION_DIMENSION_TOLERANCE_PX}px per dimension.`
+      `Creative ${creative.id} does not match its placement format. Expected ${expected.width} × ${expected.height}px, received ${actualWidth} × ${actualHeight}px. Each dimension may be up to ${ACTIVATION_DIMENSION_TOLERANCE_PX}px smaller than expected; larger dimensions are permitted.`
     );
   }
 };
@@ -2081,22 +2099,29 @@ export const activateAdvertisement = async (
     // by activating an already-approved advertisement. An optional advance
     // payment is not a blocker by itself; outstanding-balance rules are handled
     // separately by validateCreditExceptionCoverage.
-    for (const approvalType of ["DISCOUNT", "ADJUSTMENT"] as const) {
-      const latestApproval = await getLatestFinancialApproval(id, approvalType);
-      if (
-        latestApproval?.status === "SUBMITTED" ||
-        latestApproval?.status === "HOLD"
-      ) {
-        throw new ApiError(
-          409,
-          `Advertisement cannot be activated while its ${approvalType.toLowerCase()} financial approval is pending or on hold.`
+    // House advertisements have no customer receivable or paid financial
+    // approval obligation. Preserve the complete paid-ad financial gate.
+    if (!advertisement.isHouseAd) {
+      for (const approvalType of ["DISCOUNT", "ADJUSTMENT"] as const) {
+        const latestApproval = await getLatestFinancialApproval(
+          id,
+          approvalType
         );
+        if (
+          latestApproval?.status === "SUBMITTED" ||
+          latestApproval?.status === "HOLD"
+        ) {
+          throw new ApiError(
+            409,
+            `Advertisement cannot be activated while its ${approvalType.toLowerCase()} financial approval is pending or on hold.`
+          );
+        }
       }
-    }
 
-    // Recheck the financial position at activation time. An approved credit
-    // exception may have expired or been revoked since workflow approval.
-    await validateCreditExceptionCoverage(advertisement);
+      // Recheck the financial position at activation time. An approved credit
+      // exception may have expired or been revoked since workflow approval.
+      await validateCreditExceptionCoverage(advertisement);
+    }
 
     // Activation may happen before or after the campaign window, but a valid
     // campaign window must exist and every schedule must remain inside it.
@@ -2251,9 +2276,11 @@ export const activateAdvertisement = async (
           SELECT s.id, s.advertisement_id
           FROM advertisement_schedules s
           INNER JOIN advertisement_placements p ON p.id = s.placement_id
+          INNER JOIN advertisements other_ad ON other_ad.id = s.advertisement_id
           WHERE s.placement_id = $1
             AND s.advertisement_id <> $2
             AND COALESCE(p.rotation_enabled, FALSE) = FALSE
+            AND other_ad.is_house_ad = $5
             AND s.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
             AND s.start_at < $4
             AND s.end_at > $3
@@ -2261,7 +2288,13 @@ export const activateAdvertisement = async (
           LIMIT 1
           FOR UPDATE OF s
         `,
-        [schedule.placement_id, id, schedule.start_at, schedule.end_at]
+        [
+          schedule.placement_id,
+          id,
+          schedule.start_at,
+          schedule.end_at,
+          advertisement.isHouseAd
+        ]
       );
 
       if (crossAdvertisementOverlap.rows.length > 0) {
@@ -2408,4 +2441,55 @@ export const getAdvertisementWorkflowHistory = async (
   }
 
   return repository.findWorkflowHistory(id);
+};
+
+/**
+ * Manual operational resume. Reuses the full activation eligibility gate rather
+ * than bypassing schedule, financial, rotation or placement validation.
+ * The existing /resume endpoint remains reserved for workflow hold release.
+ */
+export const resumeDeliveryAdvertisement = async (
+  id: number,
+  performedBy: number,
+  input: AdvertisementWorkflowInput = {}
+): Promise<Advertisement> => {
+  const current = await repository.findById(id);
+  if (!current) throw new ApiError(404, "Advertisement not found.");
+  if (current.workflowStatus !== "APPROVED" || current.status !== "PAUSED") {
+    throw new ApiError(
+      409,
+      "Only approved, operationally paused advertisements can resume delivery."
+    );
+  }
+  const now = Date.now();
+  const start = current.startAt ? new Date(current.startAt).getTime() : NaN;
+  const end = current.endAt ? new Date(current.endAt).getTime() : NaN;
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    now < start ||
+    now >= end
+  ) {
+    throw new ApiError(
+      409,
+      "Delivery can resume only within the campaign window."
+    );
+  }
+  const schedule = await pool.query<{ id: number }>(
+    `SELECT id FROM advertisement_schedules
+     WHERE advertisement_id = $1 AND status = 'PAUSED'
+       AND start_at <= CURRENT_TIMESTAMP AND end_at > CURRENT_TIMESTAMP
+     LIMIT 1`,
+    [id]
+  );
+  if (!schedule.rows.length) {
+    throw new ApiError(
+      409,
+      "No currently valid paused schedule is available to resume."
+    );
+  }
+  const result = await activateAdvertisement(id, performedBy, {
+    remarks: normalizeRemarks(input.remarks) || "Manual delivery resume"
+  });
+  return result.advertisement;
 };

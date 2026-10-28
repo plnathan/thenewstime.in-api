@@ -709,3 +709,136 @@ export const getAdvertisementPreview = async (
     mobile: mobilePreview
   };
 };
+/**
+ * Atomic operational enable/disable for a logical creative slide.
+ * Paired DESKTOP/MOBILE variants share display_order.
+ * Expired/closed advertisements are immutable.
+ */
+export const updateDeliveryStatus = async (
+  advertisementId: number,
+  creativeId: number,
+  enabled: boolean,
+  userId: number
+): Promise<{
+  displayOrder: number;
+  status: "ACTIVE" | "INACTIVE";
+  updatedCount: number;
+}> => {
+  validateId(advertisementId, "advertisementId");
+  validateId(creativeId, "creativeId");
+  validateId(userId, "userId");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Serialize toggles and expiry checks for the same advertisement.
+    const ad = await client.query<{
+      workflow_status: string;
+      status: string;
+      end_at: Date | null;
+      start_at: Date | null;
+    }>(
+      `SELECT workflow_status, status, end_at, start_at FROM advertisements WHERE id = $1 FOR UPDATE`,
+      [advertisementId]
+    );
+    const current = ad.rows[0];
+    if (!current) throw new ApiError(404, "Advertisement not found.");
+    if (
+      current.status === "COMPLETED" ||
+      current.status === "ARCHIVED" ||
+      (current.end_at !== null &&
+        new Date(current.end_at).getTime() <= Date.now())
+    ) {
+      throw new ApiError(
+        409,
+        "Creative delivery controls are frozen because the advertisement has expired or closed."
+      );
+    }
+    if (
+      current.workflow_status !== "APPROVED" ||
+      !["ACTIVE", "PAUSED"].includes(current.status)
+    ) {
+      throw new ApiError(
+        409,
+        "Creative delivery controls are available only for approved, operational advertisements."
+      );
+    }
+    const selected = await client.query<{ display_order: number }>(
+      `SELECT display_order FROM advertisement_creatives WHERE id = $1 AND advertisement_id = $2`,
+      [creativeId, advertisementId]
+    );
+    if (!selected.rows[0])
+      throw new ApiError(404, "Advertisement creative not found.");
+    const displayOrder = selected.rows[0].display_order;
+    // Never leave an ACTIVE advertisement with no enabled desktop slide.
+    if (!enabled && current.status === "ACTIVE") {
+      const remaining = await client.query<{ count: string }>(
+        `SELECT COUNT(DISTINCT display_order)::text AS count
+         FROM advertisement_creatives
+         WHERE advertisement_id = $1 AND status = 'ACTIVE'
+           AND variant = 'DESKTOP' AND display_order <> $2`,
+        [advertisementId, displayOrder]
+      );
+      if (Number(remaining.rows[0]?.count ?? 0) === 0) {
+        throw new ApiError(
+          409,
+          "Cannot disable the last active creative slide. Pause the advertisement instead."
+        );
+      }
+    }
+    if (enabled) {
+      const cap = await getMaxActiveCreatives(client);
+      const counts = await client.query<{
+        active_count: string;
+        activating_count: string;
+      }>(
+        `SELECT
+          COUNT(*) FILTER (WHERE status = 'ACTIVE')::text AS active_count,
+          COUNT(*) FILTER (WHERE id = $2 AND status <> 'ACTIVE')::text AS activating_count
+         FROM advertisement_creatives WHERE advertisement_id = $1`,
+        [advertisementId, creativeId]
+      );
+      const count = counts.rows[0];
+      if (
+        Number(count?.active_count ?? 0) +
+          Number(count?.activating_count ?? 0) >
+        cap
+      ) {
+        throw new ApiError(
+          409,
+          "Enabling this slide would exceed the configured active creative limit."
+        );
+      }
+    }
+    // Legacy draft edits can leave INACTIVE records with the same display_order.
+    // Never toggle all rows sharing an order: that reactivates obsolete media.
+    // Toggle the selected row and at most one counterpart (latest row of the
+    // opposite responsive variant) belonging to the logical slide.
+    const selectedVariant = await client.query<{ variant: string }>(
+      `SELECT variant FROM advertisement_creatives WHERE id = $1 AND advertisement_id = $2 FOR UPDATE`,
+      [creativeId, advertisementId]
+    );
+    const counterpart = await client.query<{ id: number }>(
+      `SELECT id FROM advertisement_creatives
+       WHERE advertisement_id = $1 AND display_order = $2 AND variant <> $3
+       ORDER BY (status = 'ACTIVE') DESC, id DESC LIMIT 1 FOR UPDATE`,
+      [advertisementId, displayOrder, selectedVariant.rows[0]!.variant]
+    );
+    const targetIds = [
+      creativeId,
+      ...(counterpart.rows[0] ? [counterpart.rows[0].id] : [])
+    ];
+    const status = enabled ? "ACTIVE" : "INACTIVE";
+    const updated = await client.query(
+      `UPDATE advertisement_creatives SET status = $2, updated_by = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE advertisement_id = $1 AND id = ANY($4::bigint[])`,
+      [advertisementId, status, userId, targetIds]
+    );
+    await client.query("COMMIT");
+    return { displayOrder, status, updatedCount: updated.rowCount ?? 0 };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};

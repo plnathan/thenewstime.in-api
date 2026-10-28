@@ -73,7 +73,7 @@ export const getAdvertisements = async (
       ...(req.query.status
         ? {
             status: req.query.status as
-              "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED"
+              "DRAFT" | "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED"
           }
         : {})
     };
@@ -313,6 +313,23 @@ export const getAdvertisementWorkflowHistory = async (
       "Advertisement workflow history retrieved successfully.",
       history
     );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resumeDeliveryAdvertisement = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const result = await service.resumeDeliveryAdvertisement(
+      Number(req.params.id),
+      req.user.id,
+      req.body
+    );
+    sendSuccess(res, "Advertisement delivery resumed successfully.", result);
   } catch (error) {
     next(error);
   }

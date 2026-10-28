@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 
 import { authenticate } from "../../security/middleware/authenticate.middleware.js";
 import { authorize } from "../../security/middleware/authorize.middleware.js";
@@ -6,6 +7,7 @@ import { authorize } from "../../security/middleware/authorize.middleware.js";
 import { validate } from "../../../../shared/middleware/validate.middleware.js";
 
 import * as controller from "./rotation.controller.js";
+import * as creativeController from "./creative-rotation.controller.js";
 
 import {
   createRotationMemberSchema,
@@ -18,6 +20,43 @@ import {
 const router = Router();
 
 router.use(authenticate);
+
+const creativeAdvertisementIdSchema = z.object({
+  advertisementId: z.coerce.number().int().positive()
+});
+
+const updateCreativeRotationSchema = z
+  .object({
+    rotationEnabled: z.boolean().optional(),
+    rotationIntervalSeconds: z.number().int().min(1).max(3600).optional(),
+    rotationStrategy: z.literal("ROUND_ROBIN").optional()
+  })
+  .strict()
+  .refine(
+    (value) => Object.values(value).some((field) => field !== undefined),
+    {
+      message: "At least one creative rotation field is required."
+    }
+  );
+
+// Advertisement-specific creative rotation
+
+router.get(
+  "/advertisements/:advertisementId/creatives",
+  authorize("ADVERTISEMENT", "advertisements.rotation", "read"),
+  validate(creativeAdvertisementIdSchema, "params"),
+  creativeController.getCreativeConfig
+);
+
+router.patch(
+  "/advertisements/:advertisementId/creatives",
+  authorize("ADVERTISEMENT", "advertisements.rotation", "update"),
+  validate(creativeAdvertisementIdSchema, "params"),
+  validate(updateCreativeRotationSchema, "body"),
+  creativeController.updateCreativeConfig
+);
+
+// Existing placement-level advertisement rotation
 
 router.get(
   "/placements/:placementId",

@@ -140,6 +140,7 @@ const createAdvertisement = (
 } => ({
   id: 100,
   advertiserId: 1,
+  isHouseAd: false,
   clientId: 1,
 
   campaignId: null,
@@ -199,8 +200,6 @@ const createAdvertisement = (
 
   currencyCode: "INR",
 
-  isHouseAd: false,
-
   createdBy: 1,
   updatedBy: null,
 
@@ -223,6 +222,7 @@ const createAdvertisementListItem = (
 ): AdvertisementListItem => ({
   id: 100,
   advertiserId: 1,
+  isHouseAd: false,
   clientId: 1,
 
   clientName: "Test Client",

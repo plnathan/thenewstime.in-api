@@ -10,6 +10,7 @@ import {
   advertisementIdSchema,
   createAdvertisementCreativeSchema,
   creativeIdSchema,
+  creativeDeliveryStatusSchema,
   updateAdvertisementCreativeSchema
 } from "./creative.validation.js";
 
@@ -37,6 +38,14 @@ router.post(
   validate(advertisementIdSchema, "params"),
   validate(createAdvertisementCreativeSchema, "body"),
   controller.create
+);
+
+router.patch(
+  "/:creativeId/delivery-status",
+  authorize("ADVERTISEMENT", "advertisements.creatives", "update"),
+  validate(creativeIdSchema, "params"),
+  validate(creativeDeliveryStatusSchema, "body"),
+  controller.updateDeliveryStatus
 );
 
 router.get(

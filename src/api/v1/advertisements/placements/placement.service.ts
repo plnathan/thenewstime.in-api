@@ -9,7 +9,14 @@ import type {
 } from "./placement.types.js";
 
 const placementTypesByPage = {
-  HOME: ["HOME_BANNER", "HOME_TOP", "HOME_BETWEEN_SECTIONS", "HOME_SIDEBAR"],
+  HOME: [
+    "HOME_BANNER",
+    "HOME_TOP",
+    "HOME_BETWEEN_SECTIONS",
+    "HOME_SIDEBAR",
+    "HOME_BOTTOM",
+    "HOME_MODAL"
+  ],
   NEWS_LIST: [
     "NEWS_LIST_TOP",
     "NEWS_LIST_BETWEEN",
@@ -82,6 +89,24 @@ const validateConfiguration = (
     throw new ApiError(
       400,
       "autoCloseSeconds must be null or omitted when autoCloseEnabled is false."
+    );
+  }
+};
+
+/**
+ * Explicit fallback targets must be in-house inventory. Approval, activation,
+ * schedule and creative eligibility remain the responsibility of public delivery.
+ */
+const validateFallbackAdvertisement = async (
+  advertisementId: number | null | undefined
+): Promise<void> => {
+  if (advertisementId == null) return;
+  const candidate =
+    await repository.findHouseAdvertisementById(advertisementId);
+  if (!candidate) {
+    throw new ApiError(
+      400,
+      "Fallback advertisement must reference an existing in-house advertisement."
     );
   }
 };
@@ -165,6 +190,7 @@ export const create = async (
   validateCreateConfiguration(input);
 
   await validateFormat(input.formatId);
+  await validateFallbackAdvertisement(input.fallbackAdvertisementId);
 
   const existing = await repository.findByCode(input.code.trim());
 
@@ -189,6 +215,7 @@ export const update = async (
   validateUpdateConfiguration(existing, input);
 
   await validateFormat(input.formatId);
+  await validateFallbackAdvertisement(input.fallbackAdvertisementId);
 
   const normalizedInput =
     input.autoCloseEnabled === false && input.autoCloseSeconds === undefined

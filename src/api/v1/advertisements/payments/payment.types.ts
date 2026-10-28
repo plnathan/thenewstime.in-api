@@ -112,7 +112,9 @@ export interface UpdateAdvertisementPaymentInput {
 export interface CreateAdvertisementPaymentRefundInput {
   paymentId: number;
 
-  amount: number;
+  financialApprovalId: number;
+
+  amount?: number;
 
   refundDate?: Date | undefined;
 

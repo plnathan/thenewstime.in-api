@@ -372,6 +372,8 @@ describe("Advertisement Financial Approval Refund Integration", () => {
     }
   };
 
+  const temporaryPaymentIds = new Map<number, number>();
+
   const createTemporaryAdvertisement = async (
     nameSuffix: string
   ): Promise<number> => {
@@ -405,6 +407,31 @@ describe("Advertisement Financial Approval Refund Integration", () => {
     expect(response.body.data.workflowStatus).toBe("DRAFT");
 
     temporaryAdvertisementIds.push(advertisementId);
+
+    const paymentResult = await pool.query(
+      `
+      INSERT INTO advertisement_payments
+      (
+        advertisement_id, payment_date, amount, payment_method,
+        payment_status, transaction_reference, notes,
+        recorded_by, verified_by, verified_at
+      )
+      VALUES ($1, CURRENT_TIMESTAMP, $2, $3, 'VERIFIED', $4, $5, $6, $6, CURRENT_TIMESTAMP)
+      RETURNING id
+      `,
+      [
+        advertisementId,
+        25000,
+        "UPI",
+        `TXN-FA-REFUND-TEMP-${uniqueSuffix}`,
+        "Verified payment for isolated refund approval workflow test.",
+        financeUserId
+      ]
+    );
+
+    const paymentId = Number(paymentResult.rows[0]?.id ?? 0);
+    expect(paymentId).toBeGreaterThan(0);
+    temporaryPaymentIds.set(advertisementId, paymentId);
 
     return advertisementId;
   };
@@ -1255,9 +1282,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
     expect(response.body.data.approvalRemarks).toBe(approvalRemarks);
   });
 
-  it("should create a REFUND approval using requestedPercentage", async () => {
-    const requestedPercentage = 25;
-
+  it("should reject a REFUND approval using requestedPercentage", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
@@ -1266,41 +1291,38 @@ describe("Advertisement Financial Approval Refund Integration", () => {
         clientId: testClientId,
         paymentId: testPaymentId,
         approvalType: "REFUND",
-        requestedPercentage,
-        remarks: "Refund requested as a percentage."
+        requestedPercentage: 25,
+        remarks: "Percentage-based refunds are not supported."
       });
 
-    expect(response.status).toBe(201);
-    expect(response.body.success).toBe(true);
-
-    const approvalId = Number(response.body.data.id);
-
-    expect(approvalId).toBeGreaterThan(0);
-
-    createdApprovalIds.push(approvalId);
-
-    expect(response.body.data.approvalType).toBe("REFUND");
-    expect(Number(response.body.data.requestedPercentage)).toBe(
-      requestedPercentage
-    );
-    expect(response.body.data.requestedAmount).toBeNull();
-    expect(Number(response.body.data.paymentId)).toBe(testPaymentId);
-    expect(response.body.data.status).toBe("SUBMITTED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
   });
 
-  it("should allow Finance Approver to approve a REFUND percentage request", async () => {
-    const approvalId = createdApprovalIds[createdApprovalIds.length - 1];
+  it("should allow Finance Approver to approve another amount-based REFUND request", async () => {
+    const createResponse = await request(app)
+      .post("/api/v1/advertisements/payments/financial-approval")
+      .set("Authorization", `Bearer ${creatorAccessToken}`)
+      .send({
+        advertisementId: testAdvertisementId,
+        clientId: testClientId,
+        paymentId: testPaymentId,
+        approvalType: "REFUND",
+        requestedAmount: 2500,
+        remarks: "Second amount-based refund approval."
+      });
 
+    expect(createResponse.status).toBe(201);
+    const approvalId = Number(createResponse.body.data.id);
     expect(approvalId).toBeGreaterThan(0);
+    createdApprovalIds.push(approvalId);
 
     const response = await request(app)
       .post(
         `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
       )
       .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Percentage refund approved."
-      });
+      .send({ approvalRemarks: "Second amount-based refund approved." });
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
@@ -1308,7 +1330,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
     expect(Number(response.body.data.reviewedBy)).toBe(financeUserId);
   });
 
-  it("should allow a REFUND approval without paymentId", async () => {
+  it("should reject a REFUND approval without paymentId", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
@@ -1317,31 +1339,11 @@ describe("Advertisement Financial Approval Refund Integration", () => {
         clientId: testClientId,
         approvalType: "REFUND",
         requestedAmount: 2500,
-        remarks: "Refund approval without payment linkage."
+        remarks: "A refund must identify its verified payment."
       });
 
-    expect(response.status).toBe(201);
-    expect(response.body.success).toBe(true);
-
-    const approvalId = Number(response.body.data.id);
-
-    expect(approvalId).toBeGreaterThan(0);
-
-    createdApprovalIds.push(approvalId);
-
-    expect(response.body.data.paymentId).toBeNull();
-
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Refund approved without payment linkage."
-      });
-
-    expect(approveResponse.status).toBe(200);
-    expect(approveResponse.body.data.status).toBe("APPROVED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
   });
 
   it("should reject a REFUND request containing both amount and percentage", async () => {
@@ -1412,7 +1414,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
     expect(response.body.success).toBe(false);
   });
 
-  it("should accept a REFUND requestedPercentage of zero", async () => {
+  it("should reject a REFUND requestedPercentage of 0", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
@@ -1422,34 +1424,14 @@ describe("Advertisement Financial Approval Refund Integration", () => {
         paymentId: testPaymentId,
         approvalType: "REFUND",
         requestedPercentage: 0,
-        remarks: "Zero refund percentage boundary test."
+        remarks: "Percentage-based refunds are not supported."
       });
 
-    expect(response.status).toBe(201);
-    expect(response.body.success).toBe(true);
-
-    const approvalId = Number(response.body.data.id);
-
-    expect(approvalId).toBeGreaterThan(0);
-
-    createdApprovalIds.push(approvalId);
-
-    expect(Number(response.body.data.requestedPercentage)).toBe(0);
-
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Zero percentage refund approved."
-      });
-
-    expect(approveResponse.status).toBe(200);
-    expect(approveResponse.body.data.status).toBe("APPROVED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
   });
 
-  it("should accept a REFUND requestedPercentage of 100", async () => {
+  it("should reject a REFUND requestedPercentage of 100", async () => {
     const response = await request(app)
       .post("/api/v1/advertisements/payments/financial-approval")
       .set("Authorization", `Bearer ${creatorAccessToken}`)
@@ -1459,31 +1441,11 @@ describe("Advertisement Financial Approval Refund Integration", () => {
         paymentId: testPaymentId,
         approvalType: "REFUND",
         requestedPercentage: 100,
-        remarks: "Full refund percentage boundary test."
+        remarks: "Percentage-based refunds are not supported."
       });
 
-    expect(response.status).toBe(201);
-    expect(response.body.success).toBe(true);
-
-    const approvalId = Number(response.body.data.id);
-
-    expect(approvalId).toBeGreaterThan(0);
-
-    createdApprovalIds.push(approvalId);
-
-    expect(Number(response.body.data.requestedPercentage)).toBe(100);
-
-    const approveResponse = await request(app)
-      .post(
-        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
-      )
-      .set("Authorization", `Bearer ${financeAccessToken}`)
-      .send({
-        approvalRemarks: "Full refund percentage approved."
-      });
-
-    expect(approveResponse.status).toBe(200);
-    expect(approveResponse.body.data.status).toBe("APPROVED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
   });
 
   it("should trim REFUND approval remarks", async () => {
@@ -1721,6 +1683,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
       .send({
         advertisementId: temporaryAdvertisementId,
         clientId: testClientId,
+        paymentId: temporaryPaymentIds.get(temporaryAdvertisementId),
         approvalType: "REFUND",
         requestedAmount: 1500,
         remarks: "Creator authorization boundary test."
@@ -1771,6 +1734,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
       .send({
         advertisementId: temporaryAdvertisementId,
         clientId: testClientId,
+        paymentId: temporaryPaymentIds.get(temporaryAdvertisementId),
         approvalType: "REFUND",
         requestedAmount: 2000,
         remarks: "Finance resubmit authorization test."
@@ -1820,6 +1784,7 @@ describe("Advertisement Financial Approval Refund Integration", () => {
       .send({
         advertisementId: temporaryAdvertisementId,
         clientId: testClientId,
+        paymentId: temporaryPaymentIds.get(temporaryAdvertisementId),
         approvalType: "REFUND",
         requestedAmount: 2250,
         remarks: "Refund resubmission workflow test."

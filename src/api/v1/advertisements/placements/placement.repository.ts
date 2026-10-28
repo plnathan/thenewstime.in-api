@@ -45,6 +45,10 @@ const mapPlacement = (row: any): AdvertisementPlacement => ({
 
   collapseWhenEmpty: row.collapse_when_empty,
   fallbackBehavior: row.fallback_behavior,
+  fallbackAdvertisementId:
+    row.fallback_advertisement_id == null
+      ? null
+      : Number(row.fallback_advertisement_id),
   displayFrequency: row.display_frequency,
   frequencyValue:
     row.frequency_value === null || row.frequency_value === undefined
@@ -91,6 +95,7 @@ const selectColumns = `
 
   p.collapse_when_empty,
   p.fallback_behavior,
+  p.fallback_advertisement_id,
   p.display_frequency,
   p.frequency_value,
   p.auto_close_enabled,
@@ -116,6 +121,7 @@ const returningColumns = `
   is_enabled,
   collapse_when_empty,
   fallback_behavior,
+  fallback_advertisement_id,
   display_frequency,
   frequency_value,
   auto_close_enabled,
@@ -259,6 +265,12 @@ export const create = async (
     "$18"
   ];
 
+  if (input.fallbackAdvertisementId !== undefined) {
+    columns.push("fallback_advertisement_id");
+    values.push(input.fallbackAdvertisementId);
+    placeholders.push(`$${values.length}`);
+  }
+
   if (input.formatId !== undefined) {
     columns.push("format_id");
     values.push(input.formatId);
@@ -342,6 +354,10 @@ export const update = async (
 
   if (input.fallbackBehavior !== undefined) {
     add("fallback_behavior", input.fallbackBehavior);
+  }
+
+  if (input.fallbackAdvertisementId !== undefined) {
+    add("fallback_advertisement_id", input.fallbackAdvertisementId);
   }
 
   if (input.displayFrequency !== undefined) {
@@ -457,4 +473,17 @@ export const findActiveFormatById = async (
         : Number(row.height_px),
     isResponsive: row.is_responsive
   };
+};
+
+/** House classification check for placement-specific fallback assignment. */
+export const findHouseAdvertisementById = async (
+  advertisementId: number,
+  client?: PoolClient
+): Promise<{ id: number } | null> => {
+  const db = client ?? pool;
+  const result = await db.query(
+    `SELECT id FROM advertisements WHERE id = $1 AND is_house_ad = TRUE LIMIT 1`,
+    [advertisementId]
+  );
+  return result.rows[0] ? { id: Number(result.rows[0].id) } : null;
 };

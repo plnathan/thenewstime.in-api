@@ -5,6 +5,8 @@ const pageTypes = ["HOME", "NEWS_LIST", "NEWS_DETAIL"] as const;
 const placementTypes = [
   "HOME_BANNER",
   "HOME_TOP",
+  "HOME_BOTTOM",
+  "HOME_MODAL",
   "HOME_BETWEEN_SECTIONS",
   "HOME_SIDEBAR",
   "NEWS_LIST_TOP",

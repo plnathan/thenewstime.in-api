@@ -391,89 +391,97 @@ export async function createPaymentRefund(
   data: CreateAdvertisementPaymentRefundInput,
   refundedBy: number
 ): Promise<AdvertisementPaymentRefund> {
+  if (
+    !Number.isSafeInteger(data.financialApprovalId) ||
+    data.financialApprovalId <= 0
+  ) {
+    throw new ApiError(400, "An approved financialApprovalId is required.");
+  }
   const payment = await repository.findById(data.paymentId);
+  if (!payment) throw new ApiError(404, "Advertisement payment not found.");
 
-  if (payment === null) {
-    throw new ApiError(404, "Advertisement payment not found.");
-  }
-
-  if (payment.paymentStatus !== "VERIFIED") {
-    throw new ApiError(400, "Only verified payments can be refunded.");
-  }
-
-  if (!Number.isFinite(data.amount) || data.amount <= 0) {
-    throw new ApiError(400, "Refund amount must be greater than zero.");
-  }
-
-  const amount = roundCurrency(data.amount);
-
-  if (amount <= 0) {
-    throw new ApiError(400, "Refund amount must be greater than zero.");
-  }
-
-  /*
-   * Calculate the refundable balance from the original payment and
-   * the complete refund ledger for that payment.
-   */
-  const alreadyRefunded = await repository.getTotalRefundedAmount(
-    data.paymentId
+  return repository.withAdvertisementLock(
+    payment.advertisementId,
+    async (client) => {
+      const currentPayment = await repository.findById(data.paymentId, client);
+      if (!currentPayment || currentPayment.paymentStatus !== "VERIFIED") {
+        throw new ApiError(400, "Only verified payments can be refunded.");
+      }
+      const approval = await repository.getRefundApprovalForExecution(
+        data.financialApprovalId,
+        client
+      );
+      if (
+        !approval ||
+        approval.paymentId !== data.paymentId ||
+        approval.advertisementId !== currentPayment.advertisementId ||
+        !["REFUND", "PARTIAL_REFUND"].includes(approval.approvalType)
+      ) {
+        throw new ApiError(
+          400,
+          "Refund approval is not linked to this payment."
+        );
+      }
+      if (approval.status !== "APPROVED" || approval.alreadyExecuted) {
+        throw new ApiError(
+          409,
+          "Refund approval is not approved or has already been executed."
+        );
+      }
+      const amount = roundCurrency(
+        approval.approvedAmount ?? approval.requestedAmount
+      );
+      if (
+        !Number.isFinite(amount) ||
+        amount <= 0 ||
+        (data.amount !== undefined &&
+          (!Number.isFinite(data.amount) ||
+            roundCurrency(data.amount) !== amount))
+      ) {
+        throw new ApiError(
+          400,
+          "Refund amount must match the approved amount."
+        );
+      }
+      const refunded = await repository.getTotalRefundedAmount(
+        data.paymentId,
+        client
+      );
+      const available = roundCurrency(currentPayment.amount - refunded);
+      if (amount > available) {
+        throw new ApiError(
+          409,
+          "Approved refund exceeds the remaining refundable balance."
+        );
+      }
+      const refundReference = normalizeOptionalText(data.refundReference);
+      const refundReason = normalizeOptionalText(data.refundReason);
+      const refund = await repository.createRefund(
+        {
+          paymentId: data.paymentId,
+          financialApprovalId: approval.id,
+          amount,
+          ...(data.refundDate !== undefined
+            ? { refundDate: data.refundDate }
+            : {}),
+          ...(refundReference !== undefined ? { refundReference } : {}),
+          ...(refundReason !== undefined ? { refundReason } : {})
+        },
+        refundedBy,
+        client
+      );
+      if (roundCurrency(available - amount) === 0) {
+        await repository.markRefunded(
+          data.paymentId,
+          refundedBy,
+          refundReference ?? null,
+          refundReason ?? null,
+          client
+        );
+      }
+      return refund;
+    }
   );
-
-  const refundableAmount = roundCurrency(payment.amount - alreadyRefunded);
-
-  if (refundableAmount <= 0) {
-    throw new ApiError(400, "This payment has no remaining refundable amount.");
-  }
-
-  if (amount > refundableAmount) {
-    throw new ApiError(
-      400,
-      `Refund amount cannot exceed the remaining refundable amount of ${refundableAmount.toFixed(2)}.`
-    );
-  }
-
-  const refundData: CreateAdvertisementPaymentRefundInput = {
-    paymentId: data.paymentId,
-    amount
-  };
-
-  if (data.refundDate !== undefined) {
-    refundData.refundDate = data.refundDate;
-  }
-
-  const refundReference = normalizeOptionalText(data.refundReference);
-
-  if (refundReference !== undefined) {
-    refundData.refundReference = refundReference;
-  }
-
-  const refundReason = normalizeOptionalText(data.refundReason);
-
-  if (refundReason !== undefined) {
-    refundData.refundReason = refundReason;
-  }
-
-  const refund = await repository.createRefund(refundData, refundedBy);
-
-  /*
-   * A full refund changes the original payment status to REFUNDED.
-   * Partial refunds leave the original payment VERIFIED.
-   *
-   * Gross payment history includes VERIFIED and REFUNDED payments.
-   * Refund ledger entries are subtracted when calculating net collections.
-   */
-  const remainingAmount = roundCurrency(refundableAmount - amount);
-
-  if (remainingAmount === 0) {
-    await repository.markRefunded(
-      data.paymentId,
-      refundedBy,
-      refundReference ?? null,
-      refundReason ?? null
-    );
-  }
-
-  return refund;
 }
 
 export async function getPaymentSummary(

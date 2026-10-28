@@ -5,6 +5,8 @@ export type AdvertisementPlacementType =
   | "HOME_TOP"
   | "HOME_BETWEEN_SECTIONS"
   | "HOME_SIDEBAR"
+  | "HOME_BOTTOM"
+  | "HOME_MODAL"
   | "NEWS_LIST_TOP"
   | "NEWS_LIST_BETWEEN"
   | "NEWS_LIST_BOTTOM"
@@ -59,6 +61,8 @@ export interface AdvertisementPlacement {
 
   collapseWhenEmpty: boolean;
   fallbackBehavior: PlacementFallbackBehavior;
+  /** Explicit house advertisement to use when paid inventory is unavailable. */
+  fallbackAdvertisementId?: number | null;
   displayFrequency: PlacementDisplayFrequency | null;
   frequencyValue: number | null;
   autoCloseEnabled: boolean;
@@ -90,6 +94,7 @@ export interface CreateAdvertisementPlacementInput {
 
   collapseWhenEmpty?: boolean | undefined;
   fallbackBehavior?: PlacementFallbackBehavior | undefined;
+  fallbackAdvertisementId?: number | null | undefined;
   displayFrequency?: PlacementDisplayFrequency | null | undefined;
   frequencyValue?: number | null | undefined;
   autoCloseEnabled?: boolean | undefined;
@@ -117,6 +122,7 @@ export interface UpdateAdvertisementPlacementInput {
 
   collapseWhenEmpty?: boolean | undefined;
   fallbackBehavior?: PlacementFallbackBehavior | undefined;
+  fallbackAdvertisementId?: number | null | undefined;
   displayFrequency?: PlacementDisplayFrequency | null | undefined;
   frequencyValue?: number | null | undefined;
   autoCloseEnabled?: boolean | undefined;

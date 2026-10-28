@@ -1332,8 +1332,7 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
         name: `Financial Approval Rejection Advertisement ${timestamp}`,
         internalName: `financial-approval-rejection-ad-${timestamp}`,
         advertisementType: "DISPLAY",
-        destinationUrl:
-          "https://example.com/financial-approval-rejection-test",
+        destinationUrl: "https://example.com/financial-approval-rejection-test",
         priority: 10,
         isClickable: true,
         openInNewTab: true,
@@ -1361,7 +1360,7 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
 
   it("POST /financial-approval - should create a SUBMITTED approval for rejection", async () => {
     submittedApprovalId = await createFinancialApproval(
-      "REFUND",
+      "ADJUSTMENT",
       3000,
       "Refund rejection workflow test."
     );
@@ -1370,13 +1369,9 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
   });
 
   it("POST /financial-approval/:id/reject - should allow Finance Approver to reject a SUBMITTED approval", async () => {
-    const rejectionReason =
-      "Requested financial adjustment was not accepted.";
+    const rejectionReason = "Requested financial adjustment was not accepted.";
 
-    const response = await rejectApproval(
-      submittedApprovalId,
-      rejectionReason
-    );
+    const response = await rejectApproval(submittedApprovalId, rejectionReason);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
@@ -1526,13 +1521,9 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
   });
 
   it("POST /financial-approval/:id/reject - should allow Finance Approver to reject a HOLD approval", async () => {
-    const rejectionReason =
-      "Required client information was not received.";
+    const rejectionReason = "Required client information was not received.";
 
-    const response = await rejectApproval(
-      holdApprovalId,
-      rejectionReason
-    );
+    const response = await rejectApproval(holdApprovalId, rejectionReason);
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
@@ -1594,7 +1585,7 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
 
   it("POST /financial-approval/:id/reject - should reject an empty rejection reason", async () => {
     const approvalId = await createFinancialApproval(
-      "REFUND",
+      "ADJUSTMENT",
       1250,
       "Empty rejection reason validation test."
     );
@@ -1635,7 +1626,7 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
 
   it("POST /financial-approval/:id/reject - should reject a missing rejection reason", async () => {
     const approvalId = await createFinancialApproval(
-      "REFUND",
+      "ADJUSTMENT",
       1300,
       "Missing rejection reason validation test."
     );
@@ -1828,13 +1819,9 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
       "Repeated rejection persistence test."
     );
 
-    const firstReason =
-      "First rejection reason must remain unchanged.";
+    const firstReason = "First rejection reason must remain unchanged.";
 
-    const firstResponse = await rejectApproval(
-      approvalId,
-      firstReason
-    );
+    const firstResponse = await rejectApproval(approvalId, firstReason);
 
     expect(firstResponse.status).toBe(200);
     expect(firstResponse.body.data.status).toBe("REJECTED");
@@ -1878,18 +1865,14 @@ describe("Advertisement Financial Approval Rejection API Integration", () => {
 
   it("GET /financial-approval/:id/history - should preserve chronological history for a rejected approval", async () => {
     const approvalId = await createFinancialApproval(
-      "REFUND",
+      "ADJUSTMENT",
       2750,
       "Chronological rejection history test."
     );
 
-    const rejectionReason =
-      "Refund request failed financial verification.";
+    const rejectionReason = "Refund request failed financial verification.";
 
-    const rejectResponse = await rejectApproval(
-      approvalId,
-      rejectionReason
-    );
+    const rejectResponse = await rejectApproval(approvalId, rejectionReason);
 
     expect(rejectResponse.status).toBe(200);
 

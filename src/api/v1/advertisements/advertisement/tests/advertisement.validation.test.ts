@@ -491,7 +491,7 @@ describe("Advertisement Validation", () => {
     });
 
     it("should accept valid advertisement statuses", () => {
-      const statuses = ["DRAFT", "ACTIVE", "INACTIVE", "ARCHIVED"];
+      const statuses = ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED"];
 
       for (const status of statuses) {
         const result = advertisementQuerySchema.safeParse({
@@ -500,6 +500,14 @@ describe("Advertisement Validation", () => {
 
         expect(result.success).toBe(true);
       }
+    });
+
+    it("should reject the obsolete INACTIVE advertisement status", () => {
+      const result = advertisementQuerySchema.safeParse({
+        status: "INACTIVE"
+      });
+
+      expect(result.success).toBe(false);
     });
 
     it("should reject an invalid advertisement status", () => {

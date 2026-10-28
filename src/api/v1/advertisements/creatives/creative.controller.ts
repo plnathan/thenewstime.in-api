@@ -166,3 +166,22 @@ export const getAdvertisementPreview = async (
     next(error);
   }
 };
+
+/** Enable or disable a complete desktop/mobile creative slide. */
+export const updateDeliveryStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const result = await service.updateDeliveryStatus(
+      Number(req.params.advertisementId),
+      Number(req.params.creativeId),
+      Boolean((req.body as { enabled: boolean }).enabled),
+      req.user.id
+    );
+    sendSuccess(res, "Creative delivery status updated successfully.", result);
+  } catch (error) {
+    next(error);
+  }
+};

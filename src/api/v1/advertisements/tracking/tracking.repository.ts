@@ -485,9 +485,9 @@ export const getMetrics = async (
   }
 
   if (to !== undefined) {
-    impressionConditions.push(`impression_at <= $${values.indexOf(to) + 1}`);
+    impressionConditions.push(`impression_at < $${values.indexOf(to) + 1}`);
 
-    clickConditions.push(`click_at <= $${values.indexOf(to) + 1}`);
+    clickConditions.push(`click_at < $${values.indexOf(to) + 1}`);
   }
 
   const impressionWhere = impressionConditions.join(" AND ");
@@ -546,22 +546,22 @@ export const getMetrics = async (
           SUM(clicks)::bigint AS clicks
         FROM (
           SELECT
-            DATE(impression_at) AS event_date,
+            (impression_at AT TIME ZONE 'Asia/Kolkata')::date AS event_date,
             COUNT(*)::bigint AS impressions,
             0::bigint AS clicks
           FROM advertisement_impressions
           WHERE ${impressionWhere}
-          GROUP BY DATE(impression_at)
+          GROUP BY (impression_at AT TIME ZONE 'Asia/Kolkata')::date
 
           UNION ALL
 
           SELECT
-            DATE(click_at) AS event_date,
+            (click_at AT TIME ZONE 'Asia/Kolkata')::date AS event_date,
             0::bigint AS impressions,
             COUNT(*)::bigint AS clicks
           FROM advertisement_clicks
           WHERE ${clickWhere}
-          GROUP BY DATE(click_at)
+          GROUP BY (click_at AT TIME ZONE 'Asia/Kolkata')::date
         ) events
         GROUP BY event_date
         ORDER BY event_date ASC

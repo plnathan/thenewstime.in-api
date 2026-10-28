@@ -111,8 +111,8 @@ const createAdvertisement = (): Advertisement & {
 } => ({
   id: 100,
   advertiserId: 1,
-  clientId: 1,
   isHouseAd: false,
+  clientId: 1,
   campaignId: null,
   name: "Test Advertisement",
   internalName: "TEST_AD_001",
@@ -171,6 +171,7 @@ const createAdvertisement = (): Advertisement & {
 const createAdvertisementListItem = (): AdvertisementListItem => ({
   id: 100,
   advertiserId: 1,
+  isHouseAd: false,
   clientId: 1,
   clientName: "Test Client",
   clientCode: "CLI001",
@@ -684,82 +685,82 @@ describe("create()", () => {
     ]);
   });
 
-    it("should create with pricing fields when calculated pricing is supplied", async () => {
-      const advertisement = createAdvertisement();
+  it("should create with pricing fields when calculated pricing is supplied", async () => {
+    const advertisement = createAdvertisement();
 
-      mockTransactionBegin();
+    mockTransactionBegin();
 
-      queryMock
-        .mockResolvedValueOnce({
-          rowCount: 1,
-          rows: [{ id: 100 }]
-        })
-        .mockResolvedValueOnce({
-          rowCount: 1,
-          rows: [createRuntimePlacementDbRow()]
-        })
-        .mockResolvedValueOnce({
-          rowCount: 1,
-          rows: []
-        })
-        .mockResolvedValueOnce({
-          rowCount: 1,
-          rows: []
-        });
+    queryMock
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ id: 100 }]
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [createRuntimePlacementDbRow()]
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: []
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: []
+      });
 
-      // Required: create() synchronizes the schedule before reloading the advertisement.
-      mockScheduleSyncWithoutDates();
+    // Required: create() synchronizes the schedule before reloading the advertisement.
+    mockScheduleSyncWithoutDates();
 
-      queryMock
-        .mockResolvedValueOnce({
-          rowCount: 1,
-          rows: [
-            createAdvertisementDbRow({
-              ...advertisement,
-              standardAmount: 5000,
-              pricingPlacementId: 10,
-              pricingUnit: "DAY",
-              pricingQuantity: 5
-            })
-          ]
-        })
-        .mockResolvedValueOnce({
-          rowCount: 1,
-          rows: [createClientDbRow(createClient())]
-        })
-        .mockResolvedValueOnce({
-          rowCount: 1,
-          rows: [createRuntimePlacementDbRow()]
-        });
+    queryMock
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [
+          createAdvertisementDbRow({
+            ...advertisement,
+            standardAmount: 5000,
+            pricingPlacementId: 10,
+            pricingUnit: "DAY",
+            pricingQuantity: 5
+          })
+        ]
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [createClientDbRow(createClient())]
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [createRuntimePlacementDbRow()]
+      });
 
-      mockTransactionCommit();
+    mockTransactionCommit();
 
-      const input = {
-        clientId: 1,
-        placementId: 10,
-        name: "Priced Advertisement",
-        destinationUrl: "https://example.com",
-        advertisementType: "DISPLAY" as const,
-        priority: 0,
-        isClickable: true,
-        openInNewTab: true,
+    const input = {
+      clientId: 1,
+      placementId: 10,
+      name: "Priced Advertisement",
+      destinationUrl: "https://example.com",
+      advertisementType: "DISPLAY" as const,
+      priority: 0,
+      isClickable: true,
+      openInNewTab: true,
 
-        standardAmount: 5000,
-        pricingPlacementId: 10,
-        pricingUnit: "DAY" as const,
-        pricingQuantity: 5
-      };
+      standardAmount: 5000,
+      pricingPlacementId: 10,
+      pricingUnit: "DAY" as const,
+      pricingQuantity: 5
+    };
 
-      const result = await repository.create(input, 10);
+    const result = await repository.create(input, 10);
 
-      expect(result.standardAmount).toBe(5000);
-      expect(result.pricingPlacementId).toBe(10);
-      expect(result.pricingUnit).toBe("DAY");
-      expect(result.pricingQuantity).toBe(5);
+    expect(result.standardAmount).toBe(5000);
+    expect(result.pricingPlacementId).toBe(10);
+    expect(result.pricingUnit).toBe("DAY");
+    expect(result.pricingQuantity).toBe(5);
 
-      expect(connectMock).toHaveBeenCalledTimes(1);
-      expect(releaseMock).toHaveBeenCalledTimes(1);
-    });
+    expect(connectMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+  });
 
   it("should throw when the client does not exist", async () => {
     mockTransactionBegin();
@@ -858,37 +859,37 @@ describe("create()", () => {
   });
 });
 
-  it("should return the existing advertisement when there are no update fields", async () => {
-    const advertisement = createAdvertisement();
+it("should return the existing advertisement when there are no update fields", async () => {
+  const advertisement = createAdvertisement();
 
-    mockTransactionBegin();
+  mockTransactionBegin();
 
-    // Required: update() synchronizes the schedule before reloading the advertisement.
-    mockScheduleSyncWithoutDates();
+  // Required: update() synchronizes the schedule before reloading the advertisement.
+  mockScheduleSyncWithoutDates();
 
-    queryMock
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createAdvertisementDbRow(advertisement)]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createClientDbRow(createClient())]
-      })
-      .mockResolvedValueOnce({
-        rowCount: 1,
-        rows: [createRuntimePlacementDbRow()]
-      });
+  queryMock
+    .mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [createAdvertisementDbRow(advertisement)]
+    })
+    .mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [createClientDbRow(createClient())]
+    })
+    .mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [createRuntimePlacementDbRow()]
+    });
 
-    mockTransactionCommit();
+  mockTransactionCommit();
 
-    const result = await repository.update(100, {}, 20);
+  const result = await repository.update(100, {}, 20);
 
-    expect(result).toEqual(advertisement);
+  expect(result).toEqual(advertisement);
 
-    expect(connectMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).toHaveBeenCalledTimes(1);
-  });
+  expect(connectMock).toHaveBeenCalledTimes(1);
+  expect(releaseMock).toHaveBeenCalledTimes(1);
+});
 
 describe("list()", () => {
   it("should return advertisements with total count", async () => {

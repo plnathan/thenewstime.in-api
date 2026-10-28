@@ -277,13 +277,18 @@ export const findOverlapping = async (
         s.updated_at
       FROM advertisement_schedules s
       INNER JOIN advertisement_placements p ON p.id = s.placement_id
+      INNER JOIN advertisements existing_ad ON existing_ad.id = s.advertisement_id
+      INNER JOIN advertisements requested_ad ON requested_ad.id = $1
       WHERE s.placement_id = $2
         AND s.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
         AND s.start_at < $4
         AND s.end_at > $3
         AND (
           s.advertisement_id = $1
-          OR COALESCE(p.rotation_enabled, FALSE) = FALSE
+          OR (
+            COALESCE(p.rotation_enabled, FALSE) = FALSE
+            AND existing_ad.is_house_ad = requested_ad.is_house_ad
+          )
         )
         ${excludeId !== undefined ? `AND s.id <> $${values.length}` : ""}
       ORDER BY s.start_at ASC, s.id ASC

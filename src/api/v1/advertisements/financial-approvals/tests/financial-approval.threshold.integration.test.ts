@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import type { PoolClient } from "pg";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -6,6 +7,34 @@ import app from "../../../../../app.js";
 import { pool } from "../../../../../shared/config/db.js";
 
 describe("Advertisement Financial Approval Threshold Integration", () => {
+  // These suites share the database's one-ACTIVE-threshold-per-type constraint.
+  // A session-level advisory lock serializes their fixture mutations across
+  // separate Vitest workers without weakening the production constraint.
+  let thresholdLockClient: PoolClient | null = null;
+
+  const acquireThresholdLock = async (): Promise<void> => {
+    const client = await pool.connect();
+    try {
+      await client.query("SELECT pg_advisory_lock(726301, 20261028)");
+      thresholdLockClient = client;
+    } catch (error) {
+      client.release();
+      throw error;
+    }
+  };
+
+  const releaseThresholdLock = async (): Promise<void> => {
+    const client = thresholdLockClient;
+    thresholdLockClient = null;
+    if (client !== null) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(726301, 20261028)");
+      } finally {
+        client.release();
+      }
+    }
+  };
+
   let creatorAccessToken = "";
   let reviewerAccessToken = "";
 
@@ -760,6 +789,7 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
   };
 
   beforeAll(async () => {
+    await acquireThresholdLock();
     creatorUsername = `threshold_creator_${timestamp}`;
 
     reviewerUsername = `threshold_reviewer_${timestamp}`;
@@ -823,7 +853,7 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
     placementId = await createPlacement();
 
     advertisementId = await createAdvertisement();
-  });
+  }, 120_000);
 
   afterEach(async () => {
     await cleanupApprovals();
@@ -1028,8 +1058,8 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
       }
     }
 
-    await pool.end();
-  });
+    await releaseThresholdLock();
+  }, 120_000);
 
   it("should approve a requested amount below the configured threshold", async () => {
     const thresholdId = await createThreshold({
@@ -1100,8 +1130,11 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
       amountThreshold: 10000
     });
 
+    const paymentId = await createPayment(50000);
+
     const approval = await createApproval({
-      requestedAmount: 10001
+      requestedAmount: 10001,
+      paymentId
     });
 
     const result = await approve(approval.id);
@@ -1125,8 +1158,11 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
       amountThreshold: 10000
     });
 
+    const paymentId = await createPayment(50000);
+
     const approval = await createApproval({
-      requestedAmount: 10001
+      requestedAmount: 10001,
+      paymentId
     });
 
     const firstAttempt = await approve(approval.id);
@@ -1146,65 +1182,76 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
     expect(stored.status).toBe("APPROVED");
   });
 
-  it("should approve a requested percentage below the configured threshold", async () => {
+  it("should reject a percentage-only refund request (24.99%) regardless of the configured threshold", async () => {
     await createThreshold({
       percentageThreshold: 25
     });
 
     const paymentId = await createPayment(50000);
 
-    const approval = await createApproval({
-      requestedPercentage: 24.99,
-      paymentId
-    });
+    const response = await request(app)
+      .post("/api/v1/advertisements/payments/financial-approval")
+      .set("Authorization", `Bearer ${creatorAccessToken}`)
+      .send({
+        advertisementId,
+        clientId,
+        approvalType: "REFUND",
+        requestedPercentage: 24.99,
+        paymentId,
+        approvalRemarks: "Percentage-only refund requests are invalid"
+      });
 
-    expect(approval.status).toBe("SUBMITTED");
-
-    const result = await approve(approval.id);
-
-    expect(result.statusCode).toBe(200);
-    expect(result.status).toBe("APPROVED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toContain("requestedAmount");
   });
 
-  it("should approve a requested percentage exactly equal to the configured threshold", async () => {
+  it("should reject a percentage-only refund request (25%) regardless of the configured threshold", async () => {
     await createThreshold({
       percentageThreshold: 25
     });
 
     const paymentId = await createPayment(50000);
 
-    const approval = await createApproval({
-      requestedPercentage: 25,
-      paymentId
-    });
+    const response = await request(app)
+      .post("/api/v1/advertisements/payments/financial-approval")
+      .set("Authorization", `Bearer ${creatorAccessToken}`)
+      .send({
+        advertisementId,
+        clientId,
+        approvalType: "REFUND",
+        requestedPercentage: 25,
+        paymentId,
+        approvalRemarks: "Percentage-only refund requests are invalid"
+      });
 
-    const result = await approve(approval.id);
-
-    expect(result.statusCode).toBe(200);
-    expect(result.status).toBe("APPROVED");
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toContain("requestedAmount");
   });
 
-  it("should place a requested percentage above the configured threshold on hold", async () => {
+  it("should reject a percentage-only refund request (25.01%) regardless of the configured threshold", async () => {
     await createThreshold({
       percentageThreshold: 25
     });
 
     const paymentId = await createPayment(50000);
 
-    const approval = await createApproval({
-      requestedPercentage: 25.01,
-      paymentId
-    });
+    const response = await request(app)
+      .post("/api/v1/advertisements/payments/financial-approval")
+      .set("Authorization", `Bearer ${creatorAccessToken}`)
+      .send({
+        advertisementId,
+        clientId,
+        approvalType: "REFUND",
+        requestedPercentage: 25.01,
+        paymentId,
+        approvalRemarks: "Percentage-only refund requests are invalid"
+      });
 
-    const result = await approve(approval.id);
-
-    expect(result.statusCode).toBe(200);
-    expect(result.status).toBe("HOLD");
-
-    const stored = await getApproval(approval.id);
-
-    expect(stored.status).toBe("HOLD");
-    expect(stored.paymentId).toBe(paymentId);
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toContain("requestedAmount");
   });
 
   it("should approve normally when no active threshold exists", async () => {
@@ -1297,8 +1344,11 @@ describe("Advertisement Financial Approval Threshold Integration", () => {
       amountThreshold: 10000
     });
 
+    const paymentId = await createPayment(50000);
+
     const approval = await createApproval({
-      requestedAmount: 10001
+      requestedAmount: 10001,
+      paymentId
     });
 
     const result = await approve(approval.id);

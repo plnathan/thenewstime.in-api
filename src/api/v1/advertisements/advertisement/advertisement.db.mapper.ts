@@ -78,7 +78,7 @@ interface AdvertisementRow {
 
   priority: number;
 
-  status: "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
+  status: "DRAFT" | "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED";
 
   start_at: Date | null;
   end_at: Date | null;
@@ -392,6 +392,8 @@ export const mapAdvertisementListRow = (
 
     clientCode: row.client_code,
 
+    isHouseAd: row.is_house_ad === true,
+
     name: row.name,
 
     advertisementType: row.advertisement_type,
@@ -442,6 +444,8 @@ export const mapAdvertisementListRow = (
 
     createdAt: row.created_at,
 
+    approvedAt: row.approved_at,
+    onHoldAt: row.on_hold_at,
     updatedAt: row.updated_at
   };
 };

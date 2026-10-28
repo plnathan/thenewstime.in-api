@@ -40,7 +40,7 @@ interface AdvertisementRow {
 
   priority: number;
 
-  status: "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
+  status: "DRAFT" | "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED";
 
   start_at: Date | null;
   end_at: Date | null;
@@ -1032,8 +1032,15 @@ export const create = async (
                         $19,
                         $20,
                         $20
-                    FROM advertisement_clients c
-                    WHERE c.id = $1
+                    FROM (
+                        SELECT NULL::integer AS id
+                        WHERE $19::boolean = TRUE
+                        UNION ALL
+                        SELECT c.id
+                        FROM advertisement_clients c
+                        WHERE c.id = $1
+                          AND $19::boolean = FALSE
+                    ) c
                     RETURNING id
                     `,
         [
@@ -1136,8 +1143,15 @@ export const create = async (
                         $23,
                         $24,
                         $24
-                    FROM advertisement_clients c
-                    WHERE c.id = $1
+                    FROM (
+                        SELECT NULL::integer AS id
+                        WHERE $23::boolean = TRUE
+                        UNION ALL
+                        SELECT c.id
+                        FROM advertisement_clients c
+                        WHERE c.id = $1
+                          AND $23::boolean = FALSE
+                    ) c
                     RETURNING id
                     `,
         [
@@ -1467,7 +1481,9 @@ export const list = async (
 
     conditions.push(`
             (
-                a.name ILIKE '%' || $${searchIndex} || '%'
+                ('#' || a.id::text) ILIKE '%' || $${searchIndex} || '%'
+                OR a.id::text ILIKE '%' || $${searchIndex} || '%'
+                OR a.name ILIKE '%' || $${searchIndex} || '%'
                 OR a.internal_name ILIKE '%' || $${searchIndex} || '%'
                 OR c.name ILIKE '%' || $${searchIndex} || '%'
                 OR c.client_code ILIKE '%' || $${searchIndex} || '%'

@@ -7,7 +7,8 @@ export type AdvertisementHoldType = "AUTOMATIC" | "MANUAL";
 export type AdvertisementType =
   "DISPLAY" | "BANNER" | "VIDEO" | "NATIVE" | "POPUP" | "OVERLAY";
 
-export type AdvertisementStatus = "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
+export type AdvertisementStatus =
+  "DRAFT" | "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED";
 
 export type AdvertisementWorkflowStatus =
   "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "ON_HOLD" | "ARCHIVED";
@@ -197,6 +198,8 @@ export interface AdvertisementListItem extends AdvertisementPricingFields {
   clientName: string | null;
   clientCode: string | null;
 
+  isHouseAd: boolean;
+
   name: string;
   advertisementType: AdvertisementType;
 
@@ -224,6 +227,8 @@ export interface AdvertisementListItem extends AdvertisementPricingFields {
   currencyCode: string;
 
   createdAt: Date;
+  approvedAt?: Date | null;
+  onHoldAt?: Date | null;
   updatedAt: Date;
 }
 

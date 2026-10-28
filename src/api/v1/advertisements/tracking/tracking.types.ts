@@ -4,6 +4,8 @@ export type AdvertisementTrackingPageType =
 export type AdvertisementTrackingPlacementType =
   | "HOME_BANNER"
   | "HOME_TOP"
+  | "HOME_BOTTOM"
+  | "HOME_MODAL"
   | "HOME_BETWEEN_SECTIONS"
   | "HOME_SIDEBAR"
   | "NEWS_LIST_TOP"

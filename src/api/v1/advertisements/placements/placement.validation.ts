@@ -7,6 +7,8 @@ const placementTypeSchema = z.enum([
   "HOME_TOP",
   "HOME_BETWEEN_SECTIONS",
   "HOME_SIDEBAR",
+  "HOME_BOTTOM",
+  "HOME_MODAL",
 
   "NEWS_LIST_TOP",
   "NEWS_LIST_BETWEEN",
@@ -57,6 +59,8 @@ const commonConfigurationSchema = {
 
   fallbackBehavior: fallbackBehaviorSchema.optional(),
 
+  fallbackAdvertisementId: nullablePositiveInt.optional(),
+
   displayFrequency: displayFrequencySchema.nullable().optional(),
 
   frequencyValue: positiveInt.nullable().optional(),
@@ -73,7 +77,14 @@ const commonConfigurationSchema = {
 };
 
 const pagePlacementPairs: Record<string, readonly string[]> = {
-  HOME: ["HOME_BANNER", "HOME_TOP", "HOME_BETWEEN_SECTIONS", "HOME_SIDEBAR"],
+  HOME: [
+    "HOME_BANNER",
+    "HOME_TOP",
+    "HOME_BETWEEN_SECTIONS",
+    "HOME_SIDEBAR",
+    "HOME_BOTTOM",
+    "HOME_MODAL"
+  ],
   NEWS_LIST: [
     "NEWS_LIST_TOP",
     "NEWS_LIST_BETWEEN",

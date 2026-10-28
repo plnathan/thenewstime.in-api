@@ -17,6 +17,7 @@ import {
   pauseAdvertisement,
   rejectAdvertisement,
   resumeAdvertisement,
+  resumeDeliveryAdvertisement,
   submitAdvertisement,
   stopAdvertisement,
   updateAdvertisement
@@ -48,6 +49,7 @@ import placementRuleRoutes from "../placement-rules/placement-rule.routes.js";
 import pricingSnapshotRoutes from "../pricing-snapshots/pricing-snapshot.routes.js";
 import pricingRoutes from "../pricing/pricing.routes.js";
 import rateCardRoutes from "../rate-cards/rate-card.routes.js";
+import formatRoutes from "../formats/format.routes.js";
 import rotationRoutes from "../rotation/rotation.routes.js";
 import scheduleRoutes from "../schedules/schedule.routes.js";
 import targetRoutes from "../targets/target.routes.js";
@@ -117,6 +119,7 @@ router.use("/pricing-snapshots", pricingSnapshotRoutes);
  * --------------------------------------------------------------------------
  */
 router.use("/rate-cards", rateCardRoutes);
+router.use("/formats", formatRoutes);
 
 /**
  * --------------------------------------------------------------------------
@@ -430,6 +433,15 @@ router.post(
   validate(advertisementIdSchema, "params"),
   validate(advertisementWorkflowSchema, "body"),
   resumeAdvertisement
+);
+
+/** Explicit operational resume, separate from workflow /resume. */
+router.post(
+  "/:id/resume-delivery",
+  authorize("ADVERTISEMENT", "advertisements", "update"),
+  validate(advertisementIdSchema, "params"),
+  validate(advertisementWorkflowSchema, "body"),
+  resumeDeliveryAdvertisement
 );
 
 /**

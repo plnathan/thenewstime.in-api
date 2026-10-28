@@ -25,7 +25,14 @@ const placementTypeByPage: Record<
   AdvertisementDeliveryPageType,
   AdvertisementDeliveryPlacementType[]
 > = {
-  HOME: ["HOME_BANNER", "HOME_TOP", "HOME_BETWEEN_SECTIONS", "HOME_SIDEBAR"],
+  HOME: [
+    "HOME_BANNER",
+    "HOME_TOP",
+    "HOME_BETWEEN_SECTIONS",
+    "HOME_SIDEBAR",
+    "HOME_BOTTOM",
+    "HOME_MODAL"
+  ],
   NEWS_LIST: [
     "NEWS_LIST_TOP",
     "NEWS_LIST_BETWEEN",
@@ -424,13 +431,13 @@ function mapTargeting(
 function mapAdvertisement(
   candidate: AdvertisementDeliveryCandidate
 ): AdvertisementDeliveryItem {
- const aggregatedCreatives = (candidate.creatives ?? [])
-   .filter(
-     (creative) =>
-       creative.mediaUrl.trim().length > 0 &&
-       (creative.format === null || creative.format.code.trim().length > 0)
-   )
-   .map(mapCreative);
+  const aggregatedCreatives = (candidate.creatives ?? [])
+    .filter(
+      (creative) =>
+        creative.mediaUrl.trim().length > 0 &&
+        (creative.format === null || creative.format.code.trim().length > 0)
+    )
+    .map(mapCreative);
 
   const legacyCreative = mapLegacyCreative(candidate);
 
@@ -454,6 +461,7 @@ function mapAdvertisement(
     isHouseAd: candidate.isHouseAd,
     schedulePriority: candidate.schedulePriority,
     placementRuleId: candidate.placementRuleId,
+    scheduleId: candidate.scheduleId,
     placementRuleDisplayOrder: candidate.placementRuleDisplayOrder,
     placementRuleInsertionType: candidate.placementRuleInsertionType,
     insertionPosition: candidate.insertionPosition,
@@ -461,6 +469,11 @@ function mapAdvertisement(
     creative: legacyCreative,
     format: mapFormat(candidate),
     creatives,
+    creativeRotation: {
+      enabled: candidate.creativeRotationEnabled ?? false,
+      intervalSeconds: candidate.creativeRotationIntervalSeconds ?? 10,
+      strategy: "ROUND_ROBIN"
+    },
     targeting: mapTargeting(candidate.targets)
   };
 }
@@ -682,10 +695,18 @@ export async function getEligibleAdvertisements(
 
   const paidPlacementCandidate = paidSelection.placementCandidate;
 
+  // Sidebar placements always attempt configured house inventory when
+  // paid inventory is unavailable. The repository still enforces the
+  // configured fallback advertisement and its delivery eligibility.
+  const isSidebarPlacement =
+    request.placementType === "HOME_SIDEBAR" ||
+    request.placementType === "NEWS_LIST_SIDEBAR" ||
+    request.placementType === "NEWS_DETAIL_SIDEBAR";
+
   const canUseHouseFallback =
+    isSidebarPlacement ||
     requestedPlacement?.fallbackBehavior === "HOUSE_AD" ||
-    paidPlacementCandidate?.fallbackBehavior === "HOUSE_AD" ||
-    (requestedPlacement === null && paidPlacementCandidate === undefined);
+    paidPlacementCandidate?.fallbackBehavior === "HOUSE_AD";
 
   if (!canUseHouseFallback) {
     if (requestedPlacement !== null) {

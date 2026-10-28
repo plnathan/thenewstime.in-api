@@ -239,9 +239,10 @@ describe("Advertisement Payment Validation", () => {
     it("should accept a valid refund", () => {
       const result = advertisementPaymentRefundSchema.safeParse({
         paymentId: 100,
+        financialApprovalId: 900,
         amount: 5000,
-        refundDate: "2026-09-23T10:00:00+05:30",
-        refundReference: "REF-10001",
+        refundDate: new Date("2026-10-27T00:00:00.000Z"),
+        refundReference: "REF-50001",
         refundReason: "Customer refund"
       });
 
@@ -257,7 +258,7 @@ describe("Advertisement Payment Validation", () => {
     it("should accept a refund without optional fields", () => {
       const result = advertisementPaymentRefundSchema.safeParse({
         paymentId: 100,
-        amount: 5000
+        financialApprovalId: 900
       });
 
       expect(result.success).toBe(true);

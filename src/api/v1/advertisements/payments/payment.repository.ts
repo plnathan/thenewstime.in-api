@@ -605,6 +605,79 @@ export async function markRefunded(
   return row === undefined ? null : mapPayment(row);
 }
 
+/** Lock a refund approval and its parent payment within the advertisement transaction. */
+export async function getRefundApprovalForExecution(
+  approvalId: number,
+  executor: PoolClient
+): Promise<{
+  id: number;
+  paymentId: number;
+  advertisementId: number;
+  approvalType: string;
+  status: string;
+  requestedAmount: number;
+  approvedAmount: number | null;
+  alreadyExecuted: boolean;
+} | null> {
+  const result = await executor.query<{
+    id: string;
+    payment_id: string | null;
+    advertisement_id: string;
+    approval_type: string;
+    status: string;
+    requested_amount: string | null;
+    approved_amount: string | null;
+    already_executed: boolean;
+  }>(
+    `
+    SELECT a.id, a.payment_id, a.advertisement_id, a.approval_type,
+           a.status, a.requested_amount, a.approved_amount,
+           EXISTS (SELECT 1 FROM advertisement_payment_refunds r
+                   WHERE r.financial_approval_id = a.id) AS already_executed
+    FROM advertisement_financial_approvals a
+    WHERE a.id = $1
+    FOR UPDATE OF a
+  `,
+    [approvalId]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    paymentId: Number(row.payment_id),
+    advertisementId: Number(row.advertisement_id),
+    approvalType: row.approval_type,
+    status: row.status,
+    requestedAmount: Number(row.requested_amount),
+    approvedAmount:
+      row.approved_amount === null ? null : Number(row.approved_amount),
+    alreadyExecuted: row.already_executed
+  };
+}
+
+export async function getReservedRefundAmount(
+  paymentId: number,
+  executor: DbExecutor = pool,
+  excludeApprovalId?: number
+): Promise<number> {
+  const result = await executor.query<{ total: string }>(
+    `
+    SELECT COALESCE(SUM(COALESCE(a.approved_amount, a.requested_amount)), 0)::numeric AS total
+    FROM advertisement_financial_approvals a
+    WHERE a.payment_id = $1
+      AND a.approval_type IN ('REFUND', 'PARTIAL_REFUND')
+      AND a.status IN ('SUBMITTED', 'HOLD', 'APPROVED')
+      AND ($2::bigint IS NULL OR a.id <> $2)
+      AND NOT EXISTS (
+        SELECT 1 FROM advertisement_payment_refunds r
+        WHERE r.financial_approval_id = a.id
+      )
+  `,
+    [paymentId, excludeApprovalId ?? null]
+  );
+  return Number(result.rows[0]?.total ?? 0);
+}
+
 export async function createRefund(
   data: CreateAdvertisementPaymentRefundInput,
   refundedBy: number | null,
@@ -620,6 +693,7 @@ export async function createRefund(
       refund_reference,
       refund_reason,
       refunded_by,
+      financial_approval_id,
       created_at,
       updated_at
     )
@@ -631,6 +705,7 @@ export async function createRefund(
       $4,
       $5,
       $6,
+      $7,
       NOW(),
       NOW()
     )
@@ -651,7 +726,8 @@ export async function createRefund(
       data.refundDate ?? null,
       data.refundReference ?? null,
       data.refundReason ?? null,
-      refundedBy
+      refundedBy,
+      data.financialApprovalId
     ]
   );
 

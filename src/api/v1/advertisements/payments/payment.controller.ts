@@ -202,7 +202,8 @@ export const createPaymentRefund = async (
     const refund = await service.createPaymentRefund(
       {
         paymentId: Number(req.params.id),
-        amount: body.amount,
+        financialApprovalId: body.financialApprovalId,
+        ...(body.amount !== undefined ? { amount: body.amount } : {}),
 
         ...(body.refundDate !== undefined
           ? { refundDate: body.refundDate }

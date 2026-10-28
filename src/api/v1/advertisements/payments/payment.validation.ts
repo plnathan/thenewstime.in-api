@@ -121,12 +121,13 @@ export const updateAdvertisementPaymentSchema = z
   );
 
 export const advertisementPaymentRefundSchema = z.object({
+  financialApprovalId: z.coerce.number().int().positive(),
   paymentId: z.coerce
     .number()
     .int()
     .positive("Payment ID must be a positive integer."),
 
-  amount: refundAmountSchema,
+  amount: refundAmountSchema.optional(),
 
   refundDate: optionalDateSchema,
 

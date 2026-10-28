@@ -6,6 +6,8 @@ export type AdvertisementDeliveryPlacementType =
   | "HOME_TOP"
   | "HOME_BETWEEN_SECTIONS"
   | "HOME_SIDEBAR"
+  | "HOME_BOTTOM"
+  | "HOME_MODAL"
   | "NEWS_LIST_TOP"
   | "NEWS_LIST_BETWEEN"
   | "NEWS_LIST_BOTTOM"
@@ -110,11 +112,17 @@ export interface AdvertisementDeliveryItem {
   schedulePriority: number;
 
   placementRuleId: number;
+  scheduleId: number;
   placementRuleDisplayOrder: number;
   placementRuleInsertionType: string | null;
   insertionPosition: number | null;
   maxImpressions: number | null;
 
+  creativeRotation: {
+    enabled: boolean;
+    intervalSeconds: number;
+    strategy: "ROUND_ROBIN";
+  };
   creatives: AdvertisementDeliveryCreative[];
   creative: AdvertisementDeliveryCreative | null;
   format: AdvertisementDeliveryFormat | null;

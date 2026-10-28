@@ -104,9 +104,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   };
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * TEST SETUP
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   beforeAll(async () => {
@@ -790,9 +790,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * PERMISSION RE-VALIDATION
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   const ensureRequiredPermissions = async (): Promise<void> => {
@@ -1039,9 +1039,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * CLEANUP
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   afterAll(async () => {
@@ -1390,9 +1390,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * AUTHENTICATION
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("should have valid Ad Creator and Finance Approver authentication tokens", () => {
@@ -1401,9 +1401,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * CREATE TEST ADVERTISEMENT
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("should create the advertisement used by workflow tests", async () => {
@@ -1416,8 +1416,7 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
         name: `Financial Approval Workflow Advertisement ${timestamp}`,
         internalName: `financial-approval-workflow-ad-${timestamp}`,
         advertisementType: "DISPLAY",
-        destinationUrl:
-          "https://example.com/financial-approval-workflow-test",
+        destinationUrl: "https://example.com/financial-approval-workflow-test",
         priority: 10,
         isClickable: true,
         openInNewTab: true,
@@ -1457,18 +1456,18 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
     );
 
     expect(placementRuleResult.rows.length).toBe(1);
-    expect(
-      Number(placementRuleResult.rows[0]?.advertisement_id ?? 0)
-    ).toBe(testAdvertisementId);
+    expect(Number(placementRuleResult.rows[0]?.advertisement_id ?? 0)).toBe(
+      testAdvertisementId
+    );
     expect(Number(placementRuleResult.rows[0]?.placement_id ?? 0)).toBe(
       testPlacementId
     );
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * CREATOR → FINANCIAL APPROVAL
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval - should allow Ad Creator to create an approval", async () => {
@@ -1511,9 +1510,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * RBAC BOUNDARY
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval - should deny Finance Approver from creating a financial approval", async () => {
@@ -1558,9 +1557,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * INITIAL HISTORY
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("GET /financial-approval/:id/history - should allow Finance Approver to read initial workflow history", async () => {
@@ -1583,9 +1582,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * SUBMITTED → HOLD
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/hold - should allow Finance Approver to transition SUBMITTED to HOLD", async () => {
@@ -1652,9 +1651,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * HOLD → APPROVED
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/approve - should allow Finance Approver to transition HOLD to APPROVED", async () => {
@@ -1714,9 +1713,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * APPROVED TERMINAL STATE
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/approve - should reject approval of an already APPROVED approval", async () => {
@@ -1790,9 +1789,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * HISTORY FOR APPROVED WORKFLOW
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("GET /financial-approval/:id/history - should return the complete approval history to Finance Approver", async () => {
@@ -1846,9 +1845,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * SUBMITTED → REJECTED
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval - should allow Ad Creator to create another SUBMITTED approval for rejection workflow", async () => {
@@ -1858,7 +1857,7 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
       .send({
         advertisementId: testAdvertisementId,
         clientId: testClientId,
-        approvalType: "REFUND",
+        approvalType: "ADJUSTMENT",
         requestedAmount: 3000,
         remarks: "Refund workflow test."
       });
@@ -1896,9 +1895,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * REJECTED PERSISTENCE
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("GET /financial-approval/:id - should persist the REJECTED financial approval state", async () => {
@@ -1922,9 +1921,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * REJECTED → SUBMITTED
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/resubmit - should allow Ad Creator to transition REJECTED to SUBMITTED", async () => {
@@ -1948,9 +1947,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * RESUBMISSION PERSISTENCE
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("GET /financial-approval/:id - should persist the resubmitted SUBMITTED state", async () => {
@@ -2133,9 +2132,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * RESUBMITTED → APPROVED
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/approve - should allow Finance Approver to approve a resubmitted approval", async () => {
@@ -2161,9 +2160,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * RESUBMITTED → APPROVED HISTORY
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("GET /financial-approval/:id/history - should contain the complete reject, resubmit and approve lifecycle", async () => {
@@ -2219,9 +2218,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * APPROVED TERMINAL STATE AFTER RESUBMISSION
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/reject - should reject rejecting an approval that was approved after resubmission", async () => {
@@ -2267,9 +2266,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * DIRECT SUBMITTED → REJECTED HISTORY
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval - should allow Ad Creator to create an approval for direct rejection history testing", async () => {
@@ -2279,8 +2278,8 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
       .send({
         advertisementId: testAdvertisementId,
         clientId: testClientId,
-        approvalType: "PARTIAL_REFUND",
-        requestedPercentage: 25,
+        approvalType: "ADJUSTMENT",
+        requestedAmount: 1250,
         remarks: "Direct rejection history test."
       });
 
@@ -2352,9 +2351,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * REJECTED TERMINAL UNTIL RESUBMIT
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/approve - should reject approval of a REJECTED approval", async () => {
@@ -2386,9 +2385,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * HOLD → REJECTED
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval - should create an approval for HOLD to REJECTED workflow", async () => {
@@ -2536,9 +2535,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * REQUIRED HOLD REASON
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/hold - should reject an empty hold reason", async () => {
@@ -2587,9 +2586,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * REQUIRED REJECTION REASON
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("POST /financial-approval/:id/reject - should reject an empty rejection reason", async () => {
@@ -2599,7 +2598,7 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
       .send({
         advertisementId: testAdvertisementId,
         clientId: testClientId,
-        approvalType: "REFUND",
+        approvalType: "ADJUSTMENT",
         requestedAmount: 1250,
         remarks: "Rejection validation test."
       });
@@ -2638,9 +2637,9 @@ describe("Advertisement Financial Approval Financial Workflow API Integration", 
   });
 
   /*
-   * ========================================================================== 
+   * ==========================================================================
    * HISTORY ORDER / DATA VALIDATION
-   * ========================================================================== 
+   * ==========================================================================
    */
 
   it("GET /financial-approval/:id/history - should preserve chronological workflow history", async () => {

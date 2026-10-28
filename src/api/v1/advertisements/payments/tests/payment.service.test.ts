@@ -25,6 +25,7 @@ vi.mock("../payment.repository.js", () => ({
   findRefundById: vi.fn(),
   findRefundsByPaymentId: vi.fn(),
   getTotalRefundedAmount: vi.fn(),
+  getRefundApprovalForExecution: vi.fn(),
   getList: vi.fn(),
   getSummary: vi.fn(),
   getUnsettledPaymentAmounts: vi.fn(),
@@ -85,6 +86,16 @@ describe("Advertisement Payment Service", () => {
     vi.clearAllMocks();
 
     mockedRepository.advertisementExists.mockResolvedValue(true);
+    mockedRepository.getRefundApprovalForExecution.mockResolvedValue({
+      id: 900,
+      paymentId: 100,
+      advertisementId: 10,
+      approvalType: "REFUND",
+      status: "APPROVED",
+      requestedAmount: 5000,
+      approvedAmount: 5000,
+      alreadyExecuted: false
+    });
     mockedRepository.hasTransactionReference.mockResolvedValue(false);
 
     mockedRepository.getSummary.mockResolvedValue({
@@ -651,6 +662,7 @@ describe("Advertisement Payment Service", () => {
       const result = await paymentService.createPaymentRefund(
         {
           paymentId: 100,
+          financialApprovalId: 900,
           amount: 5000,
           refundReference: "REF-50001",
           refundReason: "Customer refund"
@@ -663,15 +675,27 @@ describe("Advertisement Payment Service", () => {
       expect(mockedRepository.createRefund).toHaveBeenCalledWith(
         expect.objectContaining({
           paymentId: 100,
+          financialApprovalId: 900,
           amount: 5000
         }),
-        5
+        5,
+        expect.anything()
       );
 
       expect(mockedRepository.markRefunded).not.toHaveBeenCalled();
     });
 
     it("should mark the payment refunded when the full amount is refunded", async () => {
+      mockedRepository.getRefundApprovalForExecution.mockResolvedValue({
+        id: 900,
+        paymentId: 100,
+        advertisementId: 10,
+        approvalType: "REFUND",
+        status: "APPROVED",
+        requestedAmount: 25000,
+        approvedAmount: 25000,
+        alreadyExecuted: false
+      });
       mockedRepository.findById.mockResolvedValue(
         createPayment({
           paymentStatus: "VERIFIED",
@@ -694,6 +718,7 @@ describe("Advertisement Payment Service", () => {
       await paymentService.createPaymentRefund(
         {
           paymentId: 100,
+          financialApprovalId: 900,
           amount: 25000,
           refundReference: "REF-FULL",
           refundReason: "Full refund"
@@ -705,7 +730,8 @@ describe("Advertisement Payment Service", () => {
         100,
         5,
         "REF-FULL",
-        "Full refund"
+        "Full refund",
+        expect.anything()
       );
     });
 
@@ -716,6 +742,7 @@ describe("Advertisement Payment Service", () => {
         paymentService.createPaymentRefund(
           {
             paymentId: 999,
+            financialApprovalId: 900,
             amount: 1000
           },
           5
@@ -736,6 +763,7 @@ describe("Advertisement Payment Service", () => {
         paymentService.createPaymentRefund(
           {
             paymentId: 100,
+            financialApprovalId: 900,
             amount: 1000
           },
           5
@@ -756,6 +784,7 @@ describe("Advertisement Payment Service", () => {
         paymentService.createPaymentRefund(
           {
             paymentId: 100,
+            financialApprovalId: 900,
             amount: 1000
           },
           5
@@ -776,6 +805,7 @@ describe("Advertisement Payment Service", () => {
         paymentService.createPaymentRefund(
           {
             paymentId: 100,
+            financialApprovalId: 900,
             amount: 1000
           },
           5
@@ -796,6 +826,7 @@ describe("Advertisement Payment Service", () => {
         paymentService.createPaymentRefund(
           {
             paymentId: 100,
+            financialApprovalId: 900,
             amount: 1000
           },
           5
@@ -819,6 +850,7 @@ describe("Advertisement Payment Service", () => {
         paymentService.createPaymentRefund(
           {
             paymentId: 100,
+            financialApprovalId: 900,
             amount: 6000
           },
           5

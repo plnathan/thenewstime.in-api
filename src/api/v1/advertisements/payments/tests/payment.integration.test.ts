@@ -21,6 +21,7 @@ describe("Advertisement Payment API Integration", () => {
   let cancelledPaymentId = 0;
   let refundedPaymentId = 0;
   let partialRefundPaymentId = 0;
+  const financialApprovalIds: number[] = [];
 
   const timestamp = Date.now();
 
@@ -43,7 +44,9 @@ describe("Advertisement Payment API Integration", () => {
 
   const advertisementPermissionCodes = {
     read: "advertisements.read",
-    create: "advertisements.create"
+    create: "advertisements.create",
+    submit: "advertisements.submit",
+    update: "advertisements.update"
   };
 
   const paymentPermissionIds: Record<
@@ -63,10 +66,54 @@ describe("Advertisement Payment API Integration", () => {
     number
   > = {
     read: 0,
-    create: 0
+    create: 0,
+    update: 0,
+    submit: 0
+  };
+
+  const financialApprovalPermissionCodes = {
+    approve: "advertisements.financial_approvals.approve",
+    read: "advertisements.financial_approvals.read"
   };
 
   const createdPermissionIds: number[] = [];
+
+  const createApprovedRefundRequest = async (
+    paymentId: number,
+    amount: number,
+    approvalType: "REFUND" | "PARTIAL_REFUND"
+  ): Promise<number> => {
+    const created = await request(app)
+      .post("/api/v1/advertisements/payments/financial-approval")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        advertisementId: testAdvertisementId,
+        clientId: testClientId,
+        paymentId,
+        approvalType,
+        requestedAmount: amount,
+        approvalRemarks: `Refund integration test: ${approvalType}`
+      });
+
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const approvalId = Number(created.body.data.id);
+    expect(approvalId).toBeGreaterThan(0);
+    financialApprovalIds.push(approvalId);
+
+    const approved = await request(app)
+      .post(
+        `/api/v1/advertisements/payments/financial-approval/${approvalId}/approve`
+      )
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        approvedAmount: amount,
+        approvalRemarks: "Approved for integration testing."
+      });
+
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body.data.status).toBe("APPROVED");
+    return approvalId;
+  };
 
   /*
    * ==========================================================================
@@ -367,6 +414,42 @@ describe("Advertisement Payment API Integration", () => {
       );
     }
 
+    for (const [action, code] of Object.entries(
+      financialApprovalPermissionCodes
+    )) {
+      const existing = await pool.query(
+        "SELECT id FROM permissions WHERE code = $1 LIMIT 1",
+        [code]
+      );
+      let permissionId = Number(existing.rows[0]?.id ?? 0);
+      if (!permissionId) {
+        const created = await pool.query(
+          `INSERT INTO permissions
+           (code, display_name, description, module, resource, action,
+            display_order, is_system_permission, status, created_by, updated_by)
+           VALUES ($1, $2, $3, 'ADVERTISEMENT',
+                   'advertisements.financial_approvals', $4, 999, TRUE,
+                   'ACTIVE', $5, $5)
+           RETURNING id`,
+          [
+            code,
+            `Financial approval ${action}`,
+            `Test permission ${code}`,
+            action,
+            testUserId
+          ]
+        );
+        permissionId = Number(created.rows[0].id);
+        createdPermissionIds.push(permissionId);
+      }
+      await pool.query(
+        `INSERT INTO role_permissions (role_id, permission_id, created_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (role_id, permission_id) DO NOTHING`,
+        [testRoleId, permissionId, testUserId]
+      );
+    }
+
     const clientResult = await pool.query(
       `
       INSERT INTO advertisement_clients
@@ -501,6 +584,25 @@ describe("Advertisement Payment API Integration", () => {
         );
       } catch {
         // Cleanup should not make the test suite fail.
+      }
+    }
+
+    for (const approvalId of financialApprovalIds) {
+      try {
+        await pool.query(
+          "DELETE FROM advertisement_financial_approval_history WHERE financial_approval_id = $1",
+          [approvalId]
+        );
+      } catch {
+        // Database schemas may use a different history table name.
+      }
+      try {
+        await pool.query(
+          "DELETE FROM advertisement_financial_approvals WHERE id = $1",
+          [approvalId]
+        );
+      } catch {
+        // Cleanup should not mask the test result.
       }
     }
 
@@ -1009,11 +1111,16 @@ describe("Advertisement Payment API Integration", () => {
   });
 
   it("POST /api/v1/advertisements/payments/:id/refunds - should create a partial refund against the regular payment", async () => {
+    const financialApprovalId = await createApprovedRefundRequest(
+      partialRefundPaymentId,
+      5000,
+      "PARTIAL_REFUND"
+    );
     const response = await request(app)
       .post(`/api/v1/advertisements/payments/${partialRefundPaymentId}/refunds`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
-        amount: 5000,
+        financialApprovalId,
         refundReference: `REF-PARTIAL-${timestamp}`,
         refundReason: "Partial refund for integration test."
       });
@@ -1069,7 +1176,7 @@ describe("Advertisement Payment API Integration", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         advertisementId: testAdvertisementId,
-        amount: 10000,
+        amount: 7500,
         paymentType: "REGULAR",
         paymentMethod: "BANK_TRANSFER",
         transactionReference: `FULL-REFUND-TXN-${timestamp}`,
@@ -1096,11 +1203,16 @@ describe("Advertisement Payment API Integration", () => {
   });
 
   it("POST /api/v1/advertisements/payments/:id/refunds - should fully refund the second payment", async () => {
+    const financialApprovalId = await createApprovedRefundRequest(
+      refundedPaymentId,
+      7500,
+      "REFUND"
+    );
     const response = await request(app)
       .post(`/api/v1/advertisements/payments/${refundedPaymentId}/refunds`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
-        amount: 10000,
+        financialApprovalId,
         refundReference: `REF-FULL-${timestamp}`,
         refundReason: "Full refund for integration test."
       });
@@ -1108,7 +1220,7 @@ describe("Advertisement Payment API Integration", () => {
     expect(response.status).toBe(201);
     expect(response.body.success).toBe(true);
     expect(Number(response.body.data.paymentId)).toBe(refundedPaymentId);
-    expect(Number(response.body.data.amount)).toBe(10000);
+    expect(Number(response.body.data.amount)).toBe(7500);
   });
 
   it("GET /api/v1/advertisements/payments/:id - should mark the payment REFUNDED after a full refund", async () => {
@@ -1145,10 +1257,10 @@ describe("Advertisement Payment API Integration", () => {
    * Verified payments:
    *   ADVANCE  : 25,000
    *   REGULAR  : 10,000 (partial refund 5,000)
-   *   REGULAR  : 10,000 (full refund 10,000)
+   *   REGULAR  : 7,500 (full refund 7,500)
    *
-   * Gross verified payments = 45,000.
-   * Total refunds           = 15,000.
+   * Gross verified payments = 42,500.
+   * Total refunds           = 12,500.
    * Net paid                = 30,000.
    * Outstanding             = 20,000.
    *
@@ -1169,8 +1281,8 @@ describe("Advertisement Payment API Integration", () => {
     );
 
     expect(Number(response.body.data.advertisementAmount)).toBe(50000);
-    expect(Number(response.body.data.verifiedPaymentAmount)).toBe(45000);
-    expect(Number(response.body.data.refundedAmount)).toBe(15000);
+    expect(Number(response.body.data.verifiedPaymentAmount)).toBe(42500);
+    expect(Number(response.body.data.refundedAmount)).toBe(12500);
     expect(Number(response.body.data.netPaidAmount)).toBe(30000);
 
     expect(Number(response.body.data.advanceRequiredAmount)).toBe(25000);

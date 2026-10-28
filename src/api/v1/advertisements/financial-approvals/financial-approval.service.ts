@@ -3,6 +3,7 @@ import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
 import * as thresholdService from "../financial-approval-thresholds/financial-approval-threshold.service.js";
 
 import * as paymentService from "../payments/payment.service.js";
+import * as paymentRepository from "../payments/payment.repository.js";
 
 import * as repository from "./financial-approval.repository.js";
 
@@ -274,6 +275,97 @@ export const create = async (
 ): Promise<AdvertisementFinancialApproval> => {
   validateId(requestedBy, "requestedBy");
   validateCreateInput(input);
+  if (
+    input.approvalType === "REFUND" ||
+    input.approvalType === "PARTIAL_REFUND"
+  ) {
+    if (
+      !input.paymentId ||
+      input.requestedAmount == null ||
+      input.requestedPercentage != null
+    ) {
+      throw new ApiError(
+        400,
+        "Refund requests require a paymentId and requestedAmount, not a percentage."
+      );
+    }
+
+    // All refund requests for an advertisement must acquire the same lock as
+    // refund execution. This makes refundable-balance reservation atomic.
+    return paymentRepository.withAdvertisementLock(
+      input.advertisementId,
+      async (client) => {
+        const payment = await paymentRepository.findById(
+          input.paymentId!,
+          client
+        );
+        if (
+          !payment ||
+          payment.advertisementId !== input.advertisementId ||
+          payment.paymentStatus !== "VERIFIED"
+        ) {
+          throw new ApiError(
+            400,
+            "Refund request must reference a verified payment for this advertisement."
+          );
+        }
+        const refunded = await paymentRepository.getTotalRefundedAmount(
+          input.paymentId!,
+          client
+        );
+        const reserved = await paymentRepository.getReservedRefundAmount(
+          input.paymentId!,
+          client
+        );
+        const availableCents =
+          Math.round(payment.amount * 100) -
+          Math.round(refunded * 100) -
+          Math.round(reserved * 100);
+        if (Math.round(input.requestedAmount! * 100) > availableCents) {
+          throw new ApiError(
+            409,
+            `Refund request exceeds available refundable amount of ${(availableCents / 100).toFixed(2)}.`
+          );
+        }
+        const existingPending =
+          await repository.findPendingByAdvertisementIdAndType(
+            input.advertisementId,
+            input.approvalType,
+            client
+          );
+        if (existingPending) {
+          throw new ApiError(
+            409,
+            `A pending ${input.approvalType} approval already exists for this advertisement.`
+          );
+        }
+        const approval = await repository.create(
+          {
+            advertisementId: input.advertisementId,
+            clientId: input.clientId,
+            paymentId: input.paymentId ?? null,
+            approvalType: input.approvalType,
+            requestedAmount: input.requestedAmount ?? null,
+            requestedPercentage: null,
+            approvalRemarks: normalizeOptionalText(input.approvalRemarks)
+          },
+          requestedBy,
+          client
+        );
+        await repository.createHistory(
+          approval.id,
+          null,
+          "SUBMITTED",
+          requestedBy,
+          approval.approvalRemarks,
+          null,
+          null,
+          client
+        );
+        return approval;
+      }
+    );
+  }
   if (input.approvalType === "CREDIT_EXCEPTION") {
     const summary = await paymentService.getPaymentSummary(
       input.advertisementId

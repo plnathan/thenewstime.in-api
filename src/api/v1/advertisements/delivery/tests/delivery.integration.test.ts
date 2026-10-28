@@ -900,13 +900,15 @@ describe("Advertisement Delivery API Integration", () => {
     expect(Number(response.body.data.placement.id)).toBe(placementId);
   });
 
-  it("GET /api/v1/advertisements/delivery - should return an empty advertisement list for a valid placement with no matching placement", async () => {
+  it("GET /api/v1/advertisements/delivery - should return an empty advertisement list when the requested placement does not exist", async () => {
+    // Do not rely on shared database placements being empty.
     const response = await request(app).get(
-      "/api/v1/advertisements/delivery?pageType=NEWS_LIST&placementType=NEWS_LIST_TOP"
+      "/api/v1/advertisements/delivery?pageType=NEWS_LIST&placementType=NEWS_LIST_TOP&placementId=999999998"
     );
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
+    expect(response.body.data.placement).toBeNull();
     expect(Array.isArray(response.body.data.advertisements)).toBe(true);
     expect(response.body.data.advertisements).toHaveLength(0);
   });

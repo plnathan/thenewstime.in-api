@@ -126,3 +126,10 @@ export const updateAdvertisementCreativeSchema = z
       });
     }
   });
+
+/** Operational creative toggle; independent of draft asset editing. */
+export const creativeDeliveryStatusSchema = z
+  .object({
+    enabled: z.boolean()
+  })
+  .strict();

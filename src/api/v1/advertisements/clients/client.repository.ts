@@ -534,8 +534,9 @@ export const list = async (
       ${fromClause}
       ${whereClause}
       ORDER BY
-        c.name ASC,
-        c.id ASC
+        CASE WHEN c.status = 'ACTIVE' THEN 0 ELSE 1 END ASC,
+        c.created_at DESC,
+        c.id DESC
       LIMIT $${limitIndex}
       OFFSET $${offsetIndex}
     `,
