@@ -64,6 +64,8 @@ export interface AdvertisementPaymentRefund {
 
   paymentId: number;
 
+  financialApprovalId: number | null;
+
   amount: number;
 
   refundDate: Date;

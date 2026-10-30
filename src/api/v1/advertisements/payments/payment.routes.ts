@@ -17,6 +17,19 @@ import {
 
 const router = Router();
 
+/** Link an executed refund to an already-applied approved DISCOUNT. */
+router.post(
+  "/refunds/:refundId/commercial-match",
+  authorize("ADVERTISEMENT", "advertisements.payments", "refund"),
+  controller.matchRefundToDiscount
+);
+
+router.get(
+  "/commercial-matches/:advertisementId",
+  authorize("ADVERTISEMENT", "advertisements.payments", "read"),
+  controller.listRefundCommercialMatches
+);
+
 /**
  * List advertisement payments.
  *
@@ -134,7 +147,6 @@ router.post(
 );
 
 export default router;
-
 
 /*
 GET    /api/v1/advertisements/payments

@@ -10,6 +10,8 @@ import { calculateStandardAmount } from "../standard-amount/standard-amount.serv
 
 import * as financialApprovalRepository from "../financial-approvals/financial-approval.repository.js";
 
+import * as thresholdRepository from "../financial-approval-thresholds/financial-approval-threshold.repository.js";
+
 import * as repository from "./advertisement.repository.js";
 
 import type {
@@ -454,6 +456,40 @@ const isFinancialValueDifferent = (
 };
 
 /**
+ * Enforce the active DISCOUNT configuration as a hard ceiling at persistence.
+ * This is independent of refund approval and of any previously approved
+ * financial request. Missing threshold configuration is not a zero limit.
+ */
+const validateConfiguredDiscountCeiling = async (
+  discountAmount: number,
+  discountPercentage: number
+): Promise<void> => {
+  const threshold =
+    await thresholdRepository.findActiveByApprovalType("DISCOUNT");
+  if (!threshold) return;
+
+  if (
+    threshold.amountThreshold !== null &&
+    discountAmount > Number(threshold.amountThreshold) + 0.009
+  ) {
+    throw new ApiError(
+      400,
+      `Discount amount ${roundToTwo(discountAmount).toFixed(2)} exceeds the configured maximum of ${roundToTwo(Number(threshold.amountThreshold)).toFixed(2)}.`
+    );
+  }
+
+  if (
+    threshold.percentageThreshold !== null &&
+    discountPercentage > Number(threshold.percentageThreshold) + 1e-9
+  ) {
+    throw new ApiError(
+      400,
+      `Discount percentage ${discountPercentage}% exceeds the configured maximum of ${threshold.percentageThreshold}%.`
+    );
+  }
+};
+
+/**
  * Prevents commercial updates from bypassing DISCOUNT financial approval.
  *
  * Rules:
@@ -709,10 +745,39 @@ const validateCommercialFinancialApprovals = async (
 
   await validateDiscountApproval(advertisement, financials);
 
-  await validateAdjustmentApproval(
-    advertisement,
-    financials.advertisementAmount
-  );
+  /*
+   * A rate-card-derived price reduction is a DISCOUNT, not an independent
+   * ADJUSTMENT. Only recognize this when BOTH the persisted and proposed
+   * amounts reconcile exactly to the same unchanged Standard Amount.
+   * Any other Advertisement Amount change still requires ADJUSTMENT review.
+   */
+  const standard =
+    advertisement.standardAmount == null
+      ? null
+      : Number(advertisement.standardAmount);
+  const oldDiscount = Number(advertisement.discountAmount ?? 0);
+  const oldAmount =
+    advertisement.advertisementAmount == null
+      ? null
+      : Number(advertisement.advertisementAmount);
+  const isDerivedDiscountOnly =
+    standard !== null &&
+    Number.isFinite(standard) &&
+    oldAmount !== null &&
+    roundToTwo(oldAmount) === roundToTwo(standard - oldDiscount) &&
+    financials.advertisementAmount !== null &&
+    roundToTwo(financials.advertisementAmount) ===
+      roundToTwo(standard - financials.discountAmount) &&
+    input.discountPercentage !== undefined &&
+    financials.discountAmount !== oldDiscount &&
+    input.advertisementAmount !== undefined;
+
+  if (!isDerivedDiscountOnly) {
+    await validateAdjustmentApproval(
+      advertisement,
+      financials.advertisementAmount
+    );
+  }
 };
 
 /* ------------------------------------------------------------
@@ -1033,6 +1098,11 @@ export const createAdvertisement = async (
       input.advancePercentage
     );
 
+    await validateConfiguredDiscountCeiling(
+      financials.discountAmount,
+      financials.discountPercentage
+    );
+
     return repository.create(
       {
         ...inputWithoutPlacement,
@@ -1101,6 +1171,11 @@ export const createAdvertisement = async (
       input.discountPercentage,
       input.advancePercentage,
       standardAmountResult.standardAmount
+    );
+
+    await validateConfiguredDiscountCeiling(
+      pricedFinancials.discountAmount,
+      pricedFinancials.discountPercentage
     );
 
     const advertisement = await repository.create(
@@ -1346,7 +1421,7 @@ export const updateAdvertisement = async (
   const mergedAdvertisementAmount =
     input.advertisementAmount ?? advertisement.advertisementAmount;
 
-  const financials = calculateAdvertisementFinancials(
+  let financials = calculateAdvertisementFinancials(
     mergedAdvertisementAmount,
     mergedDiscountPercentage,
     mergedAdvancePercentage,
@@ -1355,6 +1430,75 @@ export const updateAdvertisement = async (
       ? null
       : Number(recalculatedStandardAmount)
   );
+
+  /*
+   * Reconcile the Pricing workspace's rate-card-derived amount. This path
+   * is intentionally narrow: the saved price must already be derivable from
+   * its Standard Amount and discount, and the Standard Amount must be
+   * unchanged. Negotiated prices retain the existing ADJUSTMENT rules.
+   */
+  const persistedStandard =
+    advertisement.standardAmount == null
+      ? null
+      : Number(advertisement.standardAmount);
+  const persistedAmount =
+    advertisement.advertisementAmount == null
+      ? null
+      : Number(advertisement.advertisementAmount);
+  const persistedDiscount = Number(advertisement.discountAmount ?? 0);
+  if (
+    input.discountPercentage !== undefined &&
+    input.advertisementAmount !== undefined &&
+    persistedStandard !== null &&
+    Number.isFinite(persistedStandard) &&
+    persistedAmount !== null &&
+    roundToTwo(persistedAmount) ===
+      roundToTwo(persistedStandard - persistedDiscount) &&
+    recalculatedStandardAmount != null &&
+    roundToTwo(Number(recalculatedStandardAmount)) ===
+      roundToTwo(persistedStandard)
+  ) {
+    const discountAmount = roundToTwo(
+      (persistedStandard * mergedDiscountPercentage) / 100
+    );
+    const derivedAmount = roundToTwo(persistedStandard - discountAmount);
+    if (roundToTwo(Number(input.advertisementAmount)) === derivedAmount) {
+      financials = {
+        advertisementAmount: derivedAmount,
+        discountPercentage: mergedDiscountPercentage,
+        discountAmount,
+        advancePercentage: mergedAdvancePercentage,
+        advanceAmount: roundToTwo(
+          (derivedAmount * mergedAdvancePercentage) / 100
+        )
+      };
+    }
+  }
+
+  /*
+   * Guard the rate-card commercial invariant before PostgreSQL constraints.
+   * A discount reduces the final advertisement amount; it must not be
+   * deducted from that final amount a second time.
+   */
+  if (
+    recalculatedStandardAmount !== null &&
+    recalculatedStandardAmount !== undefined &&
+    financials.advertisementAmount !== null &&
+    input.discountPercentage !== undefined &&
+    input.advertisementAmount !== undefined
+  ) {
+    const standard = Number(recalculatedStandardAmount);
+    const expectedFinal = roundToTwo(standard - financials.discountAmount);
+    if (financials.discountAmount > standard + 0.009 || expectedFinal < 0) {
+      throw new ApiError(400, "Discount cannot exceed the Standard Amount.");
+    }
+    if (roundToTwo(financials.advertisementAmount) !== expectedFinal) {
+      throw new ApiError(
+        400,
+        "Advertisement Amount must equal Standard Amount minus Discount Amount."
+      );
+    }
+  }
 
   /*
    * Server-side financial approval enforcement.
@@ -1366,6 +1510,10 @@ export const updateAdvertisement = async (
    * ADJUSTMENT controls changes to Advertisement Amount.
    * Refunds and credit exceptions remain separate payment workflows.
    */
+  await validateConfiguredDiscountCeiling(
+    financials.discountAmount,
+    financials.discountPercentage
+  );
   await validateCommercialFinancialApprovals(advertisement, input, financials);
 
   /*

@@ -530,3 +530,97 @@ export async function getPaymentSummary(
         : roundCurrency(summary.outstandingAmount)
   };
 }
+
+/** Matches an existing executed refund to an already-applied, approved discount.
+ * Matching is accounting metadata: it NEVER deducts the discount or refund twice.
+ */
+export async function matchRefundToDiscount(
+  refundId: number,
+  discountApprovalId: number,
+  matchedBy: number
+): Promise<{
+  id: number;
+  advertisementId: number;
+  refundId: number;
+  discountApprovalId: number;
+  matchedAmount: number;
+}> {
+  if (
+    ![refundId, discountApprovalId, matchedBy].every(
+      (id) => Number.isSafeInteger(id) && id > 0
+    )
+  ) {
+    throw new ApiError(
+      400,
+      "Valid refund, discount approval and user IDs are required."
+    );
+  }
+  const lookup = await repository.findRefundAdvertisementId(refundId);
+  if (lookup === null) throw new ApiError(404, "Executed refund not found.");
+  return repository.withAdvertisementLock(lookup, async (client) => {
+    const record = await repository.findRefundMatchingCandidate(
+      refundId,
+      discountApprovalId,
+      client
+    );
+    if (!record)
+      throw new ApiError(404, "Refund or discount approval not found.");
+    if (
+      record.refundAdvertisementId !== record.approvalAdvertisementId ||
+      record.refundAdvertisementId !== lookup
+    ) {
+      throw new ApiError(
+        400,
+        "Refund and discount approval must belong to the same advertisement."
+      );
+    }
+    if (
+      record.approvalType !== "DISCOUNT" ||
+      record.approvalStatus !== "APPROVED" ||
+      record.revokedAt !== null
+    ) {
+      throw new ApiError(
+        409,
+        "A current, approved DISCOUNT financial approval is required."
+      );
+    }
+    const amount = roundCurrency(record.refundAmount);
+    const approved =
+      record.approvedAmount === null
+        ? null
+        : roundCurrency(record.approvedAmount);
+    if (approved === null || approved + 0.009 < amount) {
+      throw new ApiError(
+        409,
+        "The approved discount amount must cover the refund."
+      );
+    }
+    if (record.persistedDiscountAmount + 0.009 < amount) {
+      throw new ApiError(
+        409,
+        "Apply the approved commercial discount before matching the refund."
+      );
+    }
+    if (record.alreadyMatchedRefund || record.alreadyMatchedApproval) {
+      throw new ApiError(
+        409,
+        "This refund or discount approval has already been matched."
+      );
+    }
+    return repository.insertRefundCommercialMatch(
+      lookup,
+      refundId,
+      discountApprovalId,
+      amount,
+      matchedBy,
+      client
+    );
+  });
+}
+
+export async function listRefundCommercialMatches(advertisementId: number) {
+  if (!Number.isSafeInteger(advertisementId) || advertisementId <= 0) {
+    throw new ApiError(400, "A valid advertisement ID is required.");
+  }
+  return repository.listRefundCommercialMatches(advertisementId);
+}

@@ -69,6 +69,8 @@ export interface AdvertisementPaymentRefundRow {
 
   payment_id: number;
 
+  financial_approval_id: number | null;
+
   amount: string;
 
   refund_date: Date;

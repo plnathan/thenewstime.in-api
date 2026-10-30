@@ -252,3 +252,40 @@ export const getPaymentSummary = async (
     next(error);
   }
 };
+
+export const matchRefundToDiscount = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const result = await service.matchRefundToDiscount(
+      Number(req.params.refundId),
+      Number(req.body.discountApprovalId),
+      req.user.id
+    );
+    sendSuccess(
+      res,
+      "Refund matched to approved commercial discount.",
+      result,
+      201
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listRefundCommercialMatches = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const result = await service.listRefundCommercialMatches(
+      Number(req.params.advertisementId)
+    );
+    sendSuccess(res, "Refund commercial matches retrieved.", result);
+  } catch (error) {
+    next(error);
+  }
+};

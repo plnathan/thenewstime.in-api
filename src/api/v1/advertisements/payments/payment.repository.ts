@@ -91,6 +91,10 @@ function mapRefund(
   return {
     id: Number(row.id),
     paymentId: Number(row.payment_id),
+    financialApprovalId:
+      row.financial_approval_id === null
+        ? null
+        : Number(row.financial_approval_id),
     amount: Number(row.amount),
     refundDate: row.refund_date,
     refundReference: row.refund_reference,
@@ -712,6 +716,7 @@ export async function createRefund(
     RETURNING
       id,
       payment_id,
+      financial_approval_id,
       amount,
       refund_date,
       refund_reference,
@@ -749,6 +754,7 @@ export async function findRefundById(
     SELECT
       id,
       payment_id,
+      financial_approval_id,
       amount,
       refund_date,
       refund_reference,
@@ -776,6 +782,7 @@ export async function findRefundsByPaymentId(
     SELECT
       id,
       payment_id,
+      financial_approval_id,
       amount,
       refund_date,
       refund_reference,
@@ -1248,4 +1255,117 @@ export async function getRefundedAmountForPayment(
   );
 
   return Number(result.rows[0]?.total ?? 0);
+}
+
+export async function findRefundAdvertisementId(
+  refundId: number
+): Promise<number | null> {
+  const result = await pool.query<{ advertisement_id: string }>(
+    `SELECT p.advertisement_id FROM advertisement_payment_refunds r
+     JOIN advertisement_payments p ON p.id = r.payment_id WHERE r.id = $1`,
+    [refundId]
+  );
+  return result.rows[0] ? Number(result.rows[0].advertisement_id) : null;
+}
+
+export async function findRefundMatchingCandidate(
+  refundId: number,
+  approvalId: number,
+  client: PoolClient
+) {
+  const result = await client.query<{
+    refund_advertisement_id: string;
+    approval_advertisement_id: string;
+    refund_amount: string;
+    approval_type: string;
+    approval_status: string;
+    revoked_at: Date | null;
+    approved_amount: string | null;
+    persisted_discount_amount: string;
+    matched_refund_id: string | null;
+    matched_approval_id: string | null;
+  }>(
+    `SELECT p.advertisement_id AS refund_advertisement_id,
+       a.advertisement_id AS approval_advertisement_id, r.amount AS refund_amount,
+       a.approval_type, a.status AS approval_status, a.revoked_at, a.approved_amount,
+       COALESCE(ad.discount_amount,0) AS persisted_discount_amount,
+       mr.id AS matched_refund_id, ma.id AS matched_approval_id
+       FROM advertisement_payment_refunds r
+       JOIN advertisement_payments p ON p.id=r.payment_id
+       CROSS JOIN advertisement_financial_approvals a
+       JOIN advertisements ad ON ad.id=p.advertisement_id
+       LEFT JOIN advertisement_refund_commercial_matches mr ON mr.refund_id=r.id
+       LEFT JOIN advertisement_refund_commercial_matches ma ON ma.discount_approval_id=a.id
+       WHERE r.id=$1 AND a.id=$2`,
+    [refundId, approvalId]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    refundAdvertisementId: Number(row.refund_advertisement_id),
+    approvalAdvertisementId: Number(row.approval_advertisement_id),
+    refundAmount: Number(row.refund_amount),
+    approvalType: row.approval_type,
+    approvalStatus: row.approval_status,
+    revokedAt: row.revoked_at,
+    approvedAmount:
+      row.approved_amount === null ? null : Number(row.approved_amount),
+    persistedDiscountAmount: Number(row.persisted_discount_amount),
+    alreadyMatchedRefund: row.matched_refund_id !== null,
+    alreadyMatchedApproval: row.matched_approval_id !== null
+  };
+}
+
+export async function insertRefundCommercialMatch(
+  advertisementId: number,
+  refundId: number,
+  approvalId: number,
+  amount: number,
+  userId: number,
+  client: PoolClient
+) {
+  const result = await client.query<{
+    id: string;
+    advertisement_id: string;
+    refund_id: string;
+    discount_approval_id: string;
+    matched_amount: string;
+  }>(
+    `INSERT INTO advertisement_refund_commercial_matches
+      (advertisement_id,refund_id,discount_approval_id,matched_amount,matched_by)
+      VALUES ($1,$2,$3,$4,$5)
+      RETURNING id,advertisement_id,refund_id,discount_approval_id,matched_amount`,
+    [advertisementId, refundId, approvalId, amount, userId]
+  );
+  const row = result.rows[0]!;
+  return {
+    id: Number(row.id),
+    advertisementId: Number(row.advertisement_id),
+    refundId: Number(row.refund_id),
+    discountApprovalId: Number(row.discount_approval_id),
+    matchedAmount: Number(row.matched_amount)
+  };
+}
+
+export async function listRefundCommercialMatches(advertisementId: number) {
+  const result = await pool.query<{
+    id: string;
+    advertisement_id: string;
+    refund_id: string;
+    discount_approval_id: string;
+    matched_amount: string;
+    matched_at: Date;
+  }>(
+    `SELECT id,advertisement_id,refund_id,discount_approval_id,matched_amount,matched_at
+       FROM advertisement_refund_commercial_matches WHERE advertisement_id=$1 ORDER BY matched_at DESC`,
+    [advertisementId]
+  );
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    advertisementId: Number(row.advertisement_id),
+    refundId: Number(row.refund_id),
+    discountApprovalId: Number(row.discount_approval_id),
+    matchedAmount: Number(row.matched_amount),
+    matchedAt: row.matched_at
+  }));
 }
