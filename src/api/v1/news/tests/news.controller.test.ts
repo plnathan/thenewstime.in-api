@@ -280,7 +280,7 @@ describe("publishNews()", () => {
 
     await newsController.publishNews(req, res, next);
 
-    expect(newsService.publishNews).toHaveBeenCalledWith(1, 10);
+    expect(newsService.publishNews).toHaveBeenCalledWith(1, 10, undefined);
 
     expect(sendSuccess).toHaveBeenCalled();
   });

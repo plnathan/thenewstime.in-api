@@ -42,6 +42,7 @@ export const newsSlugSchema = z
   );
 
 export const createNewsSchema = z.object({
+  showOnHomepage: z.boolean().optional(),
   title: z.string().trim().min(3).max(1000),
 
   slug: newsSlugSchema,
@@ -66,6 +67,7 @@ export const createNewsSchema = z.object({
 });
 
 export const updateNewsSchema = z.object({
+  showOnHomepage: z.boolean().optional(),
   title: z.string().trim().min(3).max(1000).optional(),
 
   slug: newsSlugSchema.optional(),
@@ -84,7 +86,7 @@ export const updateNewsSchema = z.object({
 
   categoryId: z.number().int().positive().optional(),
 
-  updatedBy: z.number().int().positive()
+  updatedBy: z.coerce.number().int().positive()
 });
 
 export const changeStatusSchema = z.object({
@@ -98,7 +100,7 @@ export const activateNewsSchema = z.object({
 });
 
 export const promoteNewsSchema = z.object({
-  promotedBy: z.number().int().positive(),
+  promotedBy: z.coerce.number().int().positive(),
 
   /**
    * Promotion is intentionally restricted to 3 days
@@ -108,10 +110,11 @@ export const promoteNewsSchema = z.object({
 });
 
 export const removePromotionSchema = z.object({
-  updatedBy: z.number().int().positive()
+  updatedBy: z.coerce.number().int().positive()
 });
 
 export const newsSearchSchema = z.object({
+  homepageOnly: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
 
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

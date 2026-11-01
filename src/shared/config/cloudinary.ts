@@ -113,10 +113,13 @@ export const deleteCloudinaryImage = async (
 ): Promise<void> => {
   const client = getClient();
 
-  await client.uploader.destroy(publicId, {
+  const result = await client.uploader.destroy(publicId, {
     resource_type: "image",
     invalidate: true
   });
+  if (result.result !== "ok" && result.result !== "not found") {
+    throw new Error(`Cloudinary deletion failed: ${result.result}`);
+  }
 };
 
 /**

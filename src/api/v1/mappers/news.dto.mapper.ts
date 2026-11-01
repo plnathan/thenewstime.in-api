@@ -99,9 +99,12 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
   }));
 
   return {
+    showOnHomepage: news.showOnHomepage,
     id: news.id,
 
     newsNumber: news.newsNumber,
+
+    draftedByName: news.draftedByName ?? null,
 
     title: news.title,
 
@@ -132,7 +135,7 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
     media,
 
     views: news.views,
-    
+
     status: news.status,
 
     displayPriority: news.displayPriority,

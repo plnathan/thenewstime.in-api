@@ -54,6 +54,8 @@ export const mockNews: News = {
 
   status: "DRAFT",
 
+  showOnHomepage: false,
+
   displayPriority: 0,
 
   displayPriorityUntil: null,
@@ -123,6 +125,8 @@ export const mockNewsResponse = {
   media: [],
   views: 0,
   status: "DRAFT",
+
+  showOnHomepage: false,
   displayPriority: 0,
   displayPriorityUntil: null,
   publishedAt: null

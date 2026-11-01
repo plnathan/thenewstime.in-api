@@ -87,6 +87,8 @@ export const mapNews = (row: any): News => {
 
     status: row.status,
 
+    showOnHomepage: row.show_on_homepage === true,
+
     displayPriority:
       row.display_priority !== null && row.display_priority !== undefined
         ? Number(row.display_priority)
@@ -99,6 +101,8 @@ export const mapNews = (row: any): News => {
         : null,
 
     draftedBy: Number(row.drafted_by),
+
+    draftedByName: row.drafted_by_name ?? null,
 
     approvedBy: row.approved_by !== null ? Number(row.approved_by) : null,
 

@@ -261,7 +261,8 @@ describe("changeStatus()", () => {
       1,
       "APPROVED",
       10,
-      mockClient
+      mockClient,
+      undefined
     );
 
     expect(mockClient.query).toHaveBeenCalledWith("COMMIT");

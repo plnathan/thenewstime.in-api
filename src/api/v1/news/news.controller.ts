@@ -455,11 +455,12 @@ export const publishNews = async (
   try {
     const id = Number(req.params.id);
 
-    const { publishedBy } = req.body as {
+    const { publishedBy, publishedAt } = req.body as {
       publishedBy: number;
+      publishedAt?: string;
     };
 
-    await newsService.publishNews(id, publishedBy);
+    await newsService.publishNews(id, publishedBy, publishedAt);
 
     sendSuccess(res, "News published successfully.");
   } catch (error) {

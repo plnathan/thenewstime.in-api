@@ -107,9 +107,11 @@ const NEWS_SELECT = `
     ) AS media,
 
     n.status,
+    n.show_on_homepage,
     n.display_priority,
     n.display_priority_until,
     n.drafted_by,
+    COALESCE(NULLIF(TRIM(drafter.display_name), ''), NULLIF(TRIM(drafter.full_name), ''), drafter.username) AS drafted_by_name,
     n.approved_by,
     n.published_by,
     n.archived_by,
@@ -122,6 +124,9 @@ const NEWS_SELECT = `
     n.updated_at
 
   FROM news n
+
+  LEFT JOIN users drafter
+    ON drafter.id = n.drafted_by
 
   INNER JOIN categories c
     ON c.id = n.category_id
@@ -158,7 +163,8 @@ export const create = async (
       district_id,
       category_id,
       drafted_by,
-      created_by
+      created_by,
+      show_on_homepage
     )
     VALUES
     (
@@ -172,7 +178,8 @@ export const create = async (
       $8,
       $9,
       $10,
-      $11
+      $11,
+      $12
     )
     RETURNING id;
   `;
@@ -188,7 +195,8 @@ export const create = async (
     data.districtId ?? null,
     data.categoryId,
     data.draftedBy,
-    data.createdBy
+    data.createdBy,
+    data.showOnHomepage ?? false
   ];
   console.log("createNews insertSql:", insertSql);
   console.log("createNews values:", values);
@@ -271,6 +279,7 @@ export const findPublishedBySlug = async (
     ${NEWS_SELECT}
     WHERE n.slug = $1
       AND n.status = 'PUBLISHED'
+      AND n.published_at <= NOW()
     LIMIT 1;
   `;
 
@@ -382,6 +391,10 @@ export const update = async (
 
   if (data.categoryId !== undefined) {
     addField("category_id", data.categoryId);
+  }
+
+  if (data.showOnHomepage !== undefined) {
+    addField("show_on_homepage", data.showOnHomepage);
   }
 
   addField("updated_by", data.updatedBy);
@@ -530,7 +543,8 @@ export const changeStatus = async (
   id: number,
   status: NewsStatus,
   userId: number,
-  client?: PoolClient
+  client?: PoolClient,
+  publicationDate?: Date
 ): Promise<void> => {
   const db = client ?? pool;
 
@@ -560,13 +574,13 @@ export const changeStatus = async (
         SET
           status = $1,
           published_by = $2,
-          published_at = NOW(),
+          published_at = $4,
           updated_by = $2,
           updated_at = NOW()
         WHERE id = $3;
       `;
 
-      values = [status, userId, id];
+      values = [status, userId, id, publicationDate ?? new Date()];
 
       break;
 
@@ -742,6 +756,15 @@ export const findAll = async (
     values.push(filter.districtId);
 
     conditions.push(`n.district_id = $${values.length}`);
+  }
+
+  if (filter.homepageOnly) {
+    conditions.push("n.show_on_homepage = TRUE");
+  }
+
+  // Public queries never expose future-dated published articles.
+  if (filter.publicOrder || filter.popularOrder) {
+    conditions.push("n.published_at <= NOW()");
   }
 
   const whereClause =

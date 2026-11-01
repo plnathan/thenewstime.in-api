@@ -3,6 +3,7 @@ import { pool } from "../../../shared/config/db.js";
 import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
 
 import * as newsRepository from "./news.repository.js";
+import { enqueueCloudinaryDeletion } from "../../../shared/services/cloudinary-cleanup.service.js";
 
 import type {
   CreateNewsInput,
@@ -188,6 +189,8 @@ export const getPublishedNewsList = async (filter: NewsSearchFilter) => {
 export const deleteNews = async (id: number): Promise<void> => {
   const client = await pool.connect();
 
+  let committed = false;
+
   try {
     await client.query("BEGIN");
 
@@ -197,6 +200,42 @@ export const deleteNews = async (id: number): Promise<void> => {
       throw new ApiError(404, "News not found.");
     }
 
+    // Capture the associated assets before deleting the news. Remove its
+    // links explicitly so we do not depend on news_media cascade settings.
+    const mediaResult = await client.query<{
+      media_asset_id: number;
+      public_id: string;
+    }>(
+      `SELECT nm.media_asset_id, ma.public_id
+       FROM news_media nm
+       INNER JOIN media_assets ma ON ma.id = nm.media_asset_id
+       WHERE nm.news_id = $1
+       FOR UPDATE OF nm, ma`,
+      [id]
+    );
+
+    const assets = new Map<number, string>();
+    for (const row of mediaResult.rows ?? []) {
+      assets.set(Number(row.media_asset_id), row.public_id);
+    }
+
+    await client.query("DELETE FROM news_media WHERE news_id = $1", [id]);
+
+    for (const [assetId, publicId] of assets) {
+      const references = await client.query<{ count: string }>(
+        "SELECT COUNT(*)::text AS count FROM news_media WHERE media_asset_id = $1",
+        [assetId]
+      );
+
+      if (Number(references.rows[0]?.count ?? 0) === 0) {
+        await client.query(
+          "UPDATE media_assets SET status = 'DELETED', updated_at = NOW() WHERE id = $1",
+          [assetId]
+        );
+        await enqueueCloudinaryDeletion(publicId, client, "NEWS_DELETED");
+      }
+    }
+
     const deleted = await newsRepository.deleteNews(id, client);
 
     if (!deleted) {
@@ -204,12 +243,18 @@ export const deleteNews = async (id: number): Promise<void> => {
     }
 
     await client.query("COMMIT");
+    committed = true;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (!committed) {
+      await client.query("ROLLBACK");
+    }
     throw error;
   } finally {
     client.release();
   }
+
+  // Deletions are durably queued in the same transaction and performed
+  // by the scheduled cleanup worker. No Cloudinary call during request.
 };
 
 /**
@@ -287,7 +332,8 @@ const validateStatusTransition = (
 export const changeStatus = async (
   id: number,
   status: NewsStatus,
-  userId: number
+  userId: number,
+  publishedAt?: string
 ): Promise<void> => {
   const client = await pool.connect();
 
@@ -302,7 +348,39 @@ export const changeStatus = async (
 
     validateStatusTransition(news.status, status);
 
-    await newsRepository.changeStatus(id, status, userId, client);
+    let publicationDate: Date | undefined;
+    if (status === "PUBLISHED") {
+      if (publishedAt !== undefined) {
+        // Require an explicit timezone to avoid server-local ambiguity.
+        if (
+          typeof publishedAt !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+            publishedAt
+          )
+        ) {
+          throw new ApiError(
+            400,
+            "publishedAt must be an ISO date-time with timezone."
+          );
+        }
+        publicationDate = new Date(publishedAt);
+        if (Number.isNaN(publicationDate.getTime())) {
+          throw new ApiError(400, "Invalid publishedAt date-time.");
+        }
+        if (publicationDate.getTime() < Date.now() - 60_000) {
+          throw new ApiError(400, "Publication time cannot be in the past.");
+        }
+      } else {
+        publicationDate = new Date();
+      }
+    }
+    await newsRepository.changeStatus(
+      id,
+      status,
+      userId,
+      client,
+      publicationDate
+    );
 
     await client.query("COMMIT");
   } catch (error) {
@@ -342,9 +420,10 @@ export const rejectNews = async (
 
 export const publishNews = async (
   id: number,
-  publishedBy: number
+  publishedBy: number,
+  publishedAt?: string
 ): Promise<void> => {
-  await changeStatus(id, "PUBLISHED", publishedBy);
+  await changeStatus(id, "PUBLISHED", publishedBy, publishedAt);
 };
 
 export const archiveNews = async (
@@ -380,10 +459,7 @@ export const activateNews = async (
     }
 
     if (existingNews.status !== "ARCHIVED") {
-      throw new ApiError(
-        400,
-        "Only archived news can be activated."
-      );
+      throw new ApiError(400, "Only archived news can be activated.");
     }
 
     const activatedNews = await newsRepository.activate(
@@ -393,10 +469,7 @@ export const activateNews = async (
     );
 
     if (!activatedNews) {
-      throw new ApiError(
-        400,
-        "Unable to activate news."
-      );
+      throw new ApiError(400, "Unable to activate news.");
     }
 
     await client.query("COMMIT");

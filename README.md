@@ -288,9 +288,38 @@ WHERE username = 'admin';
 
 // $2b$12$P47gzf9qbo3FNam6YL9lIuIY3q8cYpvAOCT.pB/DZmCHxIqGByxgK
 
-
 ## build command
 
 npx tsc -p tsconfig.vercel.json
 
 npx vitest run src/api/v1/advertisements/schedules/tests/schedule.integration.test.ts --hookTimeout 30000
+
+## The worker can be run manually for verification using:
+
+npx tsx scripts/run-cloudinary-cleanup.ts
+
+## Vercel Secret creation(generation)
+
+$bytes = New-Object byte[] 32; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); $rng.GetBytes($bytes); $rng.Dispose(); [BitConverter]::ToString($bytes).Replace("-", "")
+
+## To verify CRON Endpoint in the terminal
+
+$secret = (Get-Content .env | Where-Object { $_ -match '^CRON_SECRET=' } | Select-Object -First 1) -replace '^CRON_SECRET=', ''
+
+Invoke-RestMethod -Uri "http://localhost:5000/api/v1/system/cloudinary-cleanup" -Headers @{ Authorization = "Bearer $secret" }
+
+## Running again if .env changed
+
+# Restart
+
+npm run dev
+
+Invoke-RestMethod -Uri "http://localhost:5000/api/v1/system/cloudinary-cleanup" -Headers @{ Authorization = "Bearer $secret" }
+
+## To Check for a PowerShell environment override and Remove it
+
+Get-ChildItem Env:CLOUDINARY_CLEANUP_ENABLED -ErrorAction SilentlyContinue
+
+## If it displays false, remove the override
+
+Remove-Item Env:CLOUDINARY_CLEANUP_ENABLED -ErrorAction SilentlyContinue

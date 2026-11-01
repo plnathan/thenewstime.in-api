@@ -32,7 +32,18 @@ export const uploadNewsMedia = async (
       Number(req.params.newsId),
       files,
       uploadedBy,
-      req.body.metadata
+      req.body.metadata,
+      {
+        compress: req.body.compress === "true",
+        watermark: req.body.watermark === "true",
+        watermarkText: req.body.watermarkText,
+        ...(req.body.watermarkFontSize !== undefined &&
+        req.body.watermarkFontSize !== ""
+          ? { watermarkFontSize: Number(req.body.watermarkFontSize) }
+          : {}),
+        watermarkColor: req.body.watermarkColor,
+        watermarkPosition: req.body.watermarkPosition
+      }
     );
 
     sendCreated(res, "News images uploaded successfully.", items);

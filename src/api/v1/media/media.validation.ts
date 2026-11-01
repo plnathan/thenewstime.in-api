@@ -25,5 +25,13 @@ export const mediaOrderSchema = z.object({
 export const mediaUploadBodySchema = z.object({
   uploadedBy: z.coerce.number().int().positive(),
 
-  metadata: z.string().optional()
+  metadata: z.string().optional(),
+  compress: z.enum(["true", "false"]).optional(),
+  watermark: z.enum(["true", "false"]).optional(),
+  watermarkText: z.string().trim().min(1).max(120).optional(),
+  watermarkFontSize: z.coerce.number().int().min(8).max(120).optional(),
+  watermarkColor: z.enum(["BLACK", "WHITE"]).optional(),
+  watermarkPosition: z
+    .enum(["TOP", "BOTTOM", "LEFT", "RIGHT", "CENTER"])
+    .optional()
 });

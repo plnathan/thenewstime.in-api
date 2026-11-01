@@ -83,7 +83,11 @@ export interface NewsMediaResponseDto {
 export interface NewsResponseDto {
   id: number;
 
+  showOnHomepage: boolean;
+
   newsNumber: number;
+
+  draftedByName?: string | null;
 
   title: string;
 

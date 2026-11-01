@@ -1,3 +1,7 @@
+import {
+  processNewsImage,
+  type ImageProcessingOptions
+} from "./media.image-processing.js";
 import { randomUUID } from "node:crypto";
 
 import path from "node:path";
@@ -15,6 +19,7 @@ import {
 } from "../../../shared/config/cloudinary.js";
 
 import * as repository from "./media.repository.js";
+import { enqueueCloudinaryDeletion, enqueueFailedUpload } from "../../../shared/services/cloudinary-cleanup.service.js";
 
 import type {
   MediaOrderItem,
@@ -75,7 +80,8 @@ export const uploadNewsMedia = async (
   newsId: number,
   files: Express.Multer.File[],
   uploadedBy: number,
-  metadataJson?: string
+  metadataJson?: string,
+  processing: ImageProcessingOptions = { compress: false, watermark: false }
 ): Promise<NewsMediaItem[]> => {
   if (files.length === 0) {
     throw new ApiError(400, "At least one image is required.");
@@ -121,7 +127,8 @@ export const uploadNewsMedia = async (
 
       const publicId = randomUUID();
 
-      const upload = await uploadImageBuffer(file.buffer, {
+      const processed = await processNewsImage(file.buffer, processing);
+      const upload = await uploadImageBuffer(processed.buffer, {
         folder: `${
           process.env.CLOUDINARY_FOLDER ?? "thenewstime/news"
         }/${newsId}`,
@@ -143,11 +150,11 @@ export const uploadNewsMedia = async (
 
           originalFileName: file.originalname,
 
-          mimeType: file.mimetype,
+          mimeType: processed.mimeType || file.mimetype,
 
-          fileExtension: extension,
+          fileExtension: processed.extension || extension,
 
-          fileSizeBytes: file.size,
+          fileSizeBytes: processed.buffer.length,
 
           width: upload.width ?? null,
 
@@ -179,8 +186,10 @@ export const uploadNewsMedia = async (
   } catch (error) {
     await client.query("ROLLBACK");
 
+    // A rolled-back DB transaction must not lose Cloudinary uploads.
+    // Queue compensation; retry if the provider is temporarily unavailable.
     await Promise.allSettled(
-      uploadedPublicIds.map((publicId) => deleteCloudinaryImage(publicId))
+      uploadedPublicIds.map((publicId) => enqueueFailedUpload(publicId))
     );
 
     throw error;
@@ -265,7 +274,7 @@ export const deleteNewsMedia = async (
     if (references === 0) {
       await repository.markAssetDeleted(assetId, client);
 
-      shouldDeleteCloudinary = true;
+      await enqueueCloudinaryDeletion(media.publicId, client, "MEDIA_REMOVED");
     }
 
     await client.query("COMMIT");
@@ -277,11 +286,5 @@ export const deleteNewsMedia = async (
     client.release();
   }
 
-  if (shouldDeleteCloudinary) {
-    try {
-      await deleteCloudinaryImage(media.publicId);
-    } catch (error) {
-      console.error("Cloudinary cleanup failed:", error);
-    }
-  }
+  // Cleanup is processed by the scheduled worker.
 };

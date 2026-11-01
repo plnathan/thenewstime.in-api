@@ -1,7 +1,7 @@
 // This is used to create the PostgreSQL connection pool.
 
-import pg from "pg";
 import dotenv from "dotenv";
+import pg from "pg";
 
 dotenv.config();
 
@@ -15,8 +15,24 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
-  }
+  },
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+  keepAlive: true
 });
+
+pool.on("error", (error: Error) => {
+  console.error("[PostgreSQL] Idle connection error:", error.message);
+});
+
+// Check the Neon connection
+// When the error occurs, run these commands in PowerShell:
+
+// nslookup ep-divine-queen-aok5env3-pooler.c-2.ap-southeast-1.aws.neon.tech
+
+// Test-NetConnection ep-divine-queen-aok5env3-pooler.c-2.ap-southeast-1.aws.neon.tech -Port 5432
+
 // ------------------------------
 /*
 Why rejectUnauthorized: false?

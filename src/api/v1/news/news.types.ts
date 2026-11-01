@@ -108,6 +108,8 @@ export interface News {
 
   status: NewsStatus;
 
+  showOnHomepage: boolean;
+
   /**
    * Display ordering / promotion.
    *
@@ -119,6 +121,9 @@ export interface News {
   displayPriorityUntil: Date | null;
 
   draftedBy: number;
+
+  /** Display name of the user who drafted this article. */
+  draftedByName?: string | null;
 
   approvedBy: number | null;
 
@@ -142,6 +147,7 @@ export interface News {
 }
 
 export interface CreateNewsInput {
+  showOnHomepage?: boolean;
   title: string;
 
   slug: string;
@@ -166,6 +172,7 @@ export interface CreateNewsInput {
 }
 
 export interface UpdateNewsInput {
+  showOnHomepage?: boolean;
   title?: string;
 
   slug?: string;
@@ -234,6 +241,8 @@ export interface NewsSearchFilter {
    * Promotion/display priority must NOT override
    * chronological public ordering.
    */
+  homepageOnly?: boolean | undefined;
+
   publicOrder?: boolean | undefined;
 
   popularOrder?: boolean | undefined;

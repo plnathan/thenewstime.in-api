@@ -25,6 +25,7 @@ import advertisementRoutes from "./api/v1/advertisements/advertisement/advertise
 import advertisementClientRoutes from "./api/v1/advertisements/clients/client.routes.js";
 import placementRoutes from "./api/v1/advertisements/placements/placement.routes.js";
 import advertisementTrackingRoutes from "./api/v1/advertisements/tracking/tracking.routes.js";
+import cloudinaryCleanupCronRoutes from "./api/v1/system/cloudinary-cleanup-cron.routes.js";
 
 const app = express();
 
@@ -84,6 +85,8 @@ console.log("Registering News Reads routes at /api/v1/news-reads");
  * GET  /api/news-reads/popular
  */
 app.use("/api/v1/news-reads", newsReadsRoutes);
+
+app.use("/api/v1/system/cloudinary-cleanup", cloudinaryCleanupCronRoutes);
 
 configureSwagger(app);
 
