@@ -114,3 +114,63 @@ export const runCloudinaryCleanupBatch = async (
   }
   return { processed: claimed.rows.length, succeeded, failed };
 };
+
+/**
+ * Safely queue old Cloudinary assets that have NO news_media association.
+ * Draft images remain protected because uploads are linked to news immediately.
+ * This does not delete draft news or attached media.
+ * Requires media_assets.created_at (standard media_assets schema).
+ */
+export const enqueueAbandonedMediaUploads = async (
+  retentionDays = 7,
+  limit = 10
+): Promise<number> => {
+  const days =
+    Number.isInteger(retentionDays) &&
+    retentionDays >= 7 &&
+    retentionDays <= 365
+      ? retentionDays
+      : 7;
+  const count = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 50) : 10;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query<{ id: number; public_id: string }>(
+      `SELECT ma.id, ma.public_id
+       FROM media_assets ma
+       WHERE ma.provider = 'CLOUDINARY'
+         AND ma.status = 'ACTIVE'
+         AND ma.created_at < NOW() - ($1::integer * INTERVAL '1 day')
+         AND NOT EXISTS (
+           SELECT 1 FROM news_media nm WHERE nm.media_asset_id = ma.id
+         )
+       ORDER BY ma.created_at ASC, ma.id ASC
+       LIMIT $2 FOR UPDATE OF ma SKIP LOCKED`,
+      [days, count]
+    );
+    for (const asset of result.rows) {
+      // Re-check under the transaction immediately before queuing.
+      const refs = await client.query<{ count: string }>(
+        "SELECT COUNT(*)::text AS count FROM news_media WHERE media_asset_id = $1",
+        [asset.id]
+      );
+      if (Number(refs.rows[0]?.count ?? 0) !== 0) continue;
+      await enqueueCloudinaryDeletion(
+        asset.public_id,
+        client,
+        "ABANDONED_UPLOAD"
+      );
+      await client.query(
+        "UPDATE media_assets SET status = 'DELETED', updated_at = NOW() WHERE id = $1 AND status = 'ACTIVE'",
+        [asset.id]
+      );
+    }
+    await client.query("COMMIT");
+    return result.rows.length;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};

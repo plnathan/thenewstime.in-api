@@ -7,7 +7,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 
-import { runCloudinaryCleanupBatch } from "../../../shared/services/cloudinary-cleanup.service.js";
+import {
+  runCloudinaryCleanupBatch,
+  enqueueAbandonedMediaUploads
+} from "../../../shared/services/cloudinary-cleanup.service.js";
 
 const router = Router();
 
@@ -47,10 +50,10 @@ router.get("/", async (req, res) => {
 
   if (process.env.CLOUDINARY_CLEANUP_ENABLED !== "true") {
     console.log(
-    "[Cloudinary Cron] Cleanup enabled:",
-    JSON.stringify(process.env.CLOUDINARY_CLEANUP_ENABLED)
+      "[Cloudinary Cron] Cleanup enabled:",
+      JSON.stringify(process.env.CLOUDINARY_CLEANUP_ENABLED)
     );
-    
+
     res.status(200).json({
       success: true,
       status: "PAUSED",
@@ -60,11 +63,19 @@ router.get("/", async (req, res) => {
   }
 
   try {
+    const retentionDays = Number(
+      process.env.CLOUDINARY_ABANDONED_RETENTION_DAYS ?? "7"
+    );
+    const abandonedQueued =
+      process.env.CLOUDINARY_ABANDONED_CLEANUP_ENABLED === "true"
+        ? await enqueueAbandonedMediaUploads(retentionDays, 10)
+        : 0;
     const result = await runCloudinaryCleanupBatch(10);
 
     res.status(200).json({
       success: true,
       status: "COMPLETED",
+      abandonedQueued,
       ...result
     });
   } catch (error: unknown) {

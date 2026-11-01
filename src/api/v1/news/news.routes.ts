@@ -1,6 +1,8 @@
 import { Router } from "express";
 
 import * as newsController from "./news.controller.js";
+import * as mediaService from "../media/media.service.js";
+import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
 
 import { validate } from "../../../shared/middleware/validate.middleware.js";
 
@@ -152,6 +154,61 @@ router.delete(
   validate(idParamSchema, "params"),
   validate(removePromotionSchema, "body"),
   newsController.removePromotion
+);
+
+/**
+ * POST /api/v1/news/:id/final-save
+ * Validates persisted media and commits the final order. Idempotent.
+ * Does not change Draft / Published workflow status.
+ */
+router.post(
+  "/:id/final-save",
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const newsId = Number(req.params.id);
+      const mediaIds: unknown = req.body?.mediaIds;
+      if (
+        !Array.isArray(mediaIds) ||
+        mediaIds.length < 1 ||
+        mediaIds.length > 10 ||
+        !mediaIds.every((id) => Number.isSafeInteger(id) && id > 0) ||
+        new Set(mediaIds).size !== mediaIds.length
+      ) {
+        throw new ApiError(
+          400,
+          "Provide 1 to 10 unique media IDs in their final order."
+        );
+      }
+      const current = await mediaService.getNewsMedia(newsId);
+      const submitted = mediaIds as number[];
+      if (
+        current.length !== submitted.length ||
+        current.some((item) => !submitted.includes(item.id))
+      ) {
+        throw new ApiError(
+          409,
+          "Media changed since editing. Refresh and try again."
+        );
+      }
+      const media = await mediaService.reorderNewsMedia(
+        newsId,
+        submitted.map((mediaId, index) => ({
+          mediaId,
+          displayOrder: index + 1
+        }))
+      );
+      res
+        .status(200)
+        .json({
+          success: true,
+          message: "News final save completed.",
+          data: media
+        });
+    } catch (error) {
+      next(error);
+    }
+  }
 );
 
 /**

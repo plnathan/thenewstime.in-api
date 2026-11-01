@@ -1,3 +1,8 @@
+## Testing API
+
+https://thenewstime-in-api-swart.vercel.app/api/v1/news/public?page=1&pageSize=4&popular=true&utm_source=chatgpt.com
+
+
 ## Learn Prisma/Drizzle
 
 Install Prettier
@@ -323,3 +328,14 @@ Get-ChildItem Env:CLOUDINARY_CLEANUP_ENABLED -ErrorAction SilentlyContinue
 ## If it displays false, remove the override
 
 Remove-Item Env:CLOUDINARY_CLEANUP_ENABLED -ErrorAction SilentlyContinue
+
+## For production checking
+
+$secret = (Get-Content .env | Where-Object { $_ -match '^CRON_SECRET=' } | Select-Object -First 1) -replace '^CRON_SECRET=', ''
+
+Invoke-RestMethod -Uri "https://thenewstime-in-api-swart.vercel.app/api/v1/system/cloudinary-cleanup" -Headers @{ Authorization = "Bearer $secret" }
+
+Expected output:
+success status processed
+------- ------ ---------
+   True PAUSED         0
