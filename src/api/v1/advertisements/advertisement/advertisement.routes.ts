@@ -13,6 +13,7 @@ import {
   getAdvertisementById,
   getAdvertisements,
   getAdvertisementWorkflowHistory,
+  getAdvertisementOperationalHistory,
   holdAdvertisement,
   pauseAdvertisement,
   rejectAdvertisement,
@@ -280,6 +281,13 @@ router.get(
  *
  * Registered before generic "/:id" routes.
  */
+router.get(
+  "/:id/operational-history",
+  authorize("ADVERTISEMENT", "advertisements", "read"),
+  validate(advertisementIdSchema, "params"),
+  getAdvertisementOperationalHistory
+);
+
 router.use("/clients", clientRoutes);
 
 /**

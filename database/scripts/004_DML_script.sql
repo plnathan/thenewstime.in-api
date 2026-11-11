@@ -99,3 +99,25 @@ SET
 WHERE id in(37,35,34,33,32,31,30,29,28)
   AND approval_type = 'REFUND'
   AND status = 'ACTIVE';
+-------------------------
+UPDATE ADVERTISEMENT_FINANCIAL_APPROVAL_THRESHOLDS
+SET
+	AMOUNT_THRESHOLD = 15000
+WHERE
+	ID = 38
+---------------------------
+-- To update the standard amount
+UPDATE advertisements
+SET
+    standard_amount = 12000.00,
+    discount_percentage = 0,
+    discount_amount = 0,
+    advertisement_amount = 12000.00,
+    advance_percentage = 0,
+    advance_amount = 0,
+	pricing_placement_id = 1289,
+	pricing_unit = 'DAY',
+	pricing_quantity = 4
+WHERE id = 1692
+  AND workflow_status = 'DRAFT';
+-------------------------      

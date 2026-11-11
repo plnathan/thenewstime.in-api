@@ -233,3 +233,79 @@ VALUES
     'ACTIVE'
 )
 ON CONFLICT (code) DO NOTHING;
+
+CREATE SEQUENCE IF NOT EXISTS public.advertisement_creative_cleanup_id_seq
+    AS bigint
+    START WITH 1
+    INCREMENT BY 1
+    MINVALUE 1
+    NO MAXVALUE
+    CACHE 1;
+
+
+-- Step 1: Enable GiST equality support.
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+-- Step 2: Verify the extension.
+SELECT extname, extversion
+FROM pg_extension
+WHERE extname = 'btree_gist';
+
+-- Step 3: Verify the sequence.
+SELECT to_regclass(
+    'public.advertisement_rate_cards_id_seq'
+) AS sequence_name;
+
+-- Step 4: Verify whether the table exists.
+SELECT to_regclass(
+    'public.advertisement_rate_cards'
+) AS table_name;
+
+
+CREATE SEQUENCE IF NOT EXISTS public.advertisement_rate_cards_id_seq
+    AS bigint
+    START WITH 1
+    INCREMENT BY 1
+    MINVALUE 1
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.advertisement_rate_cards_id_seq
+    OWNER TO neondb_owner;
+
+
+ALTER TABLE public.advertisement_rate_cards
+    ALTER COLUMN id
+    SET DEFAULT nextval(
+        'public.advertisement_rate_cards_id_seq'::regclass
+    );
+
+ALTER SEQUENCE public.advertisement_rate_cards_id_seq
+    OWNED BY public.advertisement_rate_cards.id;
+
+
+CREATE SEQUENCE IF NOT EXISTS public.advertisement_pricing_snapshots_id_seq
+    AS bigint
+    START WITH 1
+    INCREMENT BY 1
+    MINVALUE 1
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.advertisement_pricing_snapshots_id_seq
+    OWNER TO neondb_owner;
+
+
+ALTER SEQUENCE public.advertisement_pricing_snapshots_id_seq
+    OWNED BY public.advertisement_pricing_snapshots.id;
+	
+
+SELECT
+    schemaname,
+    sequencename,
+    sequenceowner,
+    data_type,
+    start_value
+FROM pg_sequences
+WHERE sequencename = 'advertisement_pricing_snapshots_id_seq';
+

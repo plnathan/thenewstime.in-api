@@ -105,6 +105,8 @@ export const mapNews = (row: any): News => {
     draftedByName: row.drafted_by_name ?? null,
 
     approvedBy: row.approved_by !== null ? Number(row.approved_by) : null,
+    approvedByName: row.approved_by_name ?? null,
+    publishedByName: row.published_by_name ?? null,
 
     publishedBy: row.published_by !== null ? Number(row.published_by) : null,
 

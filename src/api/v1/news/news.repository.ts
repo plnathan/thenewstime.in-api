@@ -113,7 +113,9 @@ const NEWS_SELECT = `
     n.drafted_by,
     COALESCE(NULLIF(TRIM(drafter.display_name), ''), NULLIF(TRIM(drafter.full_name), ''), drafter.username) AS drafted_by_name,
     n.approved_by,
+    COALESCE(NULLIF(TRIM(approver.display_name), ''), NULLIF(TRIM(approver.full_name), ''), approver.username) AS approved_by_name,
     n.published_by,
+    COALESCE(NULLIF(TRIM(publisher.display_name), ''), NULLIF(TRIM(publisher.full_name), ''), publisher.username) AS published_by_name,
     n.archived_by,
     n.drafted_at,
     n.approved_at,
@@ -127,6 +129,9 @@ const NEWS_SELECT = `
 
   LEFT JOIN users drafter
     ON drafter.id = n.drafted_by
+
+  LEFT JOIN users approver ON approver.id = n.approved_by
+  LEFT JOIN users publisher ON publisher.id = n.published_by
 
   INNER JOIN categories c
     ON c.id = n.category_id

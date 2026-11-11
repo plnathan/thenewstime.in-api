@@ -4,7 +4,10 @@ import { validate } from "../../../../shared/middleware/validate.middleware.js";
 
 import * as controller from "./delivery.controller.js";
 
-import { advertisementDeliveryQuerySchema } from "./delivery.validation.js";
+import {
+  advertisementDeliveryQuerySchema,
+  advertisementPageDeliveryQuerySchema
+} from "./delivery.validation.js";
 
 const router = Router();
 
@@ -16,6 +19,13 @@ const router = Router();
  * No authentication required.
  */
 router.get("/slots", controller.getPublicPlacementSlots);
+
+/** One request returns discovery and eligible inventory for every enabled slot. */
+router.get(
+  "/page",
+  validate(advertisementPageDeliveryQuerySchema, "query"),
+  controller.getPublicPageDelivery
+);
 
 /**
  * Public advertisement delivery.

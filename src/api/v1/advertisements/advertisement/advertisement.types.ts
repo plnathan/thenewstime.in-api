@@ -346,6 +346,11 @@ export interface AdvertisementSearchFilters {
 
   workflowStatus?: AdvertisementWorkflowStatus;
   status?: AdvertisementStatus;
+  placementType?: string;
+  startDate?: string;
+  endDate?: string;
+  operationalCondition?:
+    "ACTIVE" | "PAUSED" | "COMPLETED" | "ON_HOLD" | "STOPPED" | "ARCHIVED";
 }
 
 export interface PaginatedAdvertisements {

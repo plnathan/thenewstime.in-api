@@ -253,3 +253,21 @@ WHERE conrelid =
     'public.advertisement_financial_approval_thresholds'::regclass
   AND conname LIKE '%credit_except%';
 ----------------------------------------  
+SELECT pg_get_constraintdef(c.oid) AS constraint_definition
+FROM pg_constraint c
+JOIN pg_class t ON t.oid = c.conrelid
+WHERE t.relname = 'advertisements'
+  AND c.conname = 'chk_advertisements_status';
+-------------  
+SELECT
+    table_schema,
+    table_name
+FROM information_schema.tables
+WHERE table_type = 'BASE TABLE'
+  AND table_schema = 'public'
+  AND (
+      table_name ILIKE '%advertisement%'
+      OR table_name ILIKE '%financial_approval%'
+  )
+ORDER BY table_name;
+------------------------

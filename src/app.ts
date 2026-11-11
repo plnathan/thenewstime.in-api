@@ -1,3 +1,4 @@
+import dashboardRoutes from "./api/v1/dashboard/dashboard.routes.js";
 import cors from "cors";
 import express from "express";
 
@@ -21,6 +22,10 @@ import permissionRoutes from "./api/v1/security/permissions/permission.routes.js
 import roleRoutes from "./api/v1/security/roles/role.routes.js";
 import userRoutes from "./api/v1/security/users/user.routes.js";
 
+import { pool } from "./shared/config/db.js";
+import { createAdvertisementEnquiryAdminRouter } from "./api/v1/advertisements/advertisement-enquiries/advertisement-enquiry.admin.routes.js";
+import { createAdvertisementEnquiryRouter } from "./api/v1/advertisements/advertisement-enquiries/advertisement-enquiry.routes.js";
+
 import advertisementRoutes from "./api/v1/advertisements/advertisement/advertisement.routes.js";
 import advertisementClientRoutes from "./api/v1/advertisements/clients/client.routes.js";
 import placementRoutes from "./api/v1/advertisements/placements/placement.routes.js";
@@ -31,6 +36,8 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+// Vercel is a trusted single reverse-proxy hop; avoid trusting arbitrary client XFF.
+if (process.env.VERCEL === "1") app.set("trust proxy", 1);
 
 if (process.env.NODE_ENV !== "production") {
   app.use((req, _res, next) => {
@@ -46,6 +53,16 @@ app.get("/", (_req: any, res: any) => {
   });
 });
 
+app.use(
+  "/api/v1/advertisement-enquiries/admin",
+  createAdvertisementEnquiryAdminRouter(pool)
+);
+
+app.use(
+  "/api/v1/advertisement-enquiries",
+  createAdvertisementEnquiryRouter(pool)
+);
+
 app.use("/api/v1/advertisements/placements", placementRoutes);
 
 app.use("/api/v1/advertisements/tracking", advertisementTrackingRoutes);
@@ -53,6 +70,8 @@ app.use("/api/v1/advertisements/tracking", advertisementTrackingRoutes);
 app.use("/api/v1/advertisements", advertisementRoutes);
 
 app.use("/api/v1/advertisement-clients", advertisementClientRoutes);
+
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 app.use("/api/v1/categories", categoryRoutes);
 

@@ -18,22 +18,33 @@ VALUES
     'ADVERTISEMENT',
     'advertisements.financial_approval_thresholds',
     'read',
+	'View Advertisement Financial Approval',
+	'To View Advertisement Financial Approval',
+	1,
     'ACTIVE',
-	'View Advertisement Financial Approva'
+	'TRUE'	
 ),
 (
     'advertisements.financial_approval_thresholds.create',
     'ADVERTISEMENT',
     'advertisements.financial_approval_thresholds',
     'create',
-    'ACTIVE'
+    'CREATE Advertisement Financial Approval',
+	'To CREATE Advertisement Financial Approval',
+	1,
+    'ACTIVE',
+	'TRUE'	
 ),
 (
     'advertisements.financial_approval_thresholds.update',
     'ADVERTISEMENT',
     'advertisements.financial_approval_thresholds',
     'update',
-    'ACTIVE'
+    'UPDATE Advertisement Financial Approval',
+	'To UPDATE Advertisement Financial Approval',
+	1,
+    'ACTIVE',
+	'TRUE'	
 )
 ON CONFLICT (code)
 DO UPDATE SET

@@ -34,7 +34,8 @@ WHERE id = 12345
 
 $baseUrl = "https://thenewstime-in-api-swart.vercel.app"
 
-$secret = "F74EF554B4A91401BFF519F547C9D702F7CAE89170C1830BE783F95E5E445E8D"
+--$secret = "F74EF554B4A91401BFF519F547C9D702F7CAE89170C1830BE783F95E5E445E8D"
+$secret = $env:CRON_SECRET
 
 Invoke-RestMethod `
     -Uri "$baseUrl/api/v1/system/cloudinary-cleanup" `
@@ -43,7 +44,11 @@ Invoke-RestMethod `
         Authorization = "Bearer $secret"
     }
 
-OR
+OR For local testing:
+
+$baseUrl = "http://localhost:5000"
+
+$secret = $env:CRON_SECRET
 
 $response = Invoke-RestMethod `
     -Uri "$baseUrl/api/v1/system/cloudinary-cleanup" `
@@ -54,6 +59,33 @@ $response = Invoke-RestMethod `
 
 $response | ConvertTo-Json -Depth 5
 
+------------------------------
+# Enter the exact CRON_SECRET value from your backend .env
+$cronSecret = Read-Host "Enter CRON_SECRET"
+
+# Remove accidental leading/trailing spaces
+$cronSecret = $cronSecret.Trim()
+
+# Use the secret already entered
+$authHeader = "Bearer " + $cronSecret
+
+# IMPORTANT: Recreate the headers variable
+$headers = @{
+    Authorization = $authHeader
+    Accept = "application/json"
+}
+
+# Verify before sending
+Write-Host "Secret length:" $cronSecret.Length
+Write-Host "Bearer prefix valid:" $headers.Authorization.StartsWith("Bearer ")
+Write-Host "Authorization header length:" $headers.Authorization.Length
+
+# Invoke the API
+Invoke-RestMethod `
+    -Uri "http://localhost:5000/api/v1/system/cloudinary-cleanup" `
+    -Method Get `
+    -Headers $headers
+------------------------------
 -- Step 4: Verify the cleanup
 
     SELECT
@@ -137,6 +169,17 @@ LEFT JOIN news_media nm
 WHERE ma.public_id = 'cleanup-testing/abandoned-test-001'
 GROUP BY ma.id, ma.public_id, ma.status, ma.created_at;
 
+SELECT
+    nm.news_id,
+    ma.id AS media_asset_id,
+    ma.public_id,
+    ma.status,
+    ma.created_at
+FROM public.news_media nm
+JOIN public.media_assets ma
+    ON ma.id = nm.media_asset_id
+WHERE nm.news_id = 698;
+
 -- To verify Eligible records:
 
 SELECT
@@ -164,3 +207,158 @@ SELECT
     ) AS news_references
 FROM media_assets ma
 WHERE ma.public_id = 'cleanup-testing/abandoned-test-001';
+
+
+--- USAGE QUERIES -----------
+
+SELECT
+    public_id,
+    reason,
+    status,
+    last_error
+FROM public.cloudinary_cleanup_jobs
+WHERE public_id = 'YOUR_DRAFT_IMAGE_PUBLIC_ID'
+  AND reason = 'ABANDONED_UPLOAD';
+
+  SELECT
+    current_database() AS database_name,
+    current_schema() AS schema_name,
+    current_user AS database_user,
+    inet_server_addr() AS server_address,
+    inet_server_port() AS server_port;
+
+	SELECT
+    id,
+    public_id,
+    status,
+    created_at
+FROM public.media_assets
+ORDER BY id DESC
+LIMIT 20;
+
+SELECT
+    id,
+    public_id,
+    provider,
+    status,
+    created_at
+FROM public.media_assets
+WHERE public_id = 'cleanup-testing/abandoned-test-001';
+
+SELECT
+    COUNT(*) AS total_jobs
+FROM public.cloudinary_cleanup_jobs;
+
+SELECT
+    column_name,
+    data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'cloudinary_cleanup_jobs'
+ORDER BY ordinal_position;
+
+SELECT
+    ma.id,
+    ma.public_id,
+    ma.status,
+    ma.created_at,
+    COUNT(nm.id) AS news_references
+FROM media_assets ma
+LEFT JOIN news_media nm
+    ON nm.media_asset_id = ma.id
+WHERE ma.public_id = 'cleanup-testing/abandoned-test-001'
+GROUP BY ma.id, ma.public_id, ma.status, ma.created_at;
+
+SELECT
+    id,
+    public_id,
+    provider,
+    status,
+    created_at
+FROM media_assets
+WHERE public_id ILIKE '%abandoned%'
+ORDER BY id DESC;
+
+SELECT
+    id,
+    public_id,
+    reason,
+    status,
+    attempts,
+    last_error
+FROM cloudinary_cleanup_jobs
+ORDER BY id DESC
+LIMIT 30;
+
+SELECT
+    current_database() AS database_name,
+    current_user AS database_user,
+    current_schema() AS schema_name,
+    inet_server_addr()::text AS server_address,
+    inet_server_port() AS server_port,
+    (
+        SELECT COUNT(*)::text
+        FROM public.media_assets
+        WHERE public_id = 'cleanup-testing/abandoned-test-001'
+    ) AS mock_count,
+    (
+        SELECT COUNT(*)::text
+        FROM public.cloudinary_cleanup_jobs
+    ) AS cleanup_job_count;
+
+SELECT
+    nm.news_id,
+    ma.id AS media_asset_id,
+    ma.public_id,
+    ma.status,
+    ma.created_at
+FROM public.news_media nm
+JOIN public.media_assets ma
+    ON ma.id = nm.media_asset_id
+WHERE nm.news_id = 698;
+
+UPDATE public.media_assets
+SET
+    created_at = NOW() - INTERVAL '8 days',
+    updated_at = NOW()
+WHERE id = 33
+  AND provider = 'CLOUDINARY'
+  AND status = 'ACTIVE'
+  AND EXISTS (
+      SELECT 1
+      FROM public.news_media nm
+      WHERE nm.media_asset_id = media_assets.id
+  )
+RETURNING
+    id,
+    public_id,
+    status,
+    created_at;
+
+SELECT
+    nm.news_id,
+    ma.id AS media_asset_id,
+    ma.public_id,
+    ma.status,
+    ma.created_at,
+    cj.id AS cleanup_job_id,
+    cj.reason AS cleanup_reason,
+    cj.status AS cleanup_status
+FROM public.news_media nm
+JOIN public.media_assets ma
+    ON ma.id = nm.media_asset_id
+LEFT JOIN public.cloudinary_cleanup_jobs cj
+    ON cj.public_id = ma.public_id
+WHERE nm.news_id = 698;
+---------------------------------
+SELECT
+    id,
+    public_id,
+    reason,
+    status,
+    attempts,
+    next_attempt_at,
+    last_error
+FROM cloudinary_cleanup_jobs
+ORDER BY created_at DESC
+LIMIT 20;

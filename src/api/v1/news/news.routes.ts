@@ -170,14 +170,13 @@ router.post(
       const mediaIds: unknown = req.body?.mediaIds;
       if (
         !Array.isArray(mediaIds) ||
-        mediaIds.length < 1 ||
         mediaIds.length > 10 ||
         !mediaIds.every((id) => Number.isSafeInteger(id) && id > 0) ||
         new Set(mediaIds).size !== mediaIds.length
       ) {
         throw new ApiError(
           400,
-          "Provide 1 to 10 unique media IDs in their final order."
+          "Provide 0 to 10 unique media IDs in their final order."
         );
       }
       const current = await mediaService.getNewsMedia(newsId);
@@ -191,13 +190,16 @@ router.post(
           "Media changed since editing. Refresh and try again."
         );
       }
-      const media = await mediaService.reorderNewsMedia(
-        newsId,
-        submitted.map((mediaId, index) => ({
-          mediaId,
-          displayOrder: index + 1
-        }))
-      );
+      const media =
+        submitted.length === 0
+          ? current
+          : await mediaService.reorderNewsMedia(
+              newsId,
+              submitted.map((mediaId, index) => ({
+                mediaId,
+                displayOrder: index + 1
+              }))
+            );
       res
         .status(200)
         .json({

@@ -9,11 +9,13 @@ export type AdvertisementTrackingPlacementType =
   | "HOME_BETWEEN_SECTIONS"
   | "HOME_SIDEBAR"
   | "NEWS_LIST_TOP"
+  | "NEWS_LIST_BANNER"
   | "NEWS_LIST_BETWEEN"
   | "NEWS_LIST_SIDEBAR"
   | "NEWS_LIST_BOTTOM"
   | "NEWS_LIST_MODAL"
   | "NEWS_DETAIL_TOP"
+  | "NEWS_DETAIL_BANNER"
   | "NEWS_DETAIL_BETWEEN"
   | "NEWS_DETAIL_SIDEBAR"
   | "NEWS_DETAIL_BOTTOM"
@@ -29,6 +31,7 @@ export interface AdvertisementTrackingContext {
 }
 
 export interface AdvertisementTrackingRequest {
+  clientEventId?: string;
   advertisementId: number;
   placementId: number;
   placementRuleId: number;

@@ -31,3 +31,34 @@ export const getCategoryById = async (
     next(error);
   }
 };
+
+export const createCategory = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    sendSuccess(
+      res,
+      "Category created successfully.",
+      await service.createCategory(req.body)
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+export const updateCategory = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    sendSuccess(
+      res,
+      "Category updated successfully.",
+      await service.updateCategory(Number(req.params.id), req.body)
+    );
+  } catch (error) {
+    next(error);
+  }
+};

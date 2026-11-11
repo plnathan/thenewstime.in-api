@@ -776,3 +776,190 @@ SELECT
 FROM advertisements a
 WHERE a.id = 2122;
 ------------------------------------------
+SELECT
+    current_database() AS database_name,
+    current_schema() AS schema_name,
+    current_user AS connected_user,
+    current_setting('search_path') AS search_path;
+	
+SELECT
+    table_schema,
+    table_name
+FROM information_schema.tables
+WHERE table_name = 'advertisement_placements';
+----------------------------------
+SELECT
+    conname,
+    pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE conrelid = 'public.advertisement_placements'::regclass
+  AND conname = 'chk_advertisement_placements_type';
+
+------------------
+SELECT
+    a.id,
+    a.name,
+    a.workflow_status,
+    a.status,
+    a.start_at,
+    a.end_at,
+    oa.event_type AS latest_event,
+    oa.performed_by,
+    oa.created_at AS event_date
+FROM public.advertisements a
+LEFT JOIN LATERAL (
+    SELECT event_type, performed_by, created_at
+    FROM public.advertisement_operational_audit
+    WHERE advertisement_id = a.id
+    ORDER BY id DESC
+    LIMIT 1
+) oa ON TRUE
+WHERE a.id = 2351;
+-------------------
+SELECT
+    id,
+    approval_type,
+    amount_threshold,
+    percentage_threshold,
+    status
+FROM advertisement_financial_approval_thresholds
+WHERE approval_type = 'DISCOUNT'
+ORDER BY id;
+---------------------
+SELECT
+    id,
+    workflow_status,
+    pricing_placement_id,
+    pricing_unit,
+    pricing_quantity,
+    standard_amount,
+    discount_percentage,
+    discount_amount,
+    advertisement_amount,
+    advance_percentage,
+    advance_amount
+FROM advertisements
+WHERE id = 1692;
+--------------------------
+SELECT
+    table_name,
+    column_name,
+    data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+      column_name = 'client_event_id'
+      OR column_name ILIKE '%impression%'
+  )
+ORDER BY table_name, column_name;
+---------------------------------
+SELECT
+    tablename,
+    indexname,
+    indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND indexdef ILIKE '%client_event_id%';
+----------------------------------
+SELECT
+    client_event_id,
+    COUNT(*) AS record_count
+FROM advertisement_impressions
+WHERE client_event_id = 'ce790284-a7a1-468c-b0b7-3964ef7e523c'
+GROUP BY client_event_id;
+
+-------------------------
+SELECT *
+FROM advertisement_creative_cleanup
+WHERE advertisement_id = 2340;
+
+SELECT
+    id AS creative_id,
+    advertisement_id,
+    status AS creative_status,
+    media_url
+FROM advertisement_creatives
+WHERE advertisement_id = 2340
+ORDER BY id;
+
+SELECT
+    id,
+    advertisement_id,
+    creative_id,
+    status,
+    attempts,
+    last_error,
+    next_attempt_at,
+    NOW() AS current_db_time
+FROM advertisement_creative_cleanup
+WHERE advertisement_id = 2340;
+
+SELECT
+    advertisement_id,
+    creative_id,
+    public_id,
+    status,
+    attempts,
+    last_error,
+    deleted_at
+FROM advertisement_creative_cleanup
+WHERE advertisement_id = 2340;
+
+
+SELECT
+    id,
+    workflow_status,
+    start_at,
+    end_at,
+    pricing_placement_id,
+    pricing_unit,
+    pricing_quantity,
+    standard_amount,
+    advertisement_amount
+FROM advertisements
+WHERE id = 1692;
+------------------------
+SELECT *
+FROM advertisement_placement_rules
+WHERE advertisement_id = 1692;
+
+--------------------
+SELECT
+    table_name,
+    column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND column_name IN ('advertisement_id', 'placement_id')
+ORDER BY table_name, column_name;
+------------------------------
+select * from roles
+select * from permissions where resource = 'advertisements.formats'
+select * from user_roles
+select * from role_permissions
+select * from users
+select * from news
+select * from media_assets
+select * from news_media
+select * from categories
+
+select * from advertisements order by id desc
+select * from advertisements where id = 2782   
+select * from public.advertisement_clients where id = 120
+select * from advertisement_payment_refunds
+select * from advertisement_placements where page_typ = 'HOME_BETWEEN_SECTIONS_SLOT_1'
+select * from advertisement_placement_rules where placement_id = 506
+select * from advertisement_creatives where advertisement_id = 2341 
+select * from advertisement_schedules where advertisement_id = 2350
+select * from advertisement_rate_cards
+select * from advertisement_rotation_members
+select * from advertisement_targets
+select * from advertisement_payments
+select * from advertisement_pricing_snapshots
+select * from advertisement_workflow_history
+select * from advertisement_campaigns
+select * from advertisement_financial_approval_thresholds where approval_type='REFUND';
+select * from public.advertisement_schedules wher
+select * from public.advertisement_formats
+select * from public.advertisement_impressions order by impression_at desc limit 100
+select * from advertisement_operational_audit
+--------------------

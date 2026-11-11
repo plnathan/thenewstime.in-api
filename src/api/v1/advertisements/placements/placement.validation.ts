@@ -11,12 +11,14 @@ const placementTypeSchema = z.enum([
   "HOME_MODAL",
 
   "NEWS_LIST_TOP",
+  "NEWS_LIST_BANNER",
   "NEWS_LIST_BETWEEN",
   "NEWS_LIST_BOTTOM",
   "NEWS_LIST_SIDEBAR",
   "NEWS_LIST_MODAL",
 
   "NEWS_DETAIL_TOP",
+  "NEWS_DETAIL_BANNER",
   "NEWS_DETAIL_BETWEEN",
   "NEWS_DETAIL_SIDEBAR",
   "NEWS_DETAIL_BOTTOM",
@@ -87,6 +89,8 @@ const pagePlacementPairs: Record<string, readonly string[]> = {
   ],
   NEWS_LIST: [
     "NEWS_LIST_TOP",
+    "NEWS_LIST_BANNER",
+    "NEWS_LIST_BANNER",
     "NEWS_LIST_BETWEEN",
     "NEWS_LIST_BOTTOM",
     "NEWS_LIST_SIDEBAR",
@@ -94,6 +98,8 @@ const pagePlacementPairs: Record<string, readonly string[]> = {
   ],
   NEWS_DETAIL: [
     "NEWS_DETAIL_TOP",
+    "NEWS_DETAIL_BANNER",
+    "NEWS_DETAIL_BANNER",
     "NEWS_DETAIL_BETWEEN",
     "NEWS_DETAIL_SIDEBAR",
     "NEWS_DETAIL_BOTTOM",

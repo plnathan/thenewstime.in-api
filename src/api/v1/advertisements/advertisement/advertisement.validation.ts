@@ -435,19 +435,45 @@ export const updateAdvertisementSchema = z
     }
   });
 
-export const advertisementQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
+export const advertisementQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
 
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
 
-  search: z.string().trim().optional(),
+    search: z.string().trim().optional(),
 
-  clientId: z.coerce.number().int().positive().optional(),
+    clientId: z.coerce.number().int().positive().optional(),
 
-  workflowStatus: z.enum(advertisementWorkflowStatuses).optional(),
+    workflowStatus: z.enum(advertisementWorkflowStatuses).optional(),
 
-  status: z.enum(advertisementStatuses).optional()
-});
+    status: z.enum(advertisementStatuses).optional(),
+    placementType: z
+      .string()
+      .trim()
+      .regex(/^[A-Z_]+$/)
+      .max(80)
+      .optional(),
+    startDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    endDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    operationalCondition: z
+      .enum(["ACTIVE", "PAUSED", "COMPLETED", "ON_HOLD", "STOPPED", "ARCHIVED"])
+      .optional()
+  })
+  .refine(
+    (value) =>
+      !value.startDate || !value.endDate || value.startDate <= value.endDate,
+    {
+      message: "Start date must not be after end date",
+      path: ["endDate"]
+    }
+  );
 
 export const advertisementWorkflowSchema = z
   .object({

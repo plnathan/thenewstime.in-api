@@ -534,7 +534,7 @@ export const list = async (
       ${fromClause}
       ${whereClause}
       ORDER BY
-        CASE WHEN c.status = 'ACTIVE' THEN 0 ELSE 1 END ASC,
+        CASE c.status WHEN 'ACTIVE' THEN 0 WHEN 'BLOCKED' THEN 1 ELSE 2 END ASC,
         c.created_at DESC,
         c.id DESC
       LIMIT $${limitIndex}

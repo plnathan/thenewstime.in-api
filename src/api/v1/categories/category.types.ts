@@ -3,4 +3,5 @@ export interface Category {
   code: string;
   displayName: string;
   urlName: string;
+  status?: "ACTIVE" | "INACTIVE";
 }

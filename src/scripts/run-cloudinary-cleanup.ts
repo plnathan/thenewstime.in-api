@@ -24,9 +24,9 @@
 
 import "dotenv/config";
 
-import { runCloudinaryCleanupBatch } from "../src/shared/services/cloudinary-cleanup.service.js";
+import { runCloudinaryCleanupBatch } from "../shared/services/cloudinary-cleanup.service.js";
 
-import { pool } from "../src/shared/config/db.js";
+import { pool } from "../shared/config/db.js";
 
 const main = async (): Promise<void> => {
   try {

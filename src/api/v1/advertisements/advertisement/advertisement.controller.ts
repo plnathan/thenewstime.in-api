@@ -6,6 +6,7 @@ import {
 } from "../../../../shared/utils/response.js";
 
 import * as service from "./advertisement.service.js";
+import { pool } from "../../../../shared/config/db.js";
 
 export const createAdvertisement = async (
   req: Request,
@@ -75,7 +76,25 @@ export const getAdvertisements = async (
             status: req.query.status as
               "DRAFT" | "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED"
           }
-        : {})
+        : {}),
+      ...(req.query.operationalCondition
+        ? {
+            operationalCondition: req.query.operationalCondition as
+              | "ACTIVE"
+              | "PAUSED"
+              | "COMPLETED"
+              | "ON_HOLD"
+              | "STOPPED"
+              | "ARCHIVED"
+          }
+        : {}),
+      ...(req.query.placementType
+        ? { placementType: req.query.placementType.toString() }
+        : {}),
+      ...(req.query.startDate
+        ? { startDate: req.query.startDate.toString() }
+        : {}),
+      ...(req.query.endDate ? { endDate: req.query.endDate.toString() } : {})
     };
 
     const result = await service.getAdvertisements(filters);
@@ -330,6 +349,40 @@ export const resumeDeliveryAdvertisement = async (
       req.body
     );
     sendSuccess(res, "Advertisement delivery resumed successfully.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Read-only operational events for the Advertisement List audit modal. */
+export const getAdvertisementOperationalHistory = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const result = await pool.query<{
+      event_type: string;
+      performed_by: number | null;
+      performed_at: string | null;
+    }>(
+      `SELECT event_type, performed_by,
+              COALESCE(to_jsonb(a)->>'performed_at', to_jsonb(a)->>'created_at') AS performed_at
+       FROM public.advertisement_operational_audit a
+       WHERE advertisement_id = $1
+       ORDER BY COALESCE(to_jsonb(a)->>'performed_at', to_jsonb(a)->>'created_at') DESC NULLS LAST`,
+      [id]
+    );
+    sendSuccess(
+      res,
+      "Operational history retrieved successfully",
+      result.rows.map((row) => ({
+        eventType: row.event_type,
+        performedBy: row.performed_by,
+        performedAt: row.performed_at
+      }))
+    );
   } catch (error) {
     next(error);
   }

@@ -77,6 +77,40 @@ describe("POST /api/v1/news", () => {
     createdId = response.body.data.id;
   });
 
+  it("should final-save an image-free news article and allow repeated saves", async () => {
+    expect(createdId).toBeGreaterThan(0);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await request(app)
+        .post(`/api/v1/news/${createdId}/final-save`)
+        .send({ mediaIds: [] });
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual([]);
+    }
+  });
+
+  it("should reject malformed or duplicate final-save media IDs", async () => {
+    for (const mediaIds of [
+      [1, 1],
+      [0],
+      [-1],
+      [1.5],
+      Array.from({ length: 11 }, (_, i) => i + 1)
+    ]) {
+      const response = await request(app)
+        .post(`/api/v1/news/${createdId}/final-save`)
+        .send({ mediaIds });
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("should reject an unknown media ID on an image-free news", async () => {
+    const response = await request(app)
+      .post(`/api/v1/news/${createdId}/final-save`)
+      .send({ mediaIds: [999999999] });
+    expect(response.status).toBe(409);
+  });
+
   it("should reject duplicate slug", async () => {
     const response = await request(app).post("/api/v1/news").send(newsPayload);
 

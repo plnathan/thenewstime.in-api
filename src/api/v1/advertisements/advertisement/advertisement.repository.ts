@@ -1509,6 +1509,96 @@ export const list = async (
     conditions.push(`a.status = $${values.length}`);
   }
 
+  if (filters.placementType) {
+    values.push(filters.placementType);
+    conditions.push(`EXISTS (
+      SELECT 1 FROM advertisement_placement_rules pr
+      INNER JOIN advertisement_placements p ON p.id = pr.placement_id
+      WHERE pr.advertisement_id = a.id
+        AND pr.status = 'ACTIVE'
+        AND p.placement_type = $${values.length}
+    )`);
+  }
+
+  // Dates are inclusive. A campaign matches through its own dates or a
+  // linked schedule; EXISTS prevents duplicate advertisements in the grid.
+  if (filters.startDate || filters.endDate) {
+    const startIndex = filters.startDate
+      ? (values.push(filters.startDate), values.length)
+      : null;
+    const endIndex = filters.endDate
+      ? (values.push(filters.endDate), values.length)
+      : null;
+    const dateMatches = (start: string, end: string) =>
+      [
+        startIndex ? `${start}::date >= $${startIndex}::date` : null,
+        endIndex ? `${end}::date <= $${endIndex}::date` : null
+      ]
+        .filter(Boolean)
+        .join(" AND ");
+    conditions.push(`((a.start_at IS NOT NULL AND a.end_at IS NOT NULL AND ${dateMatches("a.start_at", "a.end_at")})
+      OR EXISTS (SELECT 1 FROM advertisement_schedules sch
+        WHERE sch.advertisement_id = a.id
+          AND ${dateMatches("sch.start_at", "sch.end_at")}))`);
+  }
+
+  if (filters.operationalCondition === "ACTIVE") {
+    // Match the effective-completion rule below. An advertisement may retain
+    // its persisted ACTIVE status after its campaign has naturally expired;
+    // those records belong under COMPLETED rather than ACTIVATED.
+    conditions.push(`a.status = 'ACTIVE'
+      AND NOT (
+        a.workflow_status = 'APPROVED'
+        AND a.end_at IS NOT NULL
+        AND a.end_at <= NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM advertisement_schedules sch
+          WHERE sch.advertisement_id = a.id
+            AND sch.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
+            AND sch.end_at > NOW()
+        )
+        AND (
+          SELECT oa.event_type FROM public.advertisement_operational_audit oa
+          WHERE oa.advertisement_id = a.id
+          ORDER BY oa.id DESC LIMIT 1
+        ) IS DISTINCT FROM 'STOPPED'
+      )`);
+  } else if (filters.operationalCondition === "COMPLETED") {
+    // Effective natural completion is based on the campaign's actual end,
+    // not solely on a persisted COMPLETED status (which Stop Delivery also uses).
+    // Do not count explicitly stopped campaigns or campaigns with a future
+    // scheduled delivery. The archived/draft workflows remain separate.
+    conditions.push(`a.workflow_status = 'APPROVED'
+      AND a.status IN ('ACTIVE', 'PAUSED', 'COMPLETED')
+      AND a.end_at IS NOT NULL
+      AND a.end_at <= NOW()
+      AND NOT EXISTS (
+        SELECT 1 FROM advertisement_schedules sch
+        WHERE sch.advertisement_id = a.id
+          AND sch.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
+          AND sch.end_at > NOW()
+      )
+      AND (
+        SELECT oa.event_type FROM public.advertisement_operational_audit oa
+        WHERE oa.advertisement_id = a.id
+        ORDER BY oa.id DESC LIMIT 1
+      ) IS DISTINCT FROM 'STOPPED'`);
+  } else if (filters.operationalCondition === "ARCHIVED") {
+    conditions.push(`a.status = 'ARCHIVED'`);
+  } else if (filters.operationalCondition === "PAUSED") {
+    conditions.push(`a.status = 'PAUSED'`);
+  } else if (filters.operationalCondition === "ON_HOLD") {
+    conditions.push(`a.workflow_status = 'ON_HOLD'`);
+  } else if (filters.operationalCondition === "STOPPED") {
+    // A completed advertisement is STOPPED only when its most recent
+    // operational event is an explicit STOPPED action, not natural expiry.
+    conditions.push(`a.status = 'COMPLETED' AND (
+      SELECT oa.event_type FROM public.advertisement_operational_audit oa
+      WHERE oa.advertisement_id = a.id
+      ORDER BY oa.id DESC LIMIT 1
+    ) = 'STOPPED'`);
+  }
+
   const whereClause =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 

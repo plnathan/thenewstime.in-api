@@ -10,11 +10,13 @@ const placementTypes = [
   "HOME_BETWEEN_SECTIONS",
   "HOME_SIDEBAR",
   "NEWS_LIST_TOP",
+  "NEWS_LIST_BANNER",
   "NEWS_LIST_BETWEEN",
   "NEWS_LIST_SIDEBAR",
   "NEWS_LIST_BOTTOM",
   "NEWS_LIST_MODAL",
   "NEWS_DETAIL_TOP",
+  "NEWS_DETAIL_BANNER",
   "NEWS_DETAIL_BETWEEN",
   "NEWS_DETAIL_SIDEBAR",
   "NEWS_DETAIL_BOTTOM",
@@ -33,6 +35,7 @@ const contextSchema = z
   .optional();
 
 export const advertisementTrackingSchema = z.object({
+  clientEventId: z.string().uuid().optional(),
   advertisementId: z.coerce.number().int().positive(),
 
   placementId: z.coerce.number().int().positive(),
@@ -98,3 +101,10 @@ export const advertisementMetricsQuerySchema = z
 export type AdvertisementMetricsQueryInput = z.infer<
   typeof advertisementMetricsQuerySchema
 >;
+
+/** Maximum 25 impression events per HTTP request. */
+export const advertisementImpressionBatchSchema = z
+  .object({
+    events: z.array(advertisementTrackingSchema).min(1).max(25)
+  })
+  .strict();

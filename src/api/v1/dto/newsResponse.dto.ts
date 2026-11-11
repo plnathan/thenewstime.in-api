@@ -88,6 +88,13 @@ export interface NewsResponseDto {
   newsNumber: number;
 
   draftedByName?: string | null;
+  draftedBy?: number;
+  draftedAt?: Date;
+  approvedBy?: number | null;
+  approvedByName?: string | null;
+  approvedAt?: Date | null;
+  publishedBy?: number | null;
+  publishedByName?: string | null;
 
   title: string;
 

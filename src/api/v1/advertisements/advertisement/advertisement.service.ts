@@ -1,4 +1,8 @@
 import { pool } from "../../../../shared/config/db.js";
+import {
+  queueArchivedCreatives,
+  processArchiveCreativeCleanup
+} from "./advertisement-archive-cleanup.service.js";
 
 import { ApiError } from "../../../../shared/utils/apiErrorInfo.js";
 
@@ -942,6 +946,9 @@ const changeWorkflowStatus = async (
         [id, advertisement.status, transitionReason, performedBy]
       );
 
+      // Queue Cloudinary cleanup and deactivate creatives atomically with archive.
+      await queueArchivedCreatives(client, id, performedBy);
+
       const reloaded = await repository.findById(id, client);
       if (!reloaded) {
         throw new ApiError(
@@ -991,6 +998,14 @@ const changeWorkflowStatus = async (
     }
 
     await client.query("COMMIT");
+
+    if (nextStatus === "ARCHIVED") {
+      try {
+        await processArchiveCreativeCleanup(id);
+      } catch (cleanupError) {
+        console.error("ADVERTISEMENT ARCHIVE CLEANUP ERROR:", cleanupError);
+      }
+    }
 
     return {
       advertisement: resultAdvertisement,

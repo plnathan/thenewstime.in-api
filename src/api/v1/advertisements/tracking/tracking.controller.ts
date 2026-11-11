@@ -6,7 +6,8 @@ import * as service from "./tracking.service.js";
 import {
   advertisementMetricsParamsSchema,
   advertisementMetricsQuerySchema,
-  advertisementTrackingSchema
+  advertisementTrackingSchema,
+  advertisementImpressionBatchSchema
 } from "./tracking.validation.js";
 
 function getClientIp(req: Request): string | undefined {
@@ -92,6 +93,22 @@ export const trackImpression = async (
     );
 
     sendSuccess(res, "Advertisement impression tracked successfully.", result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Batch endpoint retains the existing per-event eligibility and reporting logic. */
+export const trackImpressionBatch = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { events } = advertisementImpressionBatchSchema.parse(req.body);
+    const metadata = getTrackingRequestMetadata(req);
+    const result = await service.trackImpressionBatch(events, metadata);
+    sendSuccess(res, "Advertisement impression batch processed.", result);
   } catch (error) {
     next(error);
   }

@@ -23,20 +23,12 @@ const getClient = () => {
   return cloudinary;
 };
 
-/**
- * Existing news-media image upload.
- *
- * Keep this function compatible with the current news upload service.
- */
+/** Existing news-media image upload. */
 export const uploadImageBuffer = async (
   buffer: Buffer,
-  options: {
-    folder: string;
-    publicId?: string;
-  }
+  options: { folder: string; publicId?: string }
 ): Promise<UploadApiResponse> => {
   const client = getClient();
-
   return new Promise((resolve, reject) => {
     const uploadOptions = {
       folder: options.folder,
@@ -46,7 +38,6 @@ export const uploadImageBuffer = async (
       unique_filename: true,
       ...(options.publicId ? { public_id: options.publicId } : {})
     };
-
     const stream = client.uploader.upload_stream(
       uploadOptions,
       (error, result) => {
@@ -54,21 +45,14 @@ export const uploadImageBuffer = async (
           reject(error ?? new Error("Cloudinary upload failed."));
           return;
         }
-
         resolve(result);
       }
     );
-
     stream.end(buffer);
   });
 };
 
-/**
- * Upload an advertisement image or video.
- *
- * The resource type is explicitly selected so videos are stored
- * as Cloudinary video resources rather than image resources.
- */
+/** Upload an advertisement image or video. */
 export const uploadAdvertisementCreativeBuffer = async (
   buffer: Buffer,
   options: {
@@ -78,7 +62,6 @@ export const uploadAdvertisementCreativeBuffer = async (
   }
 ): Promise<UploadApiResponse> => {
   const client = getClient();
-
   return new Promise((resolve, reject) => {
     const uploadOptions = {
       folder: options.folder,
@@ -88,7 +71,6 @@ export const uploadAdvertisementCreativeBuffer = async (
       unique_filename: true,
       ...(options.publicId ? { public_id: options.publicId } : {})
     };
-
     const stream = client.uploader.upload_stream(
       uploadOptions,
       (error, result) => {
@@ -96,53 +78,45 @@ export const uploadAdvertisementCreativeBuffer = async (
           reject(error ?? new Error("Advertisement creative upload failed."));
           return;
         }
-
         resolve(result);
       }
     );
-
     stream.end(buffer);
   });
 };
 
-/**
- * Existing news-media cleanup.
- */
-export const deleteCloudinaryImage = async (
-  publicId: string
+/** Authenticated Cloudinary asset deletion shared by news and advertisements. */
+export const deleteCloudinaryAsset = async (
+  publicId: string,
+  resourceType: AdvertisementCreativeResourceType
 ): Promise<void> => {
   const client = getClient();
-
   const result = await client.uploader.destroy(publicId, {
-    resource_type: "image",
+    resource_type: resourceType,
     invalidate: true
   });
   if (result.result !== "ok" && result.result !== "not found") {
-    throw new Error(`Cloudinary deletion failed: ${result.result}`);
+    throw new Error(`Cloudinary deletion failed: ${String(result.result)}`);
   }
 };
 
-/**
- * Generate a transformed thumbnail URL for an image.
- */
+/** Existing news-media cleanup. */
+export const deleteCloudinaryImage = async (
+  publicId: string
+): Promise<void> => {
+  await deleteCloudinaryAsset(publicId, "image");
+};
+
+/** Generate a transformed thumbnail URL for an image. */
 export const getThumbnailUrl = (publicId: string): string => {
   const client = getClient();
-
   return client.url(publicId, {
     secure: true,
     resource_type: "image",
     type: "upload",
     transformation: [
-      {
-        width: 400,
-        height: 225,
-        crop: "fill",
-        gravity: "auto"
-      },
-      {
-        quality: "auto",
-        fetch_format: "auto"
-      }
+      { width: 400, height: 225, crop: "fill", gravity: "auto" },
+      { quality: "auto", fetch_format: "auto" }
     ]
   });
 };

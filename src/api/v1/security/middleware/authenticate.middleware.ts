@@ -11,7 +11,15 @@ export const authenticate = (
 ): void => {
   try {
     const authorization = req.header("Authorization");
-
+    /*
+    console.log("[Cloudinary Cron] Header diagnostic:", {
+      authorizationPresent: Boolean(authorization),
+      startsWithBearer: authorization?.startsWith("Bearer ") ?? false,
+      startsWithBearerCaseInsensitive: /^Bearer /i.test(authorization ?? ""),
+      headerLength: authorization?.length ?? 0,
+      expectedHeaderLength: 7 + (process.env.CRON_SECRET?.length ?? 0)
+    });
+    */
     if (!authorization) {
       throw new ApiError(401, "Authentication required.");
     }

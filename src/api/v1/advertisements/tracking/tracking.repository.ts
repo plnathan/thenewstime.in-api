@@ -235,6 +235,21 @@ export const countImpressionsForSchedule = async (
   return Number(result.rows[0]?.impression_count ?? 0);
 };
 
+/** Finds a previously committed impression for an identical client event ID. */
+export const findImpressionByClientEventId = async (
+  clientEventId: string,
+  client: PoolClient
+): Promise<TrackingInsertResult | null> => {
+  const result = await client.query<{ id: number; impression_at: Date }>(
+    `SELECT id, impression_at FROM advertisement_impressions WHERE client_event_id = $1`,
+    [clientEventId]
+  );
+  const row = result.rows[0];
+  return row
+    ? { id: Number(row.id), eventAt: new Date(row.impression_at) }
+    : null;
+};
+
 export const createImpression = async (
   input: AdvertisementTrackingRequest,
   client: PoolClient
@@ -257,6 +272,7 @@ export const createImpression = async (
         user_agent,
         page_url,
         referrer_url,
+        client_event_id,
         impression_at
       )
       VALUES (
@@ -275,6 +291,7 @@ export const createImpression = async (
         $13,
         $14,
         $15,
+        $16,
         CURRENT_TIMESTAMP
       )
       RETURNING
@@ -296,7 +313,8 @@ export const createImpression = async (
       input.deviceType ?? null,
       input.userAgent ?? null,
       input.pageUrl ?? null,
-      input.referrerUrl ?? null
+      input.referrerUrl ?? null,
+      input.clientEventId ?? null
     ]
   );
 
@@ -310,6 +328,85 @@ export const createImpression = async (
     id: Number(row.id),
     eventAt: new Date(row.impression_at)
   };
+};
+
+/** Fetches existing event IDs in one query, after placement-rule locks are held. */
+export const findExistingImpressionEventIds = async (
+  eventIds: string[],
+  client: PoolClient
+): Promise<Set<string>> => {
+  if (eventIds.length === 0) return new Set();
+  const result = await client.query<{ client_event_id: string }>(
+    `SELECT client_event_id FROM advertisement_impressions WHERE client_event_id = ANY($1::uuid[])`,
+    [eventIds]
+  );
+  return new Set(result.rows.map((row) => row.client_event_id));
+};
+
+/** A single SQL INSERT for the eligible events; unique IDs make retries harmless. */
+export const createImpressionsBulk = async (
+  requests: AdvertisementTrackingRequest[],
+  client: PoolClient
+): Promise<Array<{ clientEventId: string | null; id: number }>> => {
+  if (requests.length === 0) return [];
+  const columns = [
+    "advertisement_id",
+    "placement_id",
+    "placement_rule_id",
+    "schedule_id",
+    "creative_id",
+    "page_type",
+    "session_id",
+    "visitor_id",
+    "ip_hash",
+    "browser",
+    "operating_system",
+    "device_type",
+    "user_agent",
+    "page_url",
+    "referrer_url",
+    "client_event_id"
+  ];
+  const params: unknown[] = [];
+  const values = requests.map((request) => {
+    const row = [
+      request.advertisementId,
+      request.placementId,
+      request.placementRuleId,
+      request.scheduleId,
+      request.creativeId,
+      request.pageType,
+      request.sessionId ?? null,
+      request.visitorId ?? null,
+      request.ipHash ?? null,
+      request.browser ?? null,
+      request.operatingSystem ?? null,
+      request.deviceType ?? null,
+      request.userAgent ?? null,
+      request.pageUrl ?? null,
+      request.referrerUrl ?? null,
+      request.clientEventId ?? null
+    ];
+    const placeholders = row.map((value) => {
+      params.push(value);
+      return `$${params.length}`;
+    });
+    return `(${placeholders.join(", ")}, CURRENT_TIMESTAMP)`;
+  });
+  const result = await client.query<{
+    id: number;
+    client_event_id: string | null;
+  }>(
+    `INSERT INTO advertisement_impressions (${columns.join(", ")}, impression_at)
+     VALUES ${values.join(", ")}
+     ON CONFLICT (client_event_id) WHERE client_event_id IS NOT NULL DO NOTHING
+     RETURNING id, client_event_id`,
+    params
+  );
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    clientEventId: row.client_event_id
+  }));
 };
 
 export const createClick = async (

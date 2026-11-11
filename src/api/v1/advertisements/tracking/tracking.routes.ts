@@ -10,7 +10,8 @@ import * as controller from "./tracking.controller.js";
 import {
   advertisementMetricsParamsSchema,
   advertisementMetricsQuerySchema,
-  advertisementTrackingSchema
+  advertisementTrackingSchema,
+  advertisementImpressionBatchSchema
 } from "./tracking.validation.js";
 
 const router = Router();
@@ -24,6 +25,13 @@ router.post(
   "/impression",
   validate(advertisementTrackingSchema, "body"),
   controller.trackImpression
+);
+
+/** Public batch impression tracking (up to 25 validated events). */
+router.post(
+  "/impressions/batch",
+  validate(advertisementImpressionBatchSchema, "body"),
+  controller.trackImpressionBatch
 );
 
 /**

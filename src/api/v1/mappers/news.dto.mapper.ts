@@ -105,6 +105,13 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
     newsNumber: news.newsNumber,
 
     draftedByName: news.draftedByName ?? null,
+    draftedBy: news.draftedBy,
+    draftedAt: news.draftedAt,
+    approvedBy: news.approvedBy,
+    approvedByName: news.approvedByName ?? null,
+    approvedAt: news.approvedAt,
+    publishedBy: news.publishedBy,
+    publishedByName: news.publishedByName ?? null,
 
     title: news.title,
 

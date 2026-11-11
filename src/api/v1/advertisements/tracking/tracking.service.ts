@@ -81,6 +81,10 @@ function buildTrackingRequest(
     placementType: input.placementType
   };
 
+  if (input.clientEventId !== undefined) {
+    request.clientEventId = input.clientEventId;
+  }
+
   if (input.sessionId !== undefined) {
     request.sessionId = input.sessionId;
   } else if (metadata.sessionId !== undefined) {
@@ -348,6 +352,23 @@ export const trackImpression = async (
     );
     validateImpressionState(currentRelationship);
 
+    // The placement-rule row is locked, so retries are serialized with
+    // the original insert and cannot consume an additional impression cap.
+    if (request.clientEventId !== undefined) {
+      const existing = await repository.findImpressionByClientEventId(
+        request.clientEventId,
+        client
+      );
+      if (existing !== null) {
+        await client.query("COMMIT");
+        return {
+          tracked: false,
+          eventId: existing.id,
+          eventAt: existing.eventAt
+        };
+      }
+    }
+
     if (currentRelationship.maxImpressions !== null) {
       const impressionCount = await repository.countImpressionsForSchedule(
         request.scheduleId,
@@ -376,6 +397,113 @@ export const trackImpression = async (
       eventId: event.id,
       eventAt: event.eventAt
     };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Transaction-safe batch: lock every involved rule in deterministic order,
+ * revalidate live eligibility, enforce per-schedule caps, then bulk insert.
+ * Invalid events are rejected individually without affecting valid siblings.
+ */
+export const trackImpressionBatch = async (
+  inputs: AdvertisementTrackingInput[],
+  metadata: TrackingMetadata
+): Promise<{
+  accepted: number;
+  rejected: number;
+  duplicatesOrCapped: number;
+}> => {
+  const requests = inputs.map((input) => buildTrackingRequest(input, metadata));
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const ruleIds = [
+      ...new Set(requests.map((request) => request.placementRuleId))
+    ].sort((a, b) => a - b);
+    const lockedRules = new Map<
+      number,
+      { maxImpressions: number | null } | null
+    >();
+    for (const ruleId of ruleIds) {
+      lockedRules.set(
+        ruleId,
+        await repository.lockPlacementRule(ruleId, client)
+      );
+    }
+
+    const existingIds = await repository.findExistingImpressionEventIds(
+      requests.flatMap((request) =>
+        request.clientEventId === undefined ? [] : [request.clientEventId]
+      ),
+      client
+    );
+    const seenIds = new Set(existingIds);
+    const capCounts = new Map<string, number>();
+    const candidates: AdvertisementTrackingRequest[] = [];
+    let rejected = 0;
+    let duplicatesOrCapped = 0;
+
+    for (const request of requests) {
+      try {
+        if (
+          request.clientEventId !== undefined &&
+          seenIds.has(request.clientEventId)
+        ) {
+          duplicatesOrCapped += 1;
+          continue;
+        }
+        if (lockedRules.get(request.placementRuleId) == null) {
+          throw new ApiError(400, "Placement rule not found.");
+        }
+        const relationship = validateRelationship(
+          request,
+          await repository.findTrackingRelationship(
+            request.advertisementId,
+            request.placementId,
+            request.placementRuleId,
+            request.scheduleId,
+            request.creativeId,
+            client
+          )
+        );
+        validateImpressionState(relationship);
+        if (relationship.maxImpressions !== null) {
+          const key = `${request.scheduleId}:${request.placementRuleId}`;
+          let count = capCounts.get(key);
+          if (count === undefined) {
+            count = await repository.countImpressionsForSchedule(
+              request.scheduleId,
+              request.placementRuleId,
+              client
+            );
+          }
+          if (count >= relationship.maxImpressions) {
+            capCounts.set(key, count);
+            duplicatesOrCapped += 1;
+            continue;
+          }
+          capCounts.set(key, count + 1);
+        }
+        candidates.push(request);
+        if (request.clientEventId !== undefined)
+          seenIds.add(request.clientEventId);
+      } catch {
+        rejected += 1;
+      }
+    }
+
+    const inserted = await repository.createImpressionsBulk(candidates, client);
+    // A conflicting event ID may already exist under another rule; count only
+    // rows actually returned by INSERT ... ON CONFLICT DO NOTHING.
+    const accepted = inserted.length;
+    duplicatesOrCapped += candidates.length - accepted;
+    await client.query("COMMIT");
+    return { accepted, rejected, duplicatesOrCapped };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

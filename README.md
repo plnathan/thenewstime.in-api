@@ -1,7 +1,10 @@
+## to build back-end
+
+npx tsc -p tsconfig.vercel.json
+
 ## Testing API
 
 https://thenewstime-in-api-swart.vercel.app/api/v1/news/public?page=1&pageSize=4&popular=true&utm_source=chatgpt.com
-
 
 ## Learn Prisma/Drizzle
 
@@ -337,5 +340,91 @@ Invoke-RestMethod -Uri "https://thenewstime-in-api-swart.vercel.app/api/v1/syste
 
 Expected output:
 success status processed
-------- ------ ---------
-   True PAUSED         0
+
+---
+
+True PAUSED 0
+
+## Production spam protection
+
+The backend now includes several protective layers:
+
+- Cloudflare Turnstile: Server-side verification before accepting production enquiries.
+- IP rate limiting: Five attempts per hour and twenty per day.
+- Mobile number limiting: Three attempts per day.
+- Honeypot: Detects basic automated form submissions.
+- Request size validation: Rejects oversized enquiry submissions.
+- PostgreSQL-backed counters: Shared across Vercel serverless instances.
+
+ENQUIRY_RATE_LIMIT_SECRET=<random-secret-at-least-32-characters>
+TURNSTILE_SECRET_KEY=<cloudflare-turnstile-secret>
+ENQUIRY_TURNSTILE_HOSTNAME=thenewstime.in
+https://developers.cloudflare.com/turnstile/troubleshooting/testing
+
+## Front-End:
+
+VITE_TURNSTILE_SITE_KEY=<cloudflare-turnstile-site-key>
+
+## To generate SECRET KEY using powershell
+
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+[Convert]::ToBase64String($bytes)
+
+## Step 1 — Create the Cloudflare Turnstile widget
+
+Open the Cloudflare Turnstile Dashboard.
+
+1. Sign in to your Cloudflare account, or create a free account.
+2. Select Turnstile.
+3. Click Add widget.
+4. Configure the widget using the following values:
+   Setting Recommended value
+   Widget name The News Time - Advertisement Enquiry
+   Hostname thenewstime.in
+   Widget mode Managed
+   Pre-clearance Disabled / No pre-clearance
+
+The thenewstime.in hostname also authorizes its subdomains, including www.thenewstime.in. Do not enter https:// or a URL path in the hostname field.
+Cloudflare Turnstile docs+1
+
+Click Create.
+
+## Step 2 — Copy your keys
+
+Cloudflare will display two values:
+Site Key
+
+Public key — add to your React frontend.
+
+Secret Key
+
+Private key — add only to your Node.js backend. Never expose it in frontend code or GitHub.
+
+## Step 3 — Configure Vercel environment variables
+
+For your existing deployment setup, configure the frontend and backend projects separately.
+
+Frontend Vercel project
+
+Go to Settings → Environment Variables, then add:
+
+VITE_TURNSTILE_SITE_KEY=YOUR_CLOUDFLARE_SITE_KEY
+
+Backend Vercel project
+
+Add:
+TURNSTILE_SECRET_KEY=YOUR_CLOUDFLARE_SECRET_KEY
+ENQUIRY_TURNSTILE_HOSTNAME=thenewstime.in
+ENQUIRY_RATE_LIMIT_SECRET=YOUR_RANDOM_32_PLUS_CHARACTER_SECRET
+
+The rate-limit secret is separate from the Cloudflare keys. You can generate it using PowerShell:
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+[Convert]::ToBase64String($bytes)
+
+Copy the generated value into ENQUIRY_RATE_LIMIT_SECRET.
+
+Configure these for the appropriate Vercel environment, then redeploy both projects so the new environment variables take effect.
+
+## Step 4 — Test the enquiry form

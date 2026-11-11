@@ -126,6 +126,8 @@ export interface News {
   draftedByName?: string | null;
 
   approvedBy: number | null;
+  approvedByName?: string | null;
+  publishedByName?: string | null;
 
   publishedBy: number | null;
 
