@@ -1,3 +1,5 @@
+import maintenanceRoutes from "./api/v1/system/maintenance.routes.js";
+import { publicMaintenanceMiddleware } from "./shared/middleware/maintenance.middleware.js";
 import dashboardRoutes from "./api/v1/dashboard/dashboard.routes.js";
 import cors from "cors";
 import express from "express";
@@ -52,6 +54,15 @@ app.get("/", (_req: any, res: any) => {
     message: "API is running successfully!"
   });
 });
+
+app.get("/api/v1/health", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.status(200).json({ success: true, status: "UP" });
+});
+
+app.use("/api/v1/system", maintenanceRoutes);
+
+app.use(publicMaintenanceMiddleware);
 
 app.use(
   "/api/v1/advertisement-enquiries/admin",

@@ -1,3 +1,9 @@
+## To run the API request in power shell
+
+curl.exe -i http://localhost:5000/api/v1/news
+
+curl.exe -i http://localhost:5000/api/v1/health
+
 ## to build back-end
 
 npx tsc -p tsconfig.vercel.json
@@ -428,3 +434,16 @@ Copy the generated value into ENQUIRY_RATE_LIMIT_SECRET.
 Configure these for the appropriate Vercel environment, then redeploy both projects so the new environment variables take effect.
 
 ## Step 4 — Test the enquiry form
+
+## To Invalidate the accessToken through browser console - Application -> local session
+
+const key = "thenewstime.auth.session";
+
+const session = JSON.parse(localStorage.getItem(key));
+
+session.tokens.refreshToken =
+"invalid-refresh-token-for-testing";
+
+localStorage.setItem(key, JSON.stringify(session));
+
+console.log("Refresh token invalidated for testing.");
