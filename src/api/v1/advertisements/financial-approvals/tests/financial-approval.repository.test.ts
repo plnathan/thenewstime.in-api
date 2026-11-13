@@ -913,3 +913,19 @@ describe("Advertisement Financial Approval Repository", () => {
     });
   });
 });
+
+describe("financial DATE-only mapping", () => {
+  it("preserves the calendar date of a PostgreSQL DATE object", async () => {
+    mockedQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          ...createApprovalRow(),
+          expected_payment_due_date: new Date(2026, 10, 13)
+        }
+      ],
+      rowCount: 1
+    });
+    const result = await repository.findById(101);
+    expect(result?.expectedPaymentDueDate).toBe("2026-11-13");
+  });
+});

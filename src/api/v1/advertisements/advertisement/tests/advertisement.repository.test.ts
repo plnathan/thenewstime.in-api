@@ -1065,3 +1065,23 @@ describe("existsCampaignById()", () => {
     expect(result).toBe(false);
   });
 });
+
+describe("IST schedule date filtering", () => {
+  it("uses Asia/Kolkata for campaign and linked-schedule date filters", async () => {
+    queryMock.mockReset();
+    queryMock.mockResolvedValueOnce({ rows: [{ count: "0" }], rowCount: 1 });
+    queryMock.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+    await repository.list({
+      page: 1,
+      pageSize: 10,
+      startDate: "2026-11-13",
+      endDate: "2026-11-13"
+    });
+    const sql = String(queryMock.mock.calls[0]?.[0]);
+    expect(sql).toContain("(a.start_at AT TIME ZONE 'Asia/Kolkata')::date");
+    expect(sql).toContain("(a.end_at AT TIME ZONE 'Asia/Kolkata')::date");
+    expect(sql).toContain("(sch.start_at AT TIME ZONE 'Asia/Kolkata')::date");
+    expect(sql).toContain("(sch.end_at AT TIME ZONE 'Asia/Kolkata')::date");
+    expect(queryMock.mock.calls[0]?.[1]).toEqual(["2026-11-13", "2026-11-13"]);
+  });
+});

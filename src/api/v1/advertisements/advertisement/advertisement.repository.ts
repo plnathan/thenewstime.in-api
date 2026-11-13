@@ -1531,8 +1531,12 @@ export const list = async (
       : null;
     const dateMatches = (start: string, end: string) =>
       [
-        startIndex ? `${start}::date >= $${startIndex}::date` : null,
-        endIndex ? `${end}::date <= $${endIndex}::date` : null
+        startIndex
+          ? `(${start} AT TIME ZONE 'Asia/Kolkata')::date >= $${startIndex}::date`
+          : null,
+        endIndex
+          ? `(${end} AT TIME ZONE 'Asia/Kolkata')::date <= $${endIndex}::date`
+          : null
       ]
         .filter(Boolean)
         .join(" AND ");

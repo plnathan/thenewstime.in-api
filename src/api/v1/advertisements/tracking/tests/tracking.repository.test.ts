@@ -460,3 +460,29 @@ describe("tracking.repository", () => {
     });
   });
 });
+
+describe("IST daily tracking aggregation", () => {
+  it("groups impressions and clicks into Asia/Kolkata calendar dates", async () => {
+    mockedPoolQuery.mockReset();
+    mockedPoolQuery
+      .mockResolvedValueOnce(
+        queryResult([
+          {
+            impressions: "0",
+            clicks: "0",
+            unique_impression_visitors: "0",
+            unique_click_visitors: "0"
+          }
+        ])
+      )
+      .mockResolvedValueOnce(queryResult([]))
+      .mockResolvedValueOnce(queryResult([]))
+      .mockResolvedValueOnce(queryResult([]));
+    await repository.getMetrics(101, undefined, undefined);
+    const dailySql = String(mockedPoolQuery.mock.calls[1]?.[0]);
+    expect(dailySql).toContain(
+      "(impression_at AT TIME ZONE 'Asia/Kolkata')::date"
+    );
+    expect(dailySql).toContain("(click_at AT TIME ZONE 'Asia/Kolkata')::date");
+  });
+});

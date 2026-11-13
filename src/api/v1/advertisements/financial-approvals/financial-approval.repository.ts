@@ -71,7 +71,7 @@ function nullableNumber(
 }
 
 /**
- * Convert a database date or timestamp to YYYY-MM-DD.
+ * Convert PostgreSQL DATE values to YYYY-MM-DD without UTC day shifting.
  *
  * Undefined is preserved for compatibility with rows or test fixtures
  * that do not include newer optional date columns.
@@ -88,7 +88,7 @@ function dateOnly(
   }
 
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
   }
 
   return value.slice(0, 10);
@@ -97,9 +97,7 @@ function dateOnly(
 function mapApproval(
   row: AdvertisementFinancialApprovalRow
 ): AdvertisementFinancialApproval {
-  const expectedPaymentDueDate = dateOnly(
-    row.expected_payment_due_date
-  );
+  const expectedPaymentDueDate = dateOnly(row.expected_payment_due_date);
 
   return {
     id: Number(row.id),
@@ -122,9 +120,7 @@ function mapApproval(
     ...(row.credit_exception_reason !== undefined
       ? { creditExceptionReason: row.credit_exception_reason }
       : {}),
-    ...(expectedPaymentDueDate !== undefined
-      ? { expectedPaymentDueDate }
-      : {}),
+    ...(expectedPaymentDueDate !== undefined ? { expectedPaymentDueDate } : {}),
     ...(row.overdue_at !== undefined ? { overdueAt: row.overdue_at } : {}),
     ...(row.revoked_by !== undefined
       ? { revokedBy: nullableNumber(row.revoked_by) }
@@ -141,9 +137,7 @@ function mapApproval(
 function mapHistory(
   row: AdvertisementFinancialApprovalHistoryRow
 ): AdvertisementFinancialApprovalHistory {
-  const expectedPaymentDueDate = dateOnly(
-    row.expected_payment_due_date
-  );
+  const expectedPaymentDueDate = dateOnly(row.expected_payment_due_date);
 
   return {
     id: Number(row.id),
@@ -158,9 +152,7 @@ function mapHistory(
     ...(row.credit_exception_reason !== undefined
       ? { creditExceptionReason: row.credit_exception_reason }
       : {}),
-    ...(expectedPaymentDueDate !== undefined
-      ? { expectedPaymentDueDate }
-      : {}),
+    ...(expectedPaymentDueDate !== undefined ? { expectedPaymentDueDate } : {}),
     ...(row.approved_amount !== undefined
       ? { approvedAmount: nullableNumber(row.approved_amount) }
       : {}),
