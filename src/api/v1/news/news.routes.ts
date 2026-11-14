@@ -35,6 +35,16 @@ const router = Router();
  *
  * Get published news list.
  */
+/**
+ * District-grouped public news endpoints.
+ * Keep these static paths before the general public routes.
+ */
+router.get("/public/district-sections", newsController.getDistrictSections);
+router.get(
+  "/public/district-sections/:key",
+  newsController.getDistrictSectionNews
+);
+
 router.get("/public/stream", newsController.getPublishedNewsStream);
 
 router.get(
