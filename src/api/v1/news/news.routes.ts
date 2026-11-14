@@ -41,6 +41,12 @@ router.get(
   newsController.getPublishedNewsList
 );
 
+router.get("/public/district-sections", newsController.getDistrictSections);
+router.get(
+  "/public/district-sections/:key",
+  newsController.getDistrictSectionNews
+);
+
 /**
  * GET /api/v1/news/public/slug/:slug
  *
@@ -200,13 +206,11 @@ router.post(
                 displayOrder: index + 1
               }))
             );
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: "News final save completed.",
-          data: media
-        });
+      res.status(200).json({
+        success: true,
+        message: "News final save completed.",
+        data: media
+      });
     } catch (error) {
       next(error);
     }

@@ -963,3 +963,80 @@ select * from public.advertisement_formats
 select * from public.advertisement_impressions order by impression_at desc limit 100
 select * from advertisement_operational_audit
 --------------------
+SELECT
+    advertisement_id,
+    placement_id,
+    status,
+    start_at,
+    end_at
+FROM advertisement_schedules
+WHERE advertisement_id = 1;
+
+SELECT
+    NOW() AS current_database_time,
+    id,
+    start_at,
+    end_at,
+    NOW() >= start_at AS has_started,
+    NOW() < end_at AS has_not_expired
+FROM advertisements
+WHERE id = 1;
+
+SELECT
+    NOW() AS current_utc,
+    NOW() AT TIME ZONE 'Asia/Kolkata' AS current_ist,
+
+    a.start_at AS stored_start_utc,
+    a.start_at AT TIME ZONE 'Asia/Kolkata'
+        AS stored_start_ist,
+
+    a.end_at AS stored_end_utc,
+    a.end_at AT TIME ZONE 'Asia/Kolkata'
+        AS stored_end_ist
+
+FROM advertisements a
+WHERE a.id = 1;
+SELECT
+    a.id,
+    a.is_house_ad,
+    a.workflow_status,
+    a.status,
+    a.start_at,
+    a.end_at,
+    NOW() BETWEEN a.start_at AND a.end_at
+        AS within_advertisement_schedule
+FROM advertisements a
+WHERE a.id = 1;
+
+SELECT
+    p.id AS placement_id,
+    p.code AS placement_code,
+    p.page_type,
+    p.placement_type,
+    p.status AS placement_status,
+    p.is_enabled,
+    p.fallback_behavior,
+    p.fallback_advertisement_id,
+    p.rotation_enabled,
+    pr.id AS placement_rule_id,
+    pr.status AS placement_rule_status,
+    s.id AS schedule_id,
+    s.status AS schedule_status,
+    s.start_at AS schedule_start,
+    s.end_at AS schedule_end,
+    c.id AS creative_id,
+    c.status AS creative_status,
+    c.media_url
+FROM advertisement_placements p
+LEFT JOIN advertisement_placement_rules pr
+    ON pr.placement_id = p.id
+    AND pr.advertisement_id = 1
+LEFT JOIN advertisement_schedules s
+    ON s.placement_id = p.id
+    AND s.advertisement_id = 1
+LEFT JOIN advertisement_creatives c
+    ON c.advertisement_id = 1
+WHERE p.fallback_advertisement_id = 1
+   OR pr.advertisement_id = 1
+   OR s.advertisement_id = 1
+ORDER BY p.id, pr.id, s.id, c.id;

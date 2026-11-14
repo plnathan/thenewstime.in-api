@@ -580,3 +580,67 @@ export const removePromotion = async (
     next(error);
   }
 };
+
+/** Public district-section reads, bounded at the server. */
+export const getDistrictSections = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { findDistrictSections } = await import("./news.repository.js");
+    const offset = Number(req.query.offset ?? 0);
+    const limit = Number(req.query.limit ?? 8);
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 8
+    ) {
+      throw new ApiError(400, "Invalid district section pagination.");
+    }
+    const result = await findDistrictSections(offset, limit, 5);
+    res.json({
+      ...result,
+      sections: result.sections.map((section) => ({
+        ...section,
+        news: toNewsResponseDtoList(section.news)
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getDistrictSectionNews = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { findDistrictSectionNews, findDistrictSectionNewsByCursor } =
+      await import("./news.repository.js");
+    const key = String(req.params.key ?? "");
+    const offset = Number(req.query.offset ?? 0);
+    const cursor = req.query.cursor;
+    if (
+      !/^(chennai-group|district-[1-9]\d*)$/.test(key) ||
+      (cursor !== undefined &&
+        (typeof cursor !== "string" || cursor.length > 256)) ||
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      offset > 5000 ||
+      offset % 5 !== 0
+    ) {
+      throw new ApiError(400, "Invalid district news pagination.");
+    }
+    const result =
+      typeof cursor === "string"
+        ? await findDistrictSectionNewsByCursor(key, cursor, 5)
+        : await findDistrictSectionNews(key, offset, 5);
+    res.json({ ...result, news: toNewsResponseDtoList(result.news) });
+  } catch (error) {
+    next(error);
+  }
+};

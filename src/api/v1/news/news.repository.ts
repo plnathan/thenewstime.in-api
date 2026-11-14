@@ -66,6 +66,7 @@ const NEWS_SELECT = `
     d.code AS district_code,
     d.display_name AS district_display_name,
     d.url_name AS district_url_name,
+    d.display_order AS district_sort_order,
 
     COALESCE(
     (
@@ -924,3 +925,244 @@ export const findPublishedAll = async (
     client
   );
 };
+
+/** Opaque, bounded district-news keyset cursor. */
+type DistrictNewsCursor = { order: number; publishedAt: string; id: number };
+
+function encodeDistrictNewsCursor(row: {
+  district_sort_order: number | string;
+  published_at: Date | string;
+  id: number | string;
+}): string {
+  const publishedAt =
+    row.published_at instanceof Date
+      ? row.published_at.toISOString()
+      : new Date(row.published_at).toISOString();
+  return Buffer.from(
+    JSON.stringify({
+      order: Number(row.district_sort_order),
+      publishedAt,
+      id: Number(row.id)
+    } satisfies DistrictNewsCursor),
+    "utf8"
+  ).toString("base64url");
+}
+
+export function decodeDistrictNewsCursor(value: string): DistrictNewsCursor {
+  if (!value || value.length > 256 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new RangeError("Invalid district news cursor");
+  }
+  try {
+    const decoded: unknown = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8")
+    );
+    if (!decoded || typeof decoded !== "object")
+      throw new Error("Invalid cursor");
+    const data = decoded as Record<string, unknown>;
+    if (
+      !Number.isSafeInteger(data.order) ||
+      Number(data.order) < 0 ||
+      !Number.isSafeInteger(data.id) ||
+      Number(data.id) <= 0 ||
+      typeof data.publishedAt !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(data.publishedAt) ||
+      !Number.isFinite(Date.parse(data.publishedAt))
+    ) {
+      throw new Error("Invalid cursor");
+    }
+    return {
+      order: Number(data.order),
+      id: Number(data.id),
+      publishedAt: data.publishedAt
+    };
+  } catch {
+    throw new RangeError("Invalid district news cursor");
+  }
+}
+
+/** District page: one bounded batch of visible sections, with five news per section.
+ * District ordering 1..4 is reserved for the Chennai metropolitan group.
+ * The migration must be applied before enabling this endpoint.
+ */
+export async function findDistrictSections(
+  sectionOffset = 0,
+  sectionLimit = 8,
+  newsLimit = 5
+) {
+  const sectionsSql = `
+    WITH eligible AS (
+      SELECT d.id, d.display_name, d.display_order,
+        CASE WHEN d.display_order BETWEEN 1 AND 4 THEN 'chennai-group'
+             ELSE 'district-' || d.id::text END AS section_key
+      FROM districts d
+      JOIN states s ON s.id = d.state_id
+      WHERE d.status = 'ACTIVE' AND upper(s.code) = 'TN'
+        AND EXISTS (
+          SELECT 1 FROM news n
+          WHERE n.district_id = d.id AND n.news_scope = 'DISTRICT'
+            AND n.status = 'PUBLISHED' AND n.published_at <= NOW()
+        )
+    )
+    SELECT section_key AS key, MIN(display_order)::int AS sort_order,
+      CASE WHEN section_key = 'chennai-group'
+        THEN 'சென்னை, செங்கல்பட்டு, காஞ்சிபுரம், திருவள்ளூர்'
+        ELSE MIN(display_name) END AS title,
+      ARRAY_AGG(id ORDER BY display_order, id)::int[] AS district_ids
+    FROM eligible GROUP BY section_key
+    ORDER BY MIN(display_order), section_key
+    LIMIT $1 OFFSET $2
+  `;
+  const sectionResult = await pool.query(sectionsSql, [
+    sectionLimit + 1,
+    sectionOffset
+  ]);
+  const selected = sectionResult.rows.slice(0, sectionLimit) as Array<{
+    key: string;
+    title: string;
+    district_ids: number[];
+    sort_order: number;
+  }>;
+  if (selected.length === 0) {
+    return { sections: [], hasMoreSections: false, nextSectionOffset: null };
+  }
+  const ids = selected.flatMap((section) => section.district_ids);
+  // Limit each district BEFORE ranking the section. A section contains at most
+  // four districts; no district can contribute more than (newsLimit + 1) rows
+  // to the first (newsLimit + 1) results of its section.
+  const sql = `
+    WITH candidates AS (
+      SELECT picked.id, picked.published_at, d.display_order,
+        CASE WHEN d.display_order BETWEEN 1 AND 4 THEN 'chennai-group'
+             ELSE 'district-' || d.id::text END AS section_key
+      FROM districts d
+      JOIN LATERAL (
+        SELECT n0.id, n0.published_at
+        FROM news n0
+        WHERE n0.district_id = d.id AND n0.news_scope = 'DISTRICT'
+          AND n0.status = 'PUBLISHED' AND n0.published_at <= NOW()
+        ORDER BY n0.published_at DESC, n0.id DESC
+        LIMIT $2
+      ) picked ON TRUE
+      WHERE d.id = ANY($1::int[])
+    ), ranked AS (
+      SELECT id, section_key,
+        ROW_NUMBER() OVER (
+          PARTITION BY section_key
+          ORDER BY display_order ASC, published_at DESC, id DESC
+        ) AS rank
+      FROM candidates
+    )
+    ${NEWS_SELECT}
+    JOIN ranked r ON r.id = n.id
+    WHERE r.rank <= $2
+    ORDER BY r.section_key, r.rank
+  `;
+  const newsResult = await pool.query(sql, [ids, newsLimit + 1]);
+  const rows = newsResult.rows;
+  const sections = selected.map((section) => {
+    const sectionRows = rows.filter((row) =>
+      section.district_ids.includes(Number(row.district_id))
+    );
+    return {
+      key: section.key,
+      title: section.title,
+      news: sectionRows.slice(0, newsLimit).map(mapNews),
+      hasMoreNews: sectionRows.length > newsLimit,
+      nextNewsOffset: sectionRows.length > newsLimit ? newsLimit : null,
+      nextNewsCursor:
+        sectionRows.length > newsLimit
+          ? encodeDistrictNewsCursor(sectionRows[newsLimit - 1])
+          : null
+    };
+  });
+  return {
+    sections,
+    hasMoreSections: sectionResult.rows.length > sectionLimit,
+    nextSectionOffset:
+      sectionResult.rows.length > sectionLimit
+        ? sectionOffset + sectionLimit
+        : null
+  };
+}
+
+export async function findDistrictSectionNews(
+  key: string,
+  offset = 0,
+  limit = 5
+) {
+  const districtSql = `
+    SELECT d.id FROM districts d JOIN states s ON s.id = d.state_id
+    WHERE d.status = 'ACTIVE' AND upper(s.code) = 'TN' AND
+      (CASE WHEN d.display_order BETWEEN 1 AND 4 THEN 'chennai-group'
+            ELSE 'district-' || d.id::text END) = $1
+    ORDER BY d.display_order, d.id
+  `;
+  const districtResult = await pool.query(districtSql, [key]);
+  const ids = districtResult.rows.map((row) => Number(row.id));
+  if (!ids.length)
+    return { news: [], hasMoreNews: false, nextNewsOffset: null };
+  const sql = `
+    ${NEWS_SELECT}
+    WHERE n.district_id = ANY($1::int[]) AND n.news_scope = 'DISTRICT'
+      AND n.status = 'PUBLISHED' AND n.published_at <= NOW()
+    ORDER BY d.display_order, n.published_at DESC, n.id DESC
+    LIMIT $2 OFFSET $3
+  `;
+  const result = await pool.query(sql, [ids, limit + 1, offset]);
+  const hasMoreNews = result.rows.length > limit;
+  return {
+    news: result.rows.slice(0, limit).map(mapNews),
+    hasMoreNews,
+    nextNewsOffset: hasMoreNews ? offset + limit : null
+  };
+}
+
+/** Cursor pagination avoids OFFSET drift for newly published articles. */
+export async function findDistrictSectionNewsByCursor(
+  key: string,
+  cursor: string,
+  limit = 5
+) {
+  const position = decodeDistrictNewsCursor(cursor);
+  const districtResult = await pool.query(
+    `
+    SELECT d.id FROM districts d JOIN states s ON s.id = d.state_id
+    WHERE d.status = 'ACTIVE' AND upper(s.code) = 'TN'
+      AND (CASE WHEN d.display_order BETWEEN 1 AND 4 THEN 'chennai-group'
+                ELSE 'district-' || d.id::text END) = $1
+    ORDER BY d.display_order, d.id
+  `,
+    [key]
+  );
+  const ids = districtResult.rows.map((row) => Number(row.id));
+  if (!ids.length)
+    return {
+      news: [],
+      hasMoreNews: false,
+      nextNewsOffset: null,
+      nextNewsCursor: null
+    };
+  const result = await pool.query(
+    `
+    ${NEWS_SELECT}
+    WHERE n.district_id = ANY($1::int[]) AND n.news_scope = 'DISTRICT'
+      AND n.status = 'PUBLISHED' AND n.published_at <= NOW()
+      AND (d.display_order > $2 OR
+        (d.display_order = $2 AND (n.published_at, n.id) < ($3::timestamptz, $4::int)))
+    ORDER BY d.display_order ASC, n.published_at DESC, n.id DESC
+    LIMIT $5
+  `,
+    [ids, position.order, position.publishedAt, position.id, limit + 1]
+  );
+  const hasMoreNews = result.rows.length > limit;
+  const pageRows = result.rows.slice(0, limit);
+  return {
+    news: pageRows.map(mapNews),
+    hasMoreNews,
+    nextNewsOffset: null,
+    nextNewsCursor:
+      hasMoreNews && pageRows.length
+        ? encodeDistrictNewsCursor(pageRows[pageRows.length - 1])
+        : null
+  };
+}
