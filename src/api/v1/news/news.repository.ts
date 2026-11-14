@@ -1166,3 +1166,74 @@ export async function findDistrictSectionNewsByCursor(
         : null
   };
 }
+
+/** Bounded public list for ordinary (non-grouped) News List pages.
+ * Cursor is a stable (published_at,id) key; no full COUNT query.
+ * The first page excludes the five current homepage hero articles only on All News.
+ */
+export interface PublicStreamFilter {
+  scope?: "STATE" | "INDIA" | "WORLD" | "DISTRICT";
+  categoryId?: number;
+  stateId?: number;
+  stateSlug?: string;
+  countryId?: number;
+  districtId?: number;
+  afterPublishedAt?: string;
+  afterId?: number;
+  limit: number;
+  excludeHomepageHero?: boolean;
+}
+
+export const findPublicStream = async (filter: PublicStreamFilter) => {
+  const where: string[] = [
+    "n.status = 'PUBLISHED'",
+    "n.published_at IS NOT NULL",
+    "n.published_at <= NOW()"
+  ];
+  const values: unknown[] = [];
+  const add = (expression: string, value: unknown) => {
+    values.push(value);
+    where.push(`${expression} = $${values.length}`);
+  };
+  if (filter.scope) add("n.news_scope", filter.scope);
+  if (filter.categoryId) add("n.category_id", filter.categoryId);
+  if (filter.countryId) add("n.country_id", filter.countryId);
+  if (filter.stateId) add("n.state_id", filter.stateId);
+  if (filter.districtId) add("n.district_id", filter.districtId);
+  if (filter.stateSlug) {
+    values.push(filter.stateSlug);
+    where.push(
+      `EXISTS (SELECT 1 FROM states st WHERE st.id = n.state_id AND st.url_name = $${values.length})`
+    );
+  }
+  if (filter.afterPublishedAt && filter.afterId) {
+    values.push(filter.afterPublishedAt, filter.afterId);
+    where.push(
+      `(n.published_at, n.id) < ($${values.length - 1}::timestamptz, $${values.length}::integer)`
+    );
+  }
+  if (filter.excludeHomepageHero) {
+    where.push(`n.id NOT IN (
+      SELECT hero.id FROM news hero
+      WHERE hero.status = 'PUBLISHED' AND hero.show_on_homepage = TRUE
+        AND hero.published_at <= NOW()
+      ORDER BY hero.published_at DESC NULLS LAST, hero.id DESC LIMIT 5
+    )`);
+  }
+  values.push(filter.limit + 1);
+  const sql = `${NEWS_SELECT} WHERE ${where.join(" AND ")}
+    ORDER BY n.published_at DESC, n.id DESC LIMIT $${values.length}`;
+  const result = await pool.query(sql, values);
+  const hasMore = result.rows.length > filter.limit;
+  const items = result.rows.slice(0, filter.limit).map(mapNews);
+  return { items, hasMore };
+};
+
+/** Homepage hero snapshot bundled with the All News first response. */
+export const findPublicHomepageHero = async () => {
+  const sql = `${NEWS_SELECT} WHERE n.status = 'PUBLISHED'
+    AND n.show_on_homepage = TRUE AND n.published_at <= NOW()
+    ORDER BY n.published_at DESC NULLS LAST, n.id DESC LIMIT 5`;
+  const result = await pool.query(sql);
+  return result.rows.map(mapNews);
+};

@@ -35,16 +35,12 @@ const router = Router();
  *
  * Get published news list.
  */
+router.get("/public/stream", newsController.getPublishedNewsStream);
+
 router.get(
   "/public",
   validate(newsSearchSchema, "query"),
   newsController.getPublishedNewsList
-);
-
-router.get("/public/district-sections", newsController.getDistrictSections);
-router.get(
-  "/public/district-sections/:key",
-  newsController.getDistrictSectionNews
 );
 
 /**

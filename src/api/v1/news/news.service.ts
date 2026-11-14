@@ -577,3 +577,10 @@ export const removePromotion = async (
     client.release();
   }
 };
+
+export const getPublishedNewsStream = (
+  filter: newsRepository.PublicStreamFilter
+) => newsRepository.findPublicStream(filter);
+
+export const getPublicHomepageHero = () =>
+  newsRepository.findPublicHomepageHero();

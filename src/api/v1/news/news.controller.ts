@@ -644,3 +644,108 @@ export const getDistrictSectionNews = async (
     next(error);
   }
 };
+
+/** GET /api/v1/news/public/stream — ordinary news list only. */
+export const getPublishedNewsStream = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawLimit = Number(req.query.limit ?? 20);
+    if (!Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > 20) {
+      throw new ApiError(400, "limit must be between 1 and 20");
+    }
+    const parseId = (name: string): number | undefined => {
+      const raw = req.query[name];
+      if (raw === undefined) return undefined;
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value < 1)
+        throw new ApiError(400, `Invalid ${name}`);
+      return value;
+    };
+    const scopeRaw = req.query.scope?.toString();
+    if (
+      scopeRaw &&
+      !["STATE", "INDIA", "WORLD", "DISTRICT"].includes(scopeRaw)
+    ) {
+      throw new ApiError(400, "Invalid scope");
+    }
+    const stateSlug = req.query.state?.toString();
+    if (stateSlug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(stateSlug)) {
+      throw new ApiError(400, "Invalid state slug");
+    }
+    const cursor = req.query.cursor?.toString();
+    let afterPublishedAt: string | undefined;
+    let afterId: number | undefined;
+    if (cursor) {
+      if (cursor.length > 300) throw new ApiError(400, "Invalid cursor");
+      try {
+        const parsed: unknown = JSON.parse(
+          Buffer.from(cursor, "base64url").toString("utf8")
+        );
+        if (!parsed || typeof parsed !== "object") throw new Error("cursor");
+        const c = parsed as Record<string, unknown>;
+        if (
+          typeof c.publishedAt !== "string" ||
+          !Number.isFinite(Date.parse(c.publishedAt)) ||
+          typeof c.id !== "number" ||
+          !Number.isSafeInteger(c.id) ||
+          c.id < 1
+        )
+          throw new Error("cursor");
+        afterPublishedAt = c.publishedAt;
+        afterId = c.id;
+      } catch {
+        throw new ApiError(400, "Invalid cursor");
+      }
+    }
+    const categoryId = parseId("categoryId");
+    const countryId = parseId("countryId");
+    const stateId = parseId("stateId");
+    const districtId = parseId("districtId");
+
+    // With exactOptionalPropertyTypes, omit absent optional filters rather
+    // than passing properties explicitly set to undefined.
+    const filter = {
+      ...(scopeRaw !== undefined
+        ? { scope: scopeRaw as "STATE" | "INDIA" | "WORLD" | "DISTRICT" }
+        : {}),
+      ...(categoryId !== undefined ? { categoryId } : {}),
+      ...(countryId !== undefined ? { countryId } : {}),
+      ...(stateId !== undefined ? { stateId } : {}),
+      ...(districtId !== undefined ? { districtId } : {}),
+      ...(stateSlug !== undefined ? { stateSlug } : {}),
+      ...(afterPublishedAt !== undefined ? { afterPublishedAt } : {}),
+      ...(afterId !== undefined ? { afterId } : {}),
+      limit: rawLimit,
+      excludeHomepageHero: req.query.excludeHomepageHero === "true"
+    };
+    const [result, hero] = await Promise.all([
+      newsService.getPublishedNewsStream(filter),
+      filter.excludeHomepageHero && !cursor
+        ? newsService.getPublicHomepageHero()
+        : Promise.resolve([])
+    ]);
+    const last = result.items.at(-1);
+    const nextCursor =
+      result.hasMore && last?.publishedAt
+        ? Buffer.from(
+            JSON.stringify({
+              publishedAt: new Date(last.publishedAt).toISOString(),
+              id: last.id
+            })
+          ).toString("base64url")
+        : null;
+    res.status(200).json({
+      success: true,
+      message: "Published news retrieved successfully.",
+      data: toNewsResponseDtoList(result.items),
+      hero: toNewsResponseDtoList(hero),
+      errors: null,
+      meta: { hasNext: result.hasMore, nextCursor }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
