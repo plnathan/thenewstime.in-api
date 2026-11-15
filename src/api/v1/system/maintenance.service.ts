@@ -12,7 +12,7 @@ const defaultMessage =
 
 /** Emergency override takes precedence over database settings. */
 export async function getMaintenanceState(): Promise<MaintenanceState> {
-  if (process.env.PUBLIC_MAINTENANCE_MODE === "true") {
+  if (process.env.MAINTENANCE_MODE === "true") {
     return {
       maintenance: true,
       message: defaultMessage,

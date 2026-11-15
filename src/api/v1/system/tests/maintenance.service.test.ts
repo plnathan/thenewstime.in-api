@@ -7,15 +7,15 @@ import {
   setMaintenanceState
 } from "../maintenance.service.js";
 
-const originalOverride = process.env.PUBLIC_MAINTENANCE_MODE;
+const originalOverride = process.env.MAINTENANCE_MODE;
 afterEach(() => {
   if (originalOverride === undefined)
-    delete process.env.PUBLIC_MAINTENANCE_MODE;
-  else process.env.PUBLIC_MAINTENANCE_MODE = originalOverride;
+    delete process.env.MAINTENANCE_MODE;
+  else process.env.MAINTENANCE_MODE = originalOverride;
 });
 beforeEach(() => {
   vi.clearAllMocks();
-  delete process.env.PUBLIC_MAINTENANCE_MODE;
+  delete process.env.MAINTENANCE_MODE;
 });
 
 describe("maintenance configuration service", () => {
@@ -49,7 +49,7 @@ describe("maintenance configuration service", () => {
     });
   });
   it("environment override takes precedence and skips database", async () => {
-    process.env.PUBLIC_MAINTENANCE_MODE = "true";
+    process.env.MAINTENANCE_MODE = "true";
     await expect(getMaintenanceState()).resolves.toMatchObject({
       maintenance: true,
       source: "ENVIRONMENT"
