@@ -1,6 +1,7 @@
 import maintenanceRoutes from "./api/v1/system/maintenance.routes.js";
 import { publicMaintenanceMiddleware } from "./shared/middleware/maintenance.middleware.js";
 import dashboardRoutes from "./api/v1/dashboard/dashboard.routes.js";
+import seoRoutes from "./api/v1/seo/seo.routes.js";
 import cors from "cors";
 import express from "express";
 
@@ -93,6 +94,8 @@ app.use("/api/v1/states", stateRouter);
 app.use("/api/v1/districts", districtRouter);
 
 app.use("/api/v1/media", mediaRoutes);
+
+app.use("/api/v1/seo", seoRoutes);
 
 app.use("/api/v1/news", newsRoutes);
 
