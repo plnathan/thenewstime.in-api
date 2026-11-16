@@ -133,4 +133,6 @@ export interface NewsResponseDto {
   displayPriorityUntil: Date | null;
 
   publishedAt: Date | null;
+
+  updatedAt: Date | null;
 }

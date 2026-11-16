@@ -149,7 +149,8 @@ export function toNewsResponseDto(news: News): NewsResponseDto {
 
     displayPriorityUntil: news.displayPriorityUntil,
 
-    publishedAt: news.publishedAt
+    publishedAt: news.publishedAt,
+    updatedAt: news.updatedAt
   };
 }
 
