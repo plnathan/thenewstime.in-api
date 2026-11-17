@@ -129,5 +129,6 @@ export const mockNewsResponse = {
   showOnHomepage: false,
   displayPriority: 0,
   displayPriorityUntil: null,
-  publishedAt: null
+  publishedAt: null,
+  updatedAt: null
 };
