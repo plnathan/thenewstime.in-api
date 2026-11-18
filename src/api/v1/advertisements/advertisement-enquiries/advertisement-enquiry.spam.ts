@@ -8,19 +8,21 @@ export function createEnquirySpamProtection(pool: Pool): RequestHandler {
     try {
       const production = process.env.NODE_ENV === "production";
       const secret = process.env.ENQUIRY_RATE_LIMIT_SECRET;
+      const allowedHostnames = (process.env.ENQUIRY_TURNSTILE_HOSTNAME ?? "")
+        .split(",")
+        .map((hostname) => hostname.trim().toLowerCase())
+        .filter(Boolean);
       if (
         production &&
         (!secret ||
           secret.length < 32 ||
           !process.env.TURNSTILE_SECRET_KEY ||
-          !process.env.ENQUIRY_TURNSTILE_HOSTNAME)
+          allowedHostnames.length === 0)
       ) {
-        res
-          .status(503)
-          .json({
-            success: false,
-            message: "Enquiry protection is not configured."
-          });
+        res.status(503).json({
+          success: false,
+          message: "Enquiry protection is not configured."
+        });
         return;
       }
       if (Buffer.byteLength(JSON.stringify(req.body ?? {}), "utf8") > 8192) {
@@ -66,24 +68,20 @@ export function createEnquirySpamProtection(pool: Pool): RequestHandler {
         );
         if ((result.rows[0]?.requests ?? 0) > max) {
           res.setHeader("Retry-After", String(seconds));
-          res
-            .status(429)
-            .json({
-              success: false,
-              message: "Too many enquiries. Please try again later."
-            });
+          res.status(429).json({
+            success: false,
+            message: "Too many enquiries. Please try again later."
+          });
           return;
         }
       }
       if (production) {
         const token = req.body?.captchaToken;
         if (typeof token !== "string" || !token || token.length > 4096) {
-          res
-            .status(400)
-            .json({
-              success: false,
-              message: "Please complete the security check."
-            });
+          res.status(400).json({
+            success: false,
+            message: "Please complete the security check."
+          });
           return;
         }
         const form = new URLSearchParams({
@@ -105,19 +103,32 @@ export function createEnquirySpamProtection(pool: Pool): RequestHandler {
           success?: boolean;
           hostname?: string;
           action?: string;
+          "error-codes"?: string[];
         };
-        const hostname = process.env.ENQUIRY_TURNSTILE_HOSTNAME;
+        const verifiedHostname =
+          typeof outcome.hostname === "string"
+            ? outcome.hostname.trim().toLowerCase()
+            : "";
         if (
           !outcome.success ||
           outcome.action !== "advertisement_enquiry" ||
-          outcome.hostname !== hostname
+          !allowedHostnames.includes(verifiedHostname)
         ) {
-          res
-            .status(400)
-            .json({
-              success: false,
-              message: "Security check failed. Please try again."
-            });
+          console.warn(
+            "[Advertisement Enquiry] Turnstile verification rejected",
+            {
+              success: outcome.success,
+              hostname: outcome.hostname,
+              allowedHostnames,
+              action: outcome.action,
+              expectedAction: "advertisement_enquiry",
+              errorCodes: outcome["error-codes"] ?? []
+            }
+          );
+          res.status(400).json({
+            success: false,
+            message: "Security check failed. Please try again."
+          });
           return;
         }
       }
@@ -136,12 +147,10 @@ export function createEnquirySpamProtection(pool: Pool): RequestHandler {
       );
       if ((phoneLimit.rows[0]?.requests ?? 0) > 3) {
         res.setHeader("Retry-After", "86400");
-        res
-          .status(429)
-          .json({
-            success: false,
-            message: "Too many enquiries. Please try again later."
-          });
+        res.status(429).json({
+          success: false,
+          message: "Too many enquiries. Please try again later."
+        });
         return;
       }
       next();
