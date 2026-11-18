@@ -5,9 +5,9 @@ export function createAdvertisementEnquiryService(
   repository: AdvertisementEnquiryRepository
 ) {
   return {
-    async submit(input: CreateAdvertisementEnquiryInput) {
+    async submit(input: CreateAdvertisementEnquiryInput, fingerprint: string) {
       // Never create an advertisement or client automatically from a public enquiry.
-      return repository.create(input);
+      return repository.create(input, fingerprint);
     }
   };
 }

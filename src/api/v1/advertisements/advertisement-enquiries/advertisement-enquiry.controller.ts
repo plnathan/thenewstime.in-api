@@ -1,3 +1,5 @@
+import { enquiryFingerprintKey } from "./advertisement-enquiry.spam.js";
+import { EnquiryRateLimitError } from "./advertisement-enquiry.rate-limit.js";
 import type { RequestHandler } from "express";
 import { ZodError } from "zod";
 import { createAdvertisementEnquirySchema } from "./advertisement-enquiry.validation.js";
@@ -12,13 +14,27 @@ export function createAdvertisementEnquiryController(
     submit: async (req, res, next) => {
       try {
         const input = createAdvertisementEnquirySchema.parse(req.body);
-        const created = await service.submit(input);
+        const fingerprint = res.locals[enquiryFingerprintKey];
+        if (typeof fingerprint !== "string" || !fingerprint)
+          throw new Error("Missing enquiry security context");
+        const created = await service.submit(input, fingerprint);
         res.status(201).json({
           success: true,
           data: { ...created, status: "PENDING" },
           message: "Your enquiry has been received."
         });
       } catch (error) {
+        if (error instanceof EnquiryRateLimitError) {
+          res.setHeader("Retry-After", String(error.retryAfter));
+          res
+            .status(429)
+            .json({
+              success: false,
+              message: error.message,
+              retryAfter: error.retryAfter
+            });
+          return;
+        }
         if (error instanceof ZodError) {
           res.status(400).json({
             success: false,

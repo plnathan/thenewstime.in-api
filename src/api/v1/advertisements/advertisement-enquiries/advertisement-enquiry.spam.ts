@@ -1,6 +1,13 @@
 import { createHmac } from "node:crypto";
 import type { RequestHandler } from "express";
 import type { Pool } from "pg";
+import {
+  consumeEnquiryQuota,
+  enquiryLimit,
+  EnquiryRateLimitError
+} from "./advertisement-enquiry.rate-limit.js";
+
+export const enquiryFingerprintKey = "advertisementEnquiryFingerprint";
 
 /** Persistent counters prevent bypass by serverless instance rotation. */
 export function createEnquirySpamProtection(pool: Pool): RequestHandler {
@@ -44,37 +51,18 @@ export function createEnquirySpamProtection(pool: Pool): RequestHandler {
       )
         .update(ip)
         .digest("hex");
-      const mobile = String(req.body?.mobileNumber ?? "").replace(/\D/g, "");
-      const phoneHash = createHmac("sha256", secret || "local-development-only")
-        .update(mobile)
-        .digest("hex");
-      // Atomic UPSERT: one shared bucket per IP and phone, with a rolling reset.
-      const limits: Array<[string, number, number]> = [
-        [`ip:hour:${fingerprint}`, 5, 3600],
-        [`ip:day:${fingerprint}`, 20, 86400]
-      ];
-      for (const [key, max, seconds] of limits) {
-        const result = await pool.query<{ requests: number }>(
-          `
-          INSERT INTO advertisement_enquiry_rate_limits(bucket_key,requests,expires_at)
-          VALUES($1,1,now()+($2::int * interval '1 second'))
-          ON CONFLICT(bucket_key) DO UPDATE SET
-            requests = CASE WHEN advertisement_enquiry_rate_limits.expires_at <= now()
-              THEN 1 ELSE advertisement_enquiry_rate_limits.requests+1 END,
-            expires_at = CASE WHEN advertisement_enquiry_rate_limits.expires_at <= now()
-              THEN now()+($2::int * interval '1 second') ELSE advertisement_enquiry_rate_limits.expires_at END
-          RETURNING requests`,
-          [key, seconds]
-        );
-        if ((result.rows[0]?.requests ?? 0) > max) {
-          res.setHeader("Retry-After", String(seconds));
-          res.status(429).json({
-            success: false,
-            message: "Too many enquiries. Please try again later."
-          });
-          return;
-        }
-      }
+      await consumeEnquiryQuota(
+        pool,
+        `ip:hour:${fingerprint}`,
+        enquiryLimit("ENQUIRY_ATTEMPT_IP_HOUR_LIMIT"),
+        3600
+      );
+      await consumeEnquiryQuota(
+        pool,
+        `ip:day:${fingerprint}`,
+        enquiryLimit("ENQUIRY_ATTEMPT_IP_DAY_LIMIT"),
+        86400
+      );
       if (production) {
         const token = req.body?.captchaToken;
         if (typeof token !== "string" || !token || token.length > 4096) {
@@ -132,29 +120,20 @@ export function createEnquirySpamProtection(pool: Pool): RequestHandler {
           return;
         }
       }
-      // Limit repeat submissions for a single phone only after bot verification.
-      // A bot cannot exhaust another person's phone quota without passing Turnstile.
-      const phoneLimit = await pool.query<{ requests: number }>(
-        `
-        INSERT INTO advertisement_enquiry_rate_limits(bucket_key,requests,expires_at)
-        VALUES($1,1,now() + interval '1 day')
-        ON CONFLICT(bucket_key) DO UPDATE SET
-          requests=CASE WHEN advertisement_enquiry_rate_limits.expires_at <= now() THEN 1
-            ELSE advertisement_enquiry_rate_limits.requests+1 END,
-          expires_at=CASE WHEN advertisement_enquiry_rate_limits.expires_at <= now() THEN now()+interval '1 day'
-            ELSE advertisement_enquiry_rate_limits.expires_at END RETURNING requests`,
-        [`phone:day:${phoneHash}`]
-      );
-      if ((phoneLimit.rows[0]?.requests ?? 0) > 3) {
-        res.setHeader("Retry-After", "86400");
-        res.status(429).json({
-          success: false,
-          message: "Too many enquiries. Please try again later."
-        });
-        return;
-      }
+      res.locals[enquiryFingerprintKey] = fingerprint;
       next();
     } catch (error) {
+      if (error instanceof EnquiryRateLimitError) {
+        res.setHeader("Retry-After", String(error.retryAfter));
+        res
+          .status(429)
+          .json({
+            success: false,
+            message: error.message,
+            retryAfter: error.retryAfter
+          });
+        return;
+      }
       // Fail closed if DB/Turnstile is unavailable, never silently skip protection.
       next(error);
     }
