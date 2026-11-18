@@ -6,6 +6,29 @@ import {
 import type { Pool } from "pg";
 import type { CreateAdvertisementEnquiryInput } from "./advertisement-enquiry.validation.js";
 
+export class DuplicateEnquiryError extends Error {
+  constructor() {
+    super(
+      "You have already submitted an enquiry with the same details. Our advertising team will contact you shortly."
+    );
+    this.name = "DuplicateEnquiryError";
+  }
+}
+
+function duplicateWindowHours(): number {
+  const raw = process.env.ENQUIRY_DUPLICATE_WINDOW_HOURS ?? "24";
+  const hours = Number(raw);
+  if (
+    !/^\d+$/.test(raw) ||
+    !Number.isSafeInteger(hours) ||
+    hours < 1 ||
+    hours > 8760
+  ) {
+    throw new Error("Invalid ENQUIRY_DUPLICATE_WINDOW_HOURS configuration");
+  }
+  return hours;
+}
+
 export interface AdvertisementEnquiryRepository {
   create(
     input: CreateAdvertisementEnquiryInput,
@@ -27,7 +50,43 @@ export function createAdvertisementEnquiryRepository(
         .digest("hex");
       const client = await pool.connect();
       try {
-        await client.query("BEGIN");
+        await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+        // Serialize submissions for the same normalized mobile, across IPs and instances.
+        const mobile = input.mobileNumber.replace(/\D/g, "");
+        await client.query(
+          "SELECT pg_advisory_xact_lock(174823910, hashtext($1::text))",
+          [mobile]
+        );
+        const duplicate = await client.query<{ found: boolean }>(
+          `SELECT EXISTS (
+           SELECT 1 FROM advertisement_enquiries
+           WHERE regexp_replace(mobile_number, '[^0-9]', '', 'g') = $1
+             AND created_at > clock_timestamp() - ($2::int * interval '1 hour')
+             AND lower(btrim(full_name)) = lower(btrim($3::text))
+             AND lower(btrim(coalesce(company_name, ''))) = lower(btrim($4::text))
+             AND lower(btrim(coalesce(email, ''))) = lower(btrim($5::text))
+             AND advertisement_type IS NOT DISTINCT FROM $6::text
+             AND page_types @> $7::text[] AND page_types <@ $7::text[]
+             AND placement_types @> $8::text[] AND placement_types <@ $8::text[]
+             AND preferred_start_date IS NOT DISTINCT FROM $9::date
+             AND preferred_end_date IS NOT DISTINCT FROM $10::date
+             AND lower(btrim(coalesce(additional_requirements, ''))) = lower(btrim($11::text))
+         ) AS found`,
+          [
+            mobile,
+            duplicateWindowHours(),
+            input.fullName,
+            input.companyName ?? "",
+            input.email ?? "",
+            input.advertisementType ?? null,
+            input.pageTypes ?? [],
+            input.placementTypes ?? [],
+            input.preferredStartDate ?? null,
+            input.preferredEndDate ?? null,
+            input.additionalRequirements ?? ""
+          ]
+        );
+        if (duplicate.rows[0]?.found) throw new DuplicateEnquiryError();
         await consumeEnquiryQuota(
           client,
           `success:ip:hour:${fingerprint}`,

@@ -4,7 +4,10 @@ import {
   consumeEnquiryQuota,
   enquiryLimit
 } from "../advertisement-enquiry.rate-limit.js";
-import { createAdvertisementEnquiryRepository } from "../advertisement-enquiry.repository.js";
+import {
+  createAdvertisementEnquiryRepository,
+  DuplicateEnquiryError
+} from "../advertisement-enquiry.repository.js";
 
 afterEach(() => vi.unstubAllEnvs());
 describe("Enquiry quotas", () => {
@@ -39,13 +42,14 @@ describe("Enquiry quotas", () => {
   it("rolls back quota updates if insertion fails", async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({})
-      .mockResolvedValue({ rows: [{ requests: 1, retry_after: 60 }] });
-    query
-      .mockResolvedValueOnce({ rows: [{ requests: 1 }] })
-      .mockResolvedValueOnce({ rows: [{ requests: 1 }] })
-      .mockResolvedValueOnce({ rows: [{ requests: 1 }] })
-      .mockRejectedValueOnce(new Error("insert failed"));
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({}) // lock
+      .mockResolvedValueOnce({ rows: [{ found: false }] })
+      .mockResolvedValueOnce({ rows: [{ requests: 1, retry_after: 60 }] })
+      .mockResolvedValueOnce({ rows: [{ requests: 1, retry_after: 60 }] })
+      .mockResolvedValueOnce({ rows: [{ requests: 1, retry_after: 60 }] })
+      .mockRejectedValueOnce(new Error("insert failed"))
+      .mockResolvedValueOnce({});
     const release = vi.fn();
     const pool = {
       connect: vi.fn().mockResolvedValue({ query, release })
@@ -57,6 +61,66 @@ describe("Enquiry quotas", () => {
       )
     ).rejects.toThrow("insert failed");
     expect(query).toHaveBeenLastCalledWith("ROLLBACK");
+    expect(release).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Duplicate enquiry prevention", () => {
+  const input = {
+    fullName: "Test User",
+    mobileNumber: "1234567890",
+    source: "FOOTER" as const
+  };
+  it("rejects a duplicate before consuming successful quotas", async () => {
+    vi.stubEnv("ENQUIRY_DUPLICATE_WINDOW_HOURS", undefined);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ found: true }] })
+      .mockResolvedValueOnce({});
+    const release = vi.fn();
+    const pool = {
+      connect: vi.fn().mockResolvedValue({ query, release })
+    } as unknown as Pool;
+    await expect(
+      createAdvertisementEnquiryRepository(pool).create(input, "test")
+    ).rejects.toBeInstanceOf(DuplicateEnquiryError);
+    expect(query).toHaveBeenCalledTimes(4);
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("pg_advisory_xact_lock"),
+      ["1234567890"]
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("SELECT EXISTS"),
+      ["1234567890", 24, "Test User", "", "", null, [], [], null, null, ""]
+    );
+    expect(query).toHaveBeenLastCalledWith("ROLLBACK");
+    expect(release).toHaveBeenCalledOnce();
+  });
+  it("commits a nonduplicate enquiry and quotas", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ found: false }] });
+    for (let i = 0; i < 3; i++)
+      query.mockResolvedValueOnce({ rows: [{ requests: 1, retry_after: 60 }] });
+    query
+      .mockResolvedValueOnce({
+        rows: [{ id: "1", created_at: new Date("2026-11-18T00:00:00Z") }]
+      })
+      .mockResolvedValueOnce({});
+    const release = vi.fn();
+    const pool = {
+      connect: vi.fn().mockResolvedValue({ query, release })
+    } as unknown as Pool;
+    await expect(
+      createAdvertisementEnquiryRepository(pool).create(input, "test")
+    ).resolves.toMatchObject({ id: "1" });
+    expect(query).toHaveBeenLastCalledWith("COMMIT");
     expect(release).toHaveBeenCalledOnce();
   });
 });
