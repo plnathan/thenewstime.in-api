@@ -1,4 +1,6 @@
 import sharp from "sharp";
+import { resolve } from "node:path";
+import { access } from "node:fs/promises";
 import { ApiError } from "../../../shared/utils/apiErrorInfo.js";
 
 export type WatermarkPosition = "TOP" | "BOTTOM" | "LEFT" | "RIGHT" | "CENTER";
@@ -66,24 +68,84 @@ export async function processNewsImage(
       size,
       Math.max(8, Math.floor(width / Math.max(3, text.length * 0.65)))
     );
-    const estimatedWidth = Math.ceil(text.length * safeSize * 0.66);
+    const fontDirectory = resolve(process.cwd(), "assets", "watermark-fonts");
+    const latinFont = resolve(fontDirectory, "NotoSans-Bold.ttf");
+    const tamilFont = resolve(fontDirectory, "NotoSansTamil-Bold.ttf");
+    try {
+      await Promise.all([access(latinFont), access(tamilFont)]);
+    } catch {
+      throw new ApiError(503, "Watermark fonts are not configured.");
+    }
+    // Register both fonts before rendering mixed-language text with Pango.
+    await sharp({
+      text: { text: "A", font: "Noto Sans Bold 12", fontfile: latinFont }
+    })
+      .png()
+      .toBuffer();
+    await sharp({
+      text: { text: "அ", font: "Noto Sans Tamil Bold 12", fontfile: tamilFont }
+    })
+      .png()
+      .toBuffer();
+    const fill = options.watermarkColor === "BLACK" ? "#000000" : "#ffffff";
+    const render = (fontSize: number) =>
+      sharp({
+        text: {
+          text: `<span foreground="${fill}" font_family="Noto Sans Tamil, Noto Sans" weight="bold">${escapeXml(text)}</span>`,
+          font: `Noto Sans Tamil Bold ${fontSize}`,
+          fontfile: tamilFont,
+          dpi: 72,
+          rgba: true
+        }
+      })
+        .png()
+        .toBuffer({ resolveWithObject: true });
+    const availableWidth = Math.max(1, width - 2 * margin);
+    const availableHeight = Math.max(1, height - 2 * margin);
+    let fontSize = safeSize;
+    let overlay = await render(fontSize);
+    while (
+      (overlay.info.width > availableWidth ||
+        overlay.info.height > availableHeight) &&
+      fontSize > 1
+    ) {
+      fontSize = Math.max(
+        1,
+        Math.min(
+          fontSize - 1,
+          Math.floor(
+            fontSize *
+              Math.min(
+                availableWidth / overlay.info.width,
+                availableHeight / overlay.info.height
+              )
+          )
+        )
+      );
+      overlay = await render(fontSize);
+    }
+    if (overlay.info.width > width || overlay.info.height > height) {
+      throw new ApiError(400, "Watermark does not fit the image.");
+    }
     const x =
       options.watermarkPosition === "LEFT"
         ? margin
         : options.watermarkPosition === "RIGHT"
-          ? Math.max(margin, width - estimatedWidth - margin)
-          : Math.max(margin, (width - estimatedWidth) / 2);
+          ? width - overlay.info.width - margin
+          : (width - overlay.info.width) / 2;
     const y =
       options.watermarkPosition === "TOP"
-        ? margin + safeSize
+        ? margin
         : options.watermarkPosition === "BOTTOM"
-          ? height - margin
-          : (height + safeSize) / 2;
-    const fill = options.watermarkColor === "BLACK" ? "#000000" : "#ffffff";
-    const svg = Buffer.from(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><text x="${Math.round(x)}" y="${Math.round(y)}" font-family="Arial, sans-serif" font-size="${safeSize}" font-weight="bold" fill="${fill}" stroke="${fill === "#000000" ? "#ffffff" : "#000000"}" stroke-opacity="0.35" stroke-width="1" paint-order="stroke">${escapeXml(text)}</text></svg>`
-    );
-    pipeline = pipeline.composite([{ input: svg, top: 0, left: 0 }]);
+          ? height - overlay.info.height - margin
+          : (height - overlay.info.height) / 2;
+    pipeline = pipeline.composite([
+      {
+        input: overlay.data,
+        left: Math.max(0, Math.min(width - overlay.info.width, Math.round(x))),
+        top: Math.max(0, Math.min(height - overlay.info.height, Math.round(y)))
+      }
+    ]);
   }
   if (options.compress) {
     return {
