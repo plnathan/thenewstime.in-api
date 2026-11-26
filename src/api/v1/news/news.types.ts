@@ -208,6 +208,11 @@ export interface PromoteNewsInput {
 }
 
 export interface NewsSearchFilter {
+  createdFrom?: string | undefined;
+  createdTo?: string | undefined;
+  newsId?: string | undefined;
+  slug?: string | undefined;
+  compact?: boolean | undefined;
   page: number;
 
   pageSize: number;
@@ -248,6 +253,8 @@ export interface NewsSearchFilter {
   publicOrder?: boolean | undefined;
 
   popularOrder?: boolean | undefined;
+  sidebarMode?: "other" | "popular" | "category" | undefined;
+  excludeIds?: number[] | undefined;
 }
 
 export interface PaginatedNews {

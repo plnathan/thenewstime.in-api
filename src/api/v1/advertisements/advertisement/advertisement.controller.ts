@@ -7,6 +7,7 @@ import {
 
 import * as service from "./advertisement.service.js";
 import { pool } from "../../../../shared/config/db.js";
+import type { AdvertisementSearchFilters } from "./advertisement.types.js";
 
 export const createAdvertisement = async (
   req: Request,
@@ -35,6 +36,34 @@ export const getAdvertisementById = async (
       Number(req.params.id)
     );
 
+    if (req.query.includeAuditActorNames === "true") {
+      const actors = await pool.query<{ id: string; name: string }>(
+        `SELECT u.id::text AS id,
+                COALESCE(NULLIF(BTRIM(u.display_name), ''),
+                         NULLIF(BTRIM(u.full_name), ''), u.username) AS name
+         FROM public.users u
+         WHERE u.id IN (
+           SELECT performed_by FROM public.advertisement_workflow_history
+           WHERE advertisement_id = $1
+           UNION
+           SELECT performed_by FROM public.advertisement_operational_audit
+           WHERE advertisement_id = $1
+           UNION
+           SELECT unnest(ARRAY[a.created_by, a.submitted_by, a.approved_by,
+                               a.on_hold_by, a.rejected_by])
+           FROM public.advertisements a WHERE a.id = $1
+         )`,
+        [Number(req.params.id)]
+      );
+      sendSuccess(res, "Advertisement retrieved successfully.", {
+        ...advertisement,
+        auditActorNames: Object.fromEntries(
+          actors.rows.map((row) => [row.id, row.name])
+        )
+      });
+      return;
+    }
+
     sendSuccess(res, "Advertisement retrieved successfully.", advertisement);
   } catch (error) {
     next(error);
@@ -47,19 +76,26 @@ export const getAdvertisements = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const filters = {
+    const adFamily = req.query.adFamily;
+
+    const filters: AdvertisementSearchFilters = {
+      includeOverview: req.query.includeOverview === "true",
+      includeGridSummary: req.query.includeGridSummary === "true",
       page: Number(req.query.page ?? 1),
       pageSize: Number(req.query.pageSize ?? 20),
+
       ...(req.query.search
         ? {
             search: req.query.search.toString()
           }
         : {}),
+
       ...(req.query.clientId
         ? {
             clientId: Number(req.query.clientId)
           }
         : {}),
+
       ...(req.query.workflowStatus
         ? {
             workflowStatus: req.query.workflowStatus as
@@ -71,12 +107,14 @@ export const getAdvertisements = async (
               | "ARCHIVED"
           }
         : {}),
+
       ...(req.query.status
         ? {
             status: req.query.status as
               "DRAFT" | "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED"
           }
         : {}),
+
       ...(req.query.operationalCondition
         ? {
             operationalCondition: req.query.operationalCondition as
@@ -88,13 +126,44 @@ export const getAdvertisements = async (
               | "ARCHIVED"
           }
         : {}),
+
+      ...(adFamily === "CONVENTIONAL" ||
+      adFamily === "SPONSORED" ||
+      adFamily === "ALL"
+        ? {
+            adFamily
+          }
+        : {}),
+
       ...(req.query.placementType
-        ? { placementType: req.query.placementType.toString() }
+        ? {
+            placementType: req.query.placementType.toString()
+          }
         : {}),
+
+      ...(req.query.periodFrom
+        ? {
+            periodFrom: req.query.periodFrom.toString()
+          }
+        : {}),
+
+      ...(req.query.periodTo
+        ? {
+            periodTo: req.query.periodTo.toString()
+          }
+        : {}),
+
       ...(req.query.startDate
-        ? { startDate: req.query.startDate.toString() }
+        ? {
+            startDate: req.query.startDate.toString()
+          }
         : {}),
-      ...(req.query.endDate ? { endDate: req.query.endDate.toString() } : {})
+
+      ...(req.query.endDate
+        ? {
+            endDate: req.query.endDate.toString()
+          }
+        : {})
     };
 
     const result = await service.getAdvertisements(filters);
@@ -102,14 +171,21 @@ export const getAdvertisements = async (
     const totalPages =
       filters.pageSize > 0 ? Math.ceil(result.total / filters.pageSize) : 0;
 
-    sendPaginated(res, "Advertisements retrieved successfully.", result.items, {
+    const meta = {
       page: filters.page,
       pageSize: filters.pageSize,
       totalRecords: result.total,
       totalPages,
       hasPrevious: filters.page > 1,
-      hasNext: filters.page < totalPages
-    });
+      hasNext: filters.page < totalPages,
+      ...(result.overview ? { overview: result.overview } : {})
+    };
+    sendPaginated(
+      res,
+      "Advertisements retrieved successfully.",
+      result.items,
+      meta
+    );
   } catch (error) {
     next(error);
   }

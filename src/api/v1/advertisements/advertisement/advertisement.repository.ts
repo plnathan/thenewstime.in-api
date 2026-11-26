@@ -24,6 +24,7 @@ import type {
 } from "./advertisement.types.js";
 
 interface AdvertisementRow {
+  sponsored_batch_name?: string | null;
   id: number | string;
 
   client_id: number | string | null;
@@ -1210,18 +1211,17 @@ export const create = async (
     const runtimePlacementId =
       input.placementId ?? input.pricingPlacementId ?? null;
 
-    if (runtimePlacementId === null) {
-      throw new Error("Advertisement placement is required.");
+    if (input.advertisementType !== "NATIVE" || input.isHouseAd) {
+      if (runtimePlacementId === null)
+        throw new Error("Advertisement placement is required.");
+      await saveRuntimePlacementRule(
+        advertisementId,
+        runtimePlacementId,
+        createdBy,
+        db
+      );
+      await syncAdvertisementSchedule(advertisementId, createdBy, db);
     }
-
-    await saveRuntimePlacementRule(
-      advertisementId,
-      runtimePlacementId,
-      createdBy,
-      db
-    );
-
-    await syncAdvertisementSchedule(advertisementId, createdBy, db);
 
     const advertisement = await findById(advertisementId, db);
 
@@ -1274,6 +1274,32 @@ export const update = async (
       await db.query("BEGIN");
     }
 
+    const locked = (
+      await db.query(
+        "SELECT advertisement_type,is_house_ad,workflow_status FROM advertisements WHERE id=$1 FOR UPDATE",
+        [id]
+      )
+    ).rows[0];
+    if (locked?.advertisement_type === "NATIVE" && !locked.is_house_ad) {
+      if (!["DRAFT", "REJECTED"].includes(locked.workflow_status))
+        throw new ApiError(
+          409,
+          "Sponsored feed is not editable in this workflow."
+        );
+      if (input.placementId !== undefined)
+        throw new ApiError(
+          409,
+          "Sponsored feed does not use runtime placements."
+        );
+      if (input.startAt !== undefined || input.endAt !== undefined) {
+        const reserved = await db.query(
+          "SELECT 1 FROM advertisement_feed_assignments WHERE advertisement_id=$1",
+          [id]
+        );
+        if (reserved.rowCount)
+          throw new ApiError(409, "Reserved campaign dates cannot be edited.");
+      }
+    }
     const fields: string[] = [];
     const values: unknown[] = [];
 
@@ -1432,7 +1458,11 @@ export const update = async (
      * Keep the schedule table synchronized with the
      * advertisement's current dates and active placement.
      */
-    await syncAdvertisementSchedule(id, updatedBy, db);
+    const native = await db.query(
+      "SELECT 1 FROM advertisements WHERE id=$1 AND advertisement_type='NATIVE' AND NOT is_house_ad",
+      [id]
+    );
+    if (!native.rowCount) await syncAdvertisementSchedule(id, updatedBy, db);
 
     /*
      * Reload the persisted advertisement, including client
@@ -1468,6 +1498,12 @@ export const list = async (
 ): Promise<{
   items: AdvertisementListItem[];
   total: number;
+  overview?: {
+    draft: number;
+    pendingApproval: number;
+    active: number;
+    completed: number;
+  };
 }> => {
   const db = client ?? pool;
 
@@ -1509,6 +1545,12 @@ export const list = async (
     conditions.push(`a.status = $${values.length}`);
   }
 
+  if (filters.adFamily === "SPONSORED") {
+    conditions.push("a.advertisement_type = 'NATIVE'");
+  } else if (filters.adFamily === "CONVENTIONAL") {
+    conditions.push("a.advertisement_type <> 'NATIVE'");
+  }
+
   if (filters.placementType) {
     values.push(filters.placementType);
     conditions.push(`EXISTS (
@@ -1520,6 +1562,12 @@ export const list = async (
     )`);
   }
 
+  if (filters.periodFrom && filters.periodTo) {
+    values.push(filters.periodFrom, filters.periodTo);
+    conditions.push(
+      `a.created_at >= ($${values.length - 1}::date::timestamp AT TIME ZONE 'Asia/Kolkata') AND a.created_at < (($${values.length}::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`
+    );
+  }
   // Dates are inclusive. A campaign matches through its own dates or a
   // linked schedule; EXISTS prevents duplicate advertisements in the grid.
   if (filters.startDate || filters.endDate) {
@@ -1546,61 +1594,75 @@ export const list = async (
           AND ${dateMatches("sch.start_at", "sch.end_at")}))`);
   }
 
-  if (filters.operationalCondition === "ACTIVE") {
-    // Match the effective-completion rule below. An advertisement may retain
-    // its persisted ACTIVE status after its campaign has naturally expired;
-    // those records belong under COMPLETED rather than ACTIVATED.
-    conditions.push(`a.status = 'ACTIVE'
-      AND NOT (
-        a.workflow_status = 'APPROVED'
-        AND a.end_at IS NOT NULL
-        AND a.end_at <= NOW()
-        AND NOT EXISTS (
-          SELECT 1 FROM advertisement_schedules sch
-          WHERE sch.advertisement_id = a.id
-            AND sch.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
-            AND sch.end_at > NOW()
-        )
-        AND (
-          SELECT oa.event_type FROM public.advertisement_operational_audit oa
-          WHERE oa.advertisement_id = a.id
-          ORDER BY oa.id DESC LIMIT 1
-        ) IS DISTINCT FROM 'STOPPED'
-      )`);
-  } else if (filters.operationalCondition === "COMPLETED") {
-    // Effective natural completion is based on the campaign's actual end,
-    // not solely on a persisted COMPLETED status (which Stop Delivery also uses).
-    // Do not count explicitly stopped campaigns or campaigns with a future
-    // scheduled delivery. The archived/draft workflows remain separate.
-    conditions.push(`a.workflow_status = 'APPROVED'
+  // One classification shared by the grid, filter and overview counts.
+  const effectiveStatus = `CASE
+    WHEN a.status = 'ARCHIVED' THEN 'ARCHIVED'
+    WHEN a.status = 'COMPLETED' AND (
+      SELECT oa.event_type FROM public.advertisement_operational_audit oa
+      WHERE oa.advertisement_id = a.id ORDER BY oa.id DESC LIMIT 1
+    ) = 'STOPPED' THEN 'STOPPED'
+    WHEN a.workflow_status = 'ON_HOLD' THEN 'ON_HOLD'
+    WHEN a.workflow_status = 'APPROVED'
       AND a.status IN ('ACTIVE', 'PAUSED', 'COMPLETED')
-      AND a.end_at IS NOT NULL
       AND a.end_at <= NOW()
-      AND NOT EXISTS (
-        SELECT 1 FROM advertisement_schedules sch
+      AND NOT EXISTS (SELECT 1 FROM advertisement_schedules sch
         WHERE sch.advertisement_id = a.id
           AND sch.status IN ('SCHEDULED', 'ACTIVE', 'PAUSED')
-          AND sch.end_at > NOW()
-      )
-      AND (
-        SELECT oa.event_type FROM public.advertisement_operational_audit oa
-        WHERE oa.advertisement_id = a.id
-        ORDER BY oa.id DESC LIMIT 1
-      ) IS DISTINCT FROM 'STOPPED'`);
-  } else if (filters.operationalCondition === "ARCHIVED") {
-    conditions.push(`a.status = 'ARCHIVED'`);
-  } else if (filters.operationalCondition === "PAUSED") {
-    conditions.push(`a.status = 'PAUSED'`);
-  } else if (filters.operationalCondition === "ON_HOLD") {
-    conditions.push(`a.workflow_status = 'ON_HOLD'`);
-  } else if (filters.operationalCondition === "STOPPED") {
-    // A completed advertisement is STOPPED only when its most recent
-    // operational event is an explicit STOPPED action, not natural expiry.
-    conditions.push(`a.status = 'COMPLETED' AND (
-      SELECT oa.event_type FROM public.advertisement_operational_audit oa
-      WHERE oa.advertisement_id = a.id
-      ORDER BY oa.id DESC LIMIT 1
-    ) = 'STOPPED'`);
+          AND sch.end_at > NOW()) THEN 'COMPLETED'
+    WHEN a.status = 'COMPLETED' THEN 'COMPLETED'
+    WHEN a.status = 'PAUSED' THEN 'PAUSED'
+    WHEN a.status = 'ACTIVE' THEN 'ACTIVE'
+    ELSE 'NOT_ACTIVATED' END`;
+
+  if (filters.operationalCondition) {
+    values.push(filters.operationalCondition);
+    conditions.push(`(${effectiveStatus}) = $${values.length}::text`);
+  }
+
+  let overview:
+    | {
+        draft: number;
+        pendingApproval: number;
+        active: number;
+        completed: number;
+      }
+    | undefined;
+  if (filters.includeOverview) {
+    const scope: string[] = [];
+    const scopeValues: unknown[] = [];
+    if (filters.adFamily === "SPONSORED")
+      scope.push("a.advertisement_type = 'NATIVE'");
+    if (filters.adFamily === "CONVENTIONAL")
+      scope.push("a.advertisement_type <> 'NATIVE'");
+    if (filters.periodFrom && filters.periodTo) {
+      scopeValues.push(filters.periodFrom, filters.periodTo);
+      scope.push(
+        "a.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kolkata') AND a.created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')"
+      );
+    }
+    const counts = await db.query<{
+      draft: string;
+      pending: string;
+      active: string;
+      completed: string;
+    }>(
+      `
+      SELECT COUNT(*) FILTER (WHERE workflow_status = 'DRAFT') AS draft,
+        COUNT(*) FILTER (WHERE workflow_status = 'SUBMITTED') AS pending,
+        COUNT(*) FILTER (WHERE effective_status = 'ACTIVE') AS active,
+        COUNT(*) FILTER (WHERE effective_status = 'COMPLETED') AS completed
+      FROM (SELECT a.workflow_status, ${effectiveStatus} AS effective_status
+        FROM advertisements a ${scope.length ? `WHERE ${scope.join(" AND ")}` : ""}) scoped
+    `,
+      scopeValues
+    );
+    const row = counts.rows[0];
+    overview = {
+      draft: Number(row?.draft ?? 0),
+      pendingApproval: Number(row?.pending ?? 0),
+      active: Number(row?.active ?? 0),
+      completed: Number(row?.completed ?? 0)
+    };
   }
 
   const whereClause =
@@ -1634,11 +1696,37 @@ export const list = async (
 
   const offsetIndex = dataValues.length;
 
-  const result = await db.query<AdvertisementRow>(
+  const result = await db.query<
+    AdvertisementRow & {
+      effective_status?: AdvertisementListItem["effectiveOperationalStatus"];
+      grid_summary?: AdvertisementListItem["gridSummary"];
+    }
+  >(
     `
-            ${advertisementSelect}
+            ${advertisementSelect
+              .replace(
+                "a.*",
+                "a.id, a.client_id, a.advertisement_amount, a.name, a.advertisement_type, a.priority, a.status, a.workflow_status, a.start_at, a.end_at, a.standard_amount, a.pricing_placement_id, a.pricing_unit, a.pricing_quantity, a.discount_percentage, a.discount_amount, a.advance_percentage, a.advance_amount, a.adjustment_amount, a.currency_code, a.created_at, a.approved_at, a.on_hold_at, a.updated_at, a.is_house_ad"
+              )
+              .replace(
+                "c.name AS client_name",
+                `c.name AS client_name,
+               (SELECT b.display_name FROM advertisement_feed_assignments f
+                JOIN advertisement_feed_batches b ON b.id=f.batch_id
+                WHERE f.advertisement_id=a.id LIMIT 1) AS sponsored_batch_name
+               ${
+                 filters.includeGridSummary
+                   ? `, ${effectiveStatus} AS effective_status,
+               jsonb_build_object(
+                 'placements', ARRAY(SELECT DISTINCT COALESCE(NULLIF(p.display_name, ''), replace(p.placement_type, '_', ' ')) FROM advertisement_placement_rules pr JOIN advertisement_placements p ON p.id = pr.placement_id WHERE pr.advertisement_id = a.id ORDER BY 1),
+                 'pages', ARRAY(SELECT DISTINCT CASE p.page_type WHEN 'HOME' THEN 'Home' WHEN 'NEWS_LIST' THEN 'News List' WHEN 'NEWS_DETAIL' THEN 'News Details' ELSE p.page_type END FROM advertisement_placement_rules pr JOIN advertisement_placements p ON p.id = pr.placement_id WHERE pr.advertisement_id = a.id ORDER BY 1),
+                 'images', (SELECT COUNT(*)::int FROM advertisement_creatives cr WHERE cr.advertisement_id = a.id AND cr.creative_type = 'IMAGE' AND cr.status = 'ACTIVE' AND cr.media_url <> '')
+               ) AS grid_summary`
+                   : ""
+               }`
+              )}
             ${whereClause}
-            ORDER BY a.created_at DESC
+            ORDER BY a.created_at DESC, a.id DESC
             LIMIT $${limitIndex}
             OFFSET $${offsetIndex}
             `,
@@ -1646,8 +1734,15 @@ export const list = async (
   );
 
   return {
-    items: result.rows.map(mapAdvertisementListRow),
-    total
+    items: result.rows.map((row) => ({
+      ...mapAdvertisementListRow(row),
+      ...(row.grid_summary ? { gridSummary: row.grid_summary } : {}),
+      ...(row.effective_status
+        ? { effectiveOperationalStatus: row.effective_status }
+        : {})
+    })),
+    total,
+    ...(overview ? { overview } : {})
   };
 };
 

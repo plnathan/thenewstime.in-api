@@ -183,7 +183,26 @@ export const update = async (
   let passwordHash: string | null = null;
 
   if (input.password) {
+    if (String(id) === String(updatedBy))
+      throw new ApiError(
+        400,
+        "Use Change Password to change your own password."
+      );
+    const actorRoles = await roleRepository.findUserRoles(updatedBy);
+    const targetRoles = await roleRepository.findUserRoles(id);
+    const active = (roles: typeof actorRoles, code: string) =>
+      roles.some((role) => role.code === code && role.status === "ACTIVE");
+    const superAdmin = active(actorRoles, "SUPER_ADMIN");
+    if (
+      !superAdmin &&
+      (!active(actorRoles, "ADMIN") ||
+        active(targetRoles, "SUPER_ADMIN") ||
+        active(targetRoles, "ADMIN"))
+    ) {
+      throw new ApiError(403, "You cannot reset this user's password.");
+    }
     passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
+    input = { ...input, mustChangePassword: false };
   }
 
   const updated = await repository.update(id, input, passwordHash, updatedBy);

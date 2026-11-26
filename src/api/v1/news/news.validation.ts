@@ -113,8 +113,43 @@ export const removePromotionSchema = z.object({
   updatedBy: z.coerce.number().int().positive()
 });
 
+const calendarDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return (
+      Number.isFinite(date.getTime()) &&
+      date.toISOString().slice(0, 10) === value
+    );
+  }, "Invalid calendar date");
+
 export const newsSearchSchema = z.object({
-  homepageOnly: z.coerce.boolean().optional(),
+  createdFrom: calendarDate.optional(),
+  createdTo: calendarDate.optional(),
+  newsId: z
+    .string()
+    .regex(/^\d{1,19}$/)
+    .optional(),
+  slug: z.string().trim().max(300).optional(),
+  compact: z.enum(["true", "false"]).optional(),
+  homepageOnly: z.preprocess(
+    (value) => (value === "true" ? true : value === "false" ? false : value),
+    z.boolean().optional()
+  ),
+  sidebarMode: z.enum(["other", "popular", "category"]).optional(),
+  excludeIds: z
+    .string()
+    .max(800)
+    .regex(/^\d+(,\d+)*$/)
+    .refine((value) => {
+      const ids = value.split(",").map(Number);
+      return (
+        ids.length <= 40 &&
+        ids.every((id) => Number.isSafeInteger(id) && id > 0)
+      );
+    })
+    .optional(),
   page: z.coerce.number().int().min(1).default(1),
 
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

@@ -5,6 +5,7 @@ import { validate } from "../../../../shared/middleware/validate.middleware.js";
 import * as controller from "./auth.controller.js";
 
 import {
+  changePasswordSchema,
   loginSchema,
   refreshTokenSchema,
   registerSchema
@@ -21,6 +22,13 @@ router.post("/login", validate(loginSchema), controller.login);
 router.post("/refresh", validate(refreshTokenSchema), controller.refresh);
 
 router.post("/logout", validate(refreshTokenSchema), controller.logout);
+
+router.post(
+  "/change-password",
+  authenticate,
+  validate(changePasswordSchema),
+  controller.changePassword
+);
 
 router.get("/me", authenticate, controller.me);
 

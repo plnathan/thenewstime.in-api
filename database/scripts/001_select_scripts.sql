@@ -1040,3 +1040,90 @@ WHERE p.fallback_advertisement_id = 1
    OR pr.advertisement_id = 1
    OR s.advertisement_id = 1
 ORDER BY p.id, pr.id, s.id, c.id;
+----------------------------------
+SELECT
+    id,
+    is_clickable,
+    destination_url,
+    open_in_new_tab
+FROM advertisements
+WHERE id = 2842;
+-----------------------------------
+SELECT
+    a.id AS advertisement_id,
+    b.display_name AS current_batch,
+    b.batch_order AS current_priority,
+    f.assigned_rate_amount AS current_daily_rate,
+    f.reserved_end_at
+FROM advertisements a
+JOIN advertisement_feed_assignments f
+    ON f.advertisement_id = a.id
+JOIN advertisement_feed_batches b
+    ON b.id = f.batch_id
+WHERE a.id = 2850;
+------------------------------------
+SELECT
+    b.id AS batch_id,
+    b.code AS batch_code,
+    b.display_name AS batch_name,
+    b.batch_order,
+    b.is_enabled AS batch_enabled,
+    rc.id AS rate_card_id,
+    rc.rate_amount AS daily_rate,
+    rc.status AS rate_status,
+    rc.effective_from,
+    rc.effective_to,
+    CASE
+        WHEN b.batch_order >= 2
+            THEN 'NOT HIGHER PRIORITY'
+        WHEN rc.rate_amount > 200
+            THEN 'PRICE ELIGIBLE'
+        ELSE 'PRICE NOT ELIGIBLE'
+    END AS upgrade_price_check
+FROM advertisement_feed_batches b
+LEFT JOIN advertisement_rate_cards rc
+    ON rc.placement_id = b.pricing_placement_id
+   AND rc.pricing_unit = 'DAY'
+ORDER BY
+    b.batch_order,
+    rc.effective_from DESC;
+----------------------------
+SELECT
+    u.id AS upgrade_id,
+    u.advertisement_id,
+    source.display_name AS from_batch,
+    target.display_name AS to_batch,
+    u.additional_amount,
+    u.status AS upgrade_status,
+    u.financial_approval_id,
+    u.charged_at,
+    u.created_at
+FROM advertisement_feed_upgrades u
+LEFT JOIN advertisement_feed_batches source
+    ON source.id = u.source_batch_id
+LEFT JOIN advertisement_feed_batches target
+    ON target.id = u.target_batch_id
+ORDER BY u.created_at DESC, u.id DESC;
+----------------------------
+SELECT b.id AS batch_id, b.code AS batch_code, r.id AS rate_id,
+       r.status, r.pricing_unit, r.rate_amount, r.effective_from, r.effective_to
+FROM advertisement_feed_assignments fa
+JOIN advertisement_feed_batches b ON b.id = fa.batch_id
+LEFT JOIN advertisement_rate_cards r ON r.placement_id = b.pricing_placement_id
+WHERE fa.advertisement_id = 2842
+ORDER BY r.effective_from DESC
+----------------------------
+SELECT
+    SPLIT_PART(bucket_key, ':', 1) AS limit_type,
+    SPLIT_PART(bucket_key, ':', 2) AS limit_period,
+    requests,
+    expires_at,
+    expires_at AT TIME ZONE 'Asia/Kolkata' AS expires_at_ist,
+    CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata' AS current_time_ist,
+    CASE
+        WHEN expires_at <= CURRENT_TIMESTAMP THEN 'EXPIRED'
+        ELSE 'ACTIVE'
+    END AS status
+FROM advertisement_enquiry_rate_limits
+ORDER BY expires_at DESC;
+----------------------------

@@ -58,6 +58,22 @@ const MEDIA_SELECT = `
     ON ma.id = nm.media_asset_id
 `;
 
+const normalizeMediaItem = (row: NewsMediaItem): NewsMediaItem => ({
+  ...row,
+
+  id: Number(row.id),
+
+  mediaAssetId: Number(row.mediaAssetId),
+
+  displayOrder: Number(row.displayOrder),
+
+  fileSizeBytes: row.fileSizeBytes === null ? null : Number(row.fileSizeBytes),
+
+  width: row.width === null ? null : Number(row.width),
+
+  height: row.height === null ? null : Number(row.height)
+});
+
 export const findByNewsId = async (
   newsId: number,
   client?: PoolClient
@@ -79,22 +95,7 @@ export const findByNewsId = async (
     [newsId]
   );
 
-  return result.rows.map((row) => ({
-    ...row,
-
-    id: Number(row.id),
-
-    mediaAssetId: Number(row.mediaAssetId),
-
-    displayOrder: Number(row.displayOrder),
-
-    fileSizeBytes:
-      row.fileSizeBytes === null ? null : Number(row.fileSizeBytes),
-
-    width: row.width === null ? null : Number(row.width),
-
-    height: row.height === null ? null : Number(row.height)
-  }));
+  return result.rows.map(normalizeMediaItem);
 };
 
 export const getNextDisplayOrder = async (
@@ -276,7 +277,7 @@ export const createAssetAndLink = async (
     throw new Error("Failed to retrieve created news media.");
   }
 
-  return mediaItem;
+  return normalizeMediaItem(mediaItem);
 };
 
 export const reorder = async (

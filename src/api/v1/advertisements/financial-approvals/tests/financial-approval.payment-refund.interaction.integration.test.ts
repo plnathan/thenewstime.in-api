@@ -1,9 +1,20 @@
 import bcrypt from "bcrypt";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi
+} from "vitest";
 
 import app from "../../../../../app.js";
 import { pool } from "../../../../../shared/config/db.js";
+
+// Integration tests perform multiple remote database operations.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe("Advertisement Financial Approval + Payment/Refund Interaction Integration", () => {
   let creatorAccessToken = "";

@@ -92,3 +92,20 @@ export const me = async (
     next(error);
   }
 };
+
+export const changePassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    await authService.changePassword(
+      req.user.id,
+      req.body.currentPassword,
+      req.body.newPassword
+    );
+    sendSuccess(res, "Password changed successfully. Please sign in again.");
+  } catch (error) {
+    next(error);
+  }
+};

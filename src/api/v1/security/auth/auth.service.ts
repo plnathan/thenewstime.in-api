@@ -302,3 +302,46 @@ export const logout = async (refreshToken: string): Promise<void> => {
 export const getCurrentUser = async (userId: number): Promise<AuthUser> => {
   return buildAuthUser(userId);
 };
+
+export const changePassword = async (
+  userId: number,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> => {
+  const user = await repository.findUserById(userId);
+  if (!user || user.status !== "ACTIVE")
+    throw new ApiError(403, "Account is not active.");
+  if (!(await bcrypt.compare(currentPassword, user.password_hash))) {
+    throw new ApiError(400, "Current password is incorrect.");
+  }
+  if (await bcrypt.compare(newPassword, user.password_hash)) {
+    throw new ApiError(
+      400,
+      "New password must differ from the current password."
+    );
+  }
+  const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `UPDATE users SET password_hash = $1, password_changed_at = NOW(),
+       must_change_password = false, password_expires_at = NULL,
+       failed_login_count = 0, updated_by = $2, updated_at = NOW()
+       WHERE id = $2 AND password_hash = $3 AND status = 'ACTIVE'`,
+      [hash, userId, user.password_hash]
+    );
+    if (result.rowCount !== 1)
+      throw new ApiError(409, "Password or account changed. Please try again.");
+    await client.query(
+      "UPDATE user_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+      [userId]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};

@@ -55,6 +55,10 @@ import rotationRoutes from "../rotation/rotation.routes.js";
 import scheduleRoutes from "../schedules/schedule.routes.js";
 import targetRoutes from "../targets/target.routes.js";
 
+import sponsoredFeedRoutes from "../sponsored-feed/sponsored-feed.routes.js";
+
+import publicFeedRoutes from "../sponsored-feed/public-feed.routes.js";
+
 const router = Router();
 
 /**
@@ -66,6 +70,7 @@ const router = Router();
  * advertisement delivery is public.
  */
 router.use("/delivery", deliveryRoutes);
+router.use("/sponsored-feed/public", publicFeedRoutes);
 
 /**
  * --------------------------------------------------------------------------
@@ -75,6 +80,7 @@ router.use("/delivery", deliveryRoutes);
  * All routes below require authentication.
  */
 router.use(authenticate);
+router.use("/sponsored-feed", sponsoredFeedRoutes);
 
 /**
  * --------------------------------------------------------------------------

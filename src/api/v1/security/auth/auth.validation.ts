@@ -28,3 +28,17 @@ export const loginSchema = z.object({
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1)
 });
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: z
+      .string()
+      .min(8)
+      .max(72)
+      .refine(
+        (value) => Buffer.byteLength(value, "utf8") <= 72,
+        "Password must not exceed 72 UTF-8 bytes."
+      )
+  })
+  .strict();

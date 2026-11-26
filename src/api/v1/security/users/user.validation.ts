@@ -3,7 +3,11 @@ import { z } from "zod";
 const passwordSchema = z
   .string()
   .min(8, "Password must be at least 8 characters.")
-  .max(100, "Password must not exceed 100 characters.");
+  .max(72, "Password must not exceed 72 characters.")
+  .refine(
+    (value) => Buffer.byteLength(value, "utf8") <= 72,
+    "Password must not exceed 72 UTF-8 bytes."
+  );
 
 const roleIdsSchema = z
   .array(z.coerce.number().int().positive())

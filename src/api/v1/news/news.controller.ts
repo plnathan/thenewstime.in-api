@@ -68,6 +68,19 @@ export const getPublishedNewsList = async (
 
       sortOrder: req.query.sortOrder as "ASC" | "DESC" | undefined,
       popularOrder: req.query.popular === "true",
+      homepageOnly:
+        (req.query.homepageOnly as unknown) === true ||
+        req.query.homepageOnly === "true",
+      sidebarMode:
+        req.query.sidebarMode === "other" ||
+        req.query.sidebarMode === "popular" ||
+        req.query.sidebarMode === "category"
+          ? req.query.sidebarMode
+          : undefined,
+      excludeIds:
+        typeof req.query.excludeIds === "string"
+          ? req.query.excludeIds.split(",").map(Number)
+          : undefined,
       /**
        * Public API always means PUBLISHED.
        *
@@ -286,7 +299,17 @@ export const getNewsList = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    const createdFrom = req.query.createdFrom?.toString();
+    const createdTo = req.query.createdTo?.toString();
+    if (createdFrom && createdTo && createdFrom > createdTo) {
+      throw new ApiError(400, "Start date must not exceed end date");
+    }
     const filter: NewsSearchFilter = {
+      createdFrom,
+      createdTo,
+      newsId: req.query.newsId?.toString(),
+      slug: req.query.slug?.toString(),
+      compact: req.query.compact === "true",
       page: Number(req.query.page ?? 1),
 
       pageSize: Number(req.query.pageSize ?? 20),

@@ -877,6 +877,21 @@ const changeWorkflowStatus = async (
      * This covers initial Ad Manager approval and resuming an advertisement
      * previously placed on hold.
      */
+    if (
+      (nextStatus === "SUBMITTED" || nextStatus === "APPROVED") &&
+      advertisement.advertisementType === "NATIVE" &&
+      !advertisement.isHouseAd
+    ) {
+      const ready = await client.query(
+        `SELECT 1 FROM advertisement_feed_assignments f JOIN advertisement_feed_batches b ON b.id=f.batch_id JOIN advertisement_card_contents c ON c.advertisement_id=f.advertisement_id JOIN advertisements a ON a.id=f.advertisement_id WHERE f.advertisement_id=$1 AND b.is_enabled AND f.reserved_start_at=a.start_at AND f.reserved_end_at=a.end_at AND f.reserved_end_at>now() AND a.advertisement_amount>0 AND nullif(trim(c.headline),'') IS NOT NULL AND nullif(trim(c.sponsor_display_name),'') IS NOT NULL AND c.image_url IS NOT NULL`,
+        [id]
+      );
+      if (!ready.rowCount)
+        throw new ApiError(
+          409,
+          "Save card content and reserve an enabled batch before submitting or approving."
+        );
+    }
     if (nextStatus === "APPROVED") {
       await validateCreditExceptionCoverage(advertisement);
     }
@@ -1088,7 +1103,20 @@ export const createAdvertisement = async (
   const runtimePlacementId =
     inputPlacementId ?? input.pricing?.placementId ?? undefined;
 
-  await validatePlacementSelection(runtimePlacementId);
+  const native = input.advertisementType === "NATIVE" && !input.isHouseAd;
+  if (native) {
+    if (
+      runtimePlacementId !== undefined ||
+      input.pricing ||
+      input.advertisementAmount !== undefined
+    )
+      throw new ApiError(
+        400,
+        "Reserve sponsored feed inventory before pricing; do not select a runtime placement."
+      );
+  } else {
+    await validatePlacementSelection(runtimePlacementId);
+  }
 
   if (
     input.pricing?.placementId !== undefined &&
@@ -1121,7 +1149,7 @@ export const createAdvertisement = async (
     return repository.create(
       {
         ...inputWithoutPlacement,
-        placementId: runtimePlacementId as number,
+        ...(native ? {} : { placementId: runtimePlacementId as number }),
 
         ...(financials.advertisementAmount !== null
           ? { advertisementAmount: financials.advertisementAmount }
@@ -1321,9 +1349,35 @@ export const updateAdvertisement = async (
    * Placement is mandatory during creation. On update it is optional,
    * allowing existing advertisements to retain their current placement.
    */
+  const native =
+    advertisement.advertisementType === "NATIVE" && !advertisement.isHouseAd;
+  if (
+    input.advertisementType !== undefined &&
+    input.advertisementType !== advertisement.advertisementType &&
+    (native || input.advertisementType === "NATIVE")
+  ) {
+    throw new ApiError(
+      409,
+      "Cannot convert between sponsored feed and conventional advertisements."
+    );
+  }
+  if (native && input.placementId != null) {
+    throw new ApiError(
+      400,
+      "Sponsored feed does not use runtime placement pricing."
+    );
+  }
+  if (native && (input.startAt !== undefined || input.endAt !== undefined)) {
+    const assignment = await pool.query(
+      "SELECT 1 FROM advertisement_feed_assignments WHERE advertisement_id=$1",
+      [id]
+    );
+    if (assignment.rowCount)
+      throw new ApiError(409, "Reserved campaign dates cannot be edited.");
+  }
   if (input.placementId !== undefined && input.placementId !== null) {
     await validatePlacementSelection(input.placementId);
-  } else if (advertisement.placement === null) {
+  } else if (!native && advertisement.placement === null) {
     throw new ApiError(
       409,
       "Advertisement does not have a persisted placement. Please select a placement before saving."
@@ -1720,10 +1774,15 @@ const changeOperationalState = async (
         "Archived advertisements cannot be paused or stopped."
       );
     }
-    if (current.status !== "ACTIVE") {
+    if (
+      current.status !== "ACTIVE" &&
+      !(action === "STOP" && current.status === "PAUSED")
+    ) {
       throw new ApiError(
         409,
-        `Only ACTIVE advertisements can be ${action === "PAUSE" ? "paused" : "stopped"}.`
+        action === "PAUSE"
+          ? "Only ACTIVE advertisements can be paused."
+          : "Only ACTIVE or PAUSED advertisements can be stopped."
       );
     }
 
@@ -1744,9 +1803,14 @@ const changeOperationalState = async (
     const updated = await client.query<{ id: number | string }>(
       `UPDATE advertisements
        SET status = $3, updated_by = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND status = 'ACTIVE' AND workflow_status = 'APPROVED'
+       WHERE id = $1 AND status = $4 AND workflow_status = 'APPROVED'
        RETURNING id`,
-      [id, performedBy, action === "PAUSE" ? "PAUSED" : "COMPLETED"]
+      [
+        id,
+        performedBy,
+        action === "PAUSE" ? "PAUSED" : "COMPLETED",
+        current.status
+      ]
     );
     if (!updated.rows[0]) {
       throw new ApiError(
@@ -1757,13 +1821,14 @@ const changeOperationalState = async (
     await client.query(
       `INSERT INTO public.advertisement_operational_audit
        (advertisement_id, event_type, previous_status, new_status, remarks, performed_by)
-       VALUES ($1, $2, 'ACTIVE', $5, $3, $4)`,
+       VALUES ($1, $2, $6, $5, $3, $4)`,
       [
         id,
         action === "PAUSE" ? "PAUSED" : "STOPPED",
         remarks,
         performedBy,
-        action === "PAUSE" ? "PAUSED" : "COMPLETED"
+        action === "PAUSE" ? "PAUSED" : "COMPLETED",
+        current.status
       ]
     );
     const result = await repository.findById(id, client);
@@ -2301,6 +2366,67 @@ export const activateAdvertisement = async (
       throw new ApiError(400, "Campaign start and end date/time are required.");
     }
 
+    // Sponsored cards reserve batch inventory instead of runtime placements.
+    if (
+      advertisement.advertisementType === "NATIVE" &&
+      !advertisement.isHouseAd
+    ) {
+      const assignment = await client.query(
+        `SELECT f.advertisement_id FROM advertisement_feed_assignments f
+         JOIN advertisement_feed_batches b ON b.id=f.batch_id
+         JOIN advertisement_card_contents c ON c.advertisement_id=f.advertisement_id
+         JOIN advertisements a ON a.id=f.advertisement_id
+         JOIN advertisement_clients cl ON cl.id=a.client_id
+         WHERE f.advertisement_id=$1 AND b.is_enabled AND cl.status='ACTIVE'
+           AND f.rate_card_id IS NOT NULL AND f.assigned_rate_amount>0
+           AND f.reserved_start_at>=a.start_at AND f.reserved_end_at=a.end_at AND f.reserved_end_at>now()
+           AND a.advertisement_amount>0 AND a.pricing_unit='DAY'
+           AND nullif(trim(c.headline),'') IS NOT NULL AND nullif(trim(c.sponsor_display_name),'') IS NOT NULL AND c.image_url IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM advertisement_feed_upgrades u WHERE u.advertisement_id=a.id AND u.status='PENDING')
+           AND NOT EXISTS (SELECT 1 FROM advertisement_placement_rules p WHERE p.advertisement_id=a.id)
+           AND NOT EXISTS (SELECT 1 FROM advertisement_schedules p WHERE p.advertisement_id=a.id)
+         FOR UPDATE OF f,b`,
+        [id]
+      );
+      if (assignment.rowCount) {
+        if (!["DRAFT", "PAUSED"].includes(advertisement.status)) {
+          throw new ApiError(
+            409,
+            "Only draft or paused sponsored advertisements can be activated."
+          );
+        }
+        await client.query(
+          `UPDATE advertisement_feed_assignments SET activated_at=COALESCE(activated_at,clock_timestamp()),updated_at=now(),updated_by=$2 WHERE advertisement_id=$1`,
+          [id, activatedBy]
+        );
+        await client.query(
+          `UPDATE advertisements SET status='ACTIVE',updated_at=now(),updated_by=$2 WHERE id=$1`,
+          [id, activatedBy]
+        );
+        await client.query(
+          `INSERT INTO advertisement_operational_audit(advertisement_id,event_type,previous_status,new_status,remarks,performed_by) VALUES($1,'ACTIVATED',$2,'ACTIVE',$3,$4)`,
+          [id, advertisement.status, remarks, activatedBy]
+        );
+        const result = await repository.findById(id, client);
+        if (!result)
+          throw new ApiError(
+            500,
+            "Activated sponsored advertisement could not be reloaded."
+          );
+        await client.query("COMMIT");
+        return { advertisement: result, activatedSchedules: [], remarks };
+      }
+      const exists = await client.query(
+        "SELECT 1 FROM advertisement_feed_assignments WHERE advertisement_id=$1",
+        [id]
+      );
+      if (exists.rowCount || advertisement.advertisementType === "NATIVE")
+        throw new ApiError(
+          409,
+          "Sponsored feed assignment, card, inventory or commercial configuration is not ready."
+        );
+    }
+
     const campaignStartTime =
       campaignStart instanceof Date
         ? campaignStart.getTime()
@@ -2638,8 +2764,14 @@ export const resumeDeliveryAdvertisement = async (
       "Delivery can resume only within the campaign window."
     );
   }
+  const sponsored =
+    current.advertisementType === "NATIVE" && !current.isHouseAd;
   const schedule = await pool.query<{ id: number }>(
-    `SELECT id FROM advertisement_schedules
+    sponsored
+      ? `SELECT advertisement_id AS id FROM advertisement_feed_assignments
+     WHERE advertisement_id = $1 AND reserved_start_at <= CURRENT_TIMESTAMP
+       AND reserved_end_at > CURRENT_TIMESTAMP LIMIT 1`
+      : `SELECT id FROM advertisement_schedules
      WHERE advertisement_id = $1 AND status = 'PAUSED'
        AND start_at <= CURRENT_TIMESTAMP AND end_at > CURRENT_TIMESTAMP
      LIMIT 1`,
@@ -2648,7 +2780,9 @@ export const resumeDeliveryAdvertisement = async (
   if (!schedule.rows.length) {
     throw new ApiError(
       409,
-      "No currently valid paused schedule is available to resume."
+      sponsored
+        ? "No currently valid sponsored reservation is available to resume."
+        : "No currently valid paused schedule is available to resume."
     );
   }
   const result = await activateAdvertisement(id, performedBy, {

@@ -1,3 +1,4 @@
+import { periodDate } from "../date-period.js";
 import { z } from "zod";
 
 const advertisementTypes = [
@@ -250,6 +251,7 @@ export const createAdvertisementSchema = z
      * for existing callers using the older nested pricing model.
      */
     if (
+      !(value.advertisementType === "NATIVE" && !value.isHouseAd) &&
       value.placementId === undefined &&
       value.pricing?.placementId === undefined
     ) {
@@ -257,6 +259,21 @@ export const createAdvertisementSchema = z
         code: "custom",
         path: ["placementId"],
         message: "Advertisement placement is required."
+      });
+    }
+
+    if (
+      value.advertisementType === "NATIVE" &&
+      !value.isHouseAd &&
+      (value.placementId !== undefined ||
+        value.pricing !== undefined ||
+        value.advertisementAmount !== undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["placementId"],
+        message:
+          "Reserve sponsored feed inventory before pricing; do not select a runtime placement."
       });
     }
 
@@ -448,12 +465,15 @@ export const advertisementQuerySchema = z
     workflowStatus: z.enum(advertisementWorkflowStatuses).optional(),
 
     status: z.enum(advertisementStatuses).optional(),
+    adFamily: z.enum(["CONVENTIONAL", "SPONSORED", "ALL"]).optional(),
     placementType: z
       .string()
       .trim()
       .regex(/^[A-Z_]+$/)
       .max(80)
       .optional(),
+    periodFrom: periodDate.optional(),
+    periodTo: periodDate.optional(),
     startDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -462,13 +482,21 @@ export const advertisementQuerySchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
+    includeOverview: z.enum(["true", "false"]).optional(),
+    includeGridSummary: z.enum(["true", "false"]).optional(),
     operationalCondition: z
       .enum(["ACTIVE", "PAUSED", "COMPLETED", "ON_HOLD", "STOPPED", "ARCHIVED"])
       .optional()
   })
   .refine(
     (value) =>
-      !value.startDate || !value.endDate || value.startDate <= value.endDate,
+      (!value.startDate ||
+        !value.endDate ||
+        value.startDate <= value.endDate) &&
+      ((!value.periodFrom && !value.periodTo) ||
+        (!!value.periodFrom &&
+          !!value.periodTo &&
+          value.periodFrom <= value.periodTo)),
     {
       message: "Start date must not be after end date",
       path: ["endDate"]

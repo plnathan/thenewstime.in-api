@@ -186,7 +186,18 @@ export interface Advertisement extends AdvertisementPricingFields {
 }
 
 export interface AdvertisementListItem extends AdvertisementPricingFields {
+  gridSummary?: { placements: string[]; pages: string[]; images: number };
+  effectiveOperationalStatus?:
+    | "ACTIVE"
+    | "PAUSED"
+    | "COMPLETED"
+    | "ON_HOLD"
+    | "STOPPED"
+    | "ARCHIVED"
+    | "NOT_ACTIVATED";
+
   id: number;
+  sponsoredBatchName?: string | null;
 
   /*
    * Compatibility field.
@@ -338,6 +349,10 @@ export interface AdvertisementCalculatedFinancialFields {
 }
 
 export interface AdvertisementSearchFilters {
+  includeOverview?: boolean;
+  includeGridSummary?: boolean;
+
+  adFamily?: "CONVENTIONAL" | "SPONSORED" | "ALL";
   page: number;
   pageSize: number;
 
@@ -347,6 +362,8 @@ export interface AdvertisementSearchFilters {
   workflowStatus?: AdvertisementWorkflowStatus;
   status?: AdvertisementStatus;
   placementType?: string;
+  periodFrom?: string;
+  periodTo?: string;
   startDate?: string;
   endDate?: string;
   operationalCondition?:

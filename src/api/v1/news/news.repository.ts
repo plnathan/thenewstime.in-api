@@ -147,6 +147,19 @@ const NEWS_SELECT = `
     ON d.id = n.district_id
 `;
 
+// Compact admin projection: preserve the existing DTO shape without loading article bodies,
+// media aggregates or per-article read counts. Detail endpoints remain unchanged.
+const NEWS_ADMIN_SELECT = NEWS_SELECT.replace(
+  /\(\s*SELECT COUNT\(\*\)::BIGINT[\s\S]*?\) AS view_count/,
+  "0 AS view_count"
+)
+  .replace("n.summary,", "NULL::text AS summary,")
+  .replace("n.content,", "''::text AS content,")
+  .replace(
+    /COALESCE\(\s*\(\s*SELECT json_agg[\s\S]*?\) AS media,/,
+    "'[]'::json AS media,"
+  );
+
 /**
  * Create News
  */
@@ -764,8 +777,46 @@ export const findAll = async (
     conditions.push(`n.district_id = $${values.length}`);
   }
 
+  if (filter.createdFrom) {
+    values.push(filter.createdFrom);
+    conditions.push(
+      `n.created_at >= ($${values.length}::date::timestamp AT TIME ZONE 'Asia/Kolkata')`
+    );
+  }
+  if (filter.createdTo) {
+    values.push(filter.createdTo);
+    conditions.push(
+      `n.created_at < (($${values.length}::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`
+    );
+  }
+  if (filter.newsId) {
+    values.push(filter.newsId);
+    conditions.push(
+      `(n.id::numeric = $${values.length}::numeric OR n.news_number::numeric = $${values.length}::numeric)`
+    );
+  }
+  if (filter.slug) {
+    values.push(filter.slug);
+    conditions.push(
+      `strpos(lower(n.slug), lower($${values.length}::text)) > 0`
+    );
+  }
+
   if (filter.homepageOnly) {
     conditions.push("n.show_on_homepage = TRUE");
+  }
+
+  if (filter.sidebarMode === "other") {
+    conditions.push("n.show_on_homepage = FALSE");
+  }
+  if (filter.sidebarMode === "category" && filter.scope === "STATE") {
+    conditions.push(
+      "EXISTS (SELECT 1 FROM states st WHERE st.id = n.state_id AND st.url_name = 'tamil-nadu')"
+    );
+  }
+  if (filter.sidebarMode && filter.excludeIds?.length) {
+    values.push(filter.excludeIds);
+    conditions.push(`NOT (n.id = ANY($${values.length}::bigint[]))`);
   }
 
   // Public queries never expose future-dated published articles.
@@ -803,11 +854,9 @@ export const findAll = async (
   /**
    * Pagination
    */
-  const page = filter.page <= 0 ? 1 : filter.page;
+  let page = filter.page <= 0 ? 1 : filter.page;
 
   const pageSize = filter.pageSize <= 0 ? 20 : filter.pageSize;
-
-  const offset = (page - 1) * pageSize;
 
   /**
    * Count
@@ -823,6 +872,12 @@ export const findAll = async (
   `;
 
   const countResult = await db.query(countSql, values);
+  if (filter.compact)
+    page = Math.min(
+      page,
+      Math.max(1, Math.ceil(Number(countResult.rows[0].total) / pageSize))
+    );
+  const offset = (page - 1) * pageSize;
 
   /**
    * Pagination values
@@ -844,16 +899,24 @@ export const findAll = async (
    * Promotion/display priority must never override
    * chronological published_at ordering on the public website.
    */
-  const orderByClause = filter.popularOrder
-    ? `
+  const orderByClause = filter.compact
+    ? "n.created_at DESC, n.id DESC"
+    : filter.sidebarMode === "popular"
+      ? `CASE WHEN n.published_at >= NOW() - INTERVAL '30 days' THEN 0 ELSE 1 END,
+       view_count DESC, n.published_at DESC NULLS LAST, n.id DESC`
+      : filter.sidebarMode === "category"
+        ? `CASE WHEN n.show_on_homepage IS TRUE THEN 0 ELSE 1 END,
+       n.published_at DESC NULLS LAST, n.id DESC`
+        : filter.popularOrder
+          ? `
     view_count DESC,
 
     n.published_at DESC NULLS LAST,
 
     n.id DESC
   `
-    : filter.publicOrder
-      ? `
+          : filter.publicOrder
+            ? `
       n.published_at DESC NULLS LAST,
 
       CASE n.news_scope
@@ -866,7 +929,7 @@ export const findAll = async (
 
       n.id DESC
     `
-      : `
+            : `
       CASE
         WHEN n.display_priority_until IS NOT NULL
           AND n.display_priority_until > NOW()
@@ -884,7 +947,7 @@ export const findAll = async (
    * Main query
    */
   const sql = `
-    ${NEWS_SELECT}
+    ${filter.compact ? NEWS_ADMIN_SELECT : NEWS_SELECT}
     ${whereClause}
     ORDER BY ${orderByClause}
     LIMIT $${limitIndex}

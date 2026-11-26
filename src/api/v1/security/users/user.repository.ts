@@ -421,7 +421,7 @@ const createWithClient = async (
       input.mobile ?? null,
       passwordHash,
       input.profileImageUrl ?? null,
-      input.mustChangePassword ?? true,
+      false,
       input.passwordExpiresAt ?? null,
       createdBy
     ]
@@ -464,6 +464,13 @@ export const update = async (
       await transactionClient.query("ROLLBACK");
 
       return null;
+    }
+
+    if (passwordHash) {
+      await transactionClient.query(
+        "UPDATE user_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+        [id]
+      );
     }
 
     if (input.roleIds) {
@@ -529,19 +536,21 @@ const updateWithClient = async (
           COALESCE($6, status),
 
         must_change_password =
-          COALESCE($7, must_change_password),
+          CASE WHEN $8::text IS NOT NULL THEN false ELSE COALESCE($7, must_change_password) END,
 
         password_hash =
-          COALESCE($8, password_hash),
+          COALESCE($8::text, password_hash),
 
         password_changed_at =
           CASE
-            WHEN $8 IS NOT NULL THEN NOW()
+            WHEN $8::text IS NOT NULL THEN NOW()
             ELSE password_changed_at
           END,
 
         password_expires_at =
-          COALESCE($9, password_expires_at),
+          CASE WHEN $8::text IS NOT NULL THEN NULL ELSE COALESCE($9, password_expires_at) END,
+
+        failed_login_count = CASE WHEN $8::text IS NOT NULL THEN 0 ELSE failed_login_count END,
 
         updated_by = $10,
         updated_at = NOW()

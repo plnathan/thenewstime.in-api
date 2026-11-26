@@ -44,6 +44,15 @@ export const authorize = (module: string, resource: string, action: string) => {
         return;
       }
 
+      if (module.toUpperCase() === "SECURITY") {
+        const result = await pool.query(
+          `SELECT EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1 AND r.code = 'ADMIN' AND r.status = 'ACTIVE') AS is_admin`,
+          [req.user.id]
+        );
+        if (!result.rows[0]?.is_admin)
+          throw new ApiError(403, "Administrator access required.");
+      }
+
       const allowed = await userHasPermission(
         req.user.id,
         module,

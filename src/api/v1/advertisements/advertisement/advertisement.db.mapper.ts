@@ -141,6 +141,7 @@ interface AdvertisementRow {
 
   client_code: string | null;
   client_name: string | null;
+  sponsored_batch_name?: string | null;
 
   is_house_ad: boolean;
 }
@@ -391,6 +392,8 @@ export const mapAdvertisementListRow = (
     clientName: row.client_name,
 
     clientCode: row.client_code,
+
+    sponsoredBatchName: row.sponsored_batch_name ?? null,
 
     isHouseAd: row.is_house_ad === true,
 

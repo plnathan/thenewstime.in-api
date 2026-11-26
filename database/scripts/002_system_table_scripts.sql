@@ -271,3 +271,36 @@ WHERE table_type = 'BASE TABLE'
   )
 ORDER BY table_name;
 ------------------------
+SELECT pg_get_functiondef(
+    'public.guard_sponsored_feed_inventory()'::regprocedure
+);
+----------------------------------
+SELECT
+    event_object_table,
+    trigger_name,
+    action_timing,
+    event_manipulation,
+    action_statement
+FROM information_schema.triggers
+WHERE event_object_table IN (
+    'advertisements',
+    'advertisement_feed_assignments'
+)
+ORDER BY event_object_table, trigger_name;
+---------------------------
+SELECT pg_get_functiondef(
+    'public.guard_feed_upgrade_amount()'::regprocedure
+);
+---------------------------
+SELECT
+    conname AS constraint_name,
+    pg_get_constraintdef(oid) AS constraint_definition
+FROM pg_constraint
+WHERE conrelid =
+    'public.advertisement_enquiries'::regclass
+AND conname IN (
+    'chk_ad_enquiry_page_types',
+    'chk_ad_enquiry_placement_types'
+)
+ORDER BY conname;
+--------------------------------
