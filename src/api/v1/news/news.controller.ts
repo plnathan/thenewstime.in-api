@@ -604,6 +604,16 @@ export const removePromotion = async (
   }
 };
 
+function parsePublicExclusions(raw: unknown): number[] {
+  if (raw === undefined || raw === "") return [];
+  if (typeof raw !== "string" || raw.length > 200 || !/^\d+(,\d+)*$/.test(raw))
+    throw new ApiError(400, "Invalid excludeIds");
+  const ids = raw.split(",").map(Number);
+  if (ids.length > 10 || ids.some((id) => !Number.isSafeInteger(id) || id < 1))
+    throw new ApiError(400, "Invalid excludeIds");
+  return [...new Set(ids)];
+}
+
 /** Public district-section reads, bounded at the server. */
 export const getDistrictSections = async (
   req: Request,
@@ -623,7 +633,12 @@ export const getDistrictSections = async (
     ) {
       throw new ApiError(400, "Invalid district section pagination.");
     }
-    const result = await findDistrictSections(offset, limit, 5);
+    const result = await findDistrictSections(
+      offset,
+      limit,
+      5,
+      parsePublicExclusions(req.query.excludeIds)
+    );
     res.json({
       ...result,
       sections: result.sections.map((section) => ({
@@ -660,8 +675,18 @@ export const getDistrictSectionNews = async (
     }
     const result =
       typeof cursor === "string"
-        ? await findDistrictSectionNewsByCursor(key, cursor, 5)
-        : await findDistrictSectionNews(key, offset, 5);
+        ? await findDistrictSectionNewsByCursor(
+            key,
+            cursor,
+            5,
+            parsePublicExclusions(req.query.excludeIds)
+          )
+        : await findDistrictSectionNews(
+            key,
+            offset,
+            5,
+            parsePublicExclusions(req.query.excludeIds)
+          );
     res.json({ ...result, news: toNewsResponseDtoList(result.news) });
   } catch (error) {
     next(error);
@@ -742,6 +767,7 @@ export const getPublishedNewsStream = async (
       ...(afterPublishedAt !== undefined ? { afterPublishedAt } : {}),
       ...(afterId !== undefined ? { afterId } : {}),
       limit: rawLimit,
+      excludeIds: parsePublicExclusions(req.query.excludeIds),
       excludeHomepageHero: req.query.excludeHomepageHero === "true"
     };
     const [result, hero] = await Promise.all([

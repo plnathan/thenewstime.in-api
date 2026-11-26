@@ -1050,7 +1050,8 @@ export function decodeDistrictNewsCursor(value: string): DistrictNewsCursor {
 export async function findDistrictSections(
   sectionOffset = 0,
   sectionLimit = 8,
-  newsLimit = 5
+  newsLimit = 5,
+  excludeIds: number[] = []
 ) {
   const sectionsSql = `
     WITH eligible AS (
@@ -1064,6 +1065,7 @@ export async function findDistrictSections(
           SELECT 1 FROM news n
           WHERE n.district_id = d.id AND n.news_scope = 'DISTRICT'
             AND n.status = 'PUBLISHED' AND n.published_at <= NOW()
+            AND NOT (n.id = ANY($3::bigint[]))
         )
     )
     SELECT section_key AS key, MIN(display_order)::int AS sort_order,
@@ -1077,7 +1079,8 @@ export async function findDistrictSections(
   `;
   const sectionResult = await pool.query(sectionsSql, [
     sectionLimit + 1,
-    sectionOffset
+    sectionOffset,
+    excludeIds
   ]);
   const selected = sectionResult.rows.slice(0, sectionLimit) as Array<{
     key: string;
@@ -1103,6 +1106,7 @@ export async function findDistrictSections(
         FROM news n0
         WHERE n0.district_id = d.id AND n0.news_scope = 'DISTRICT'
           AND n0.status = 'PUBLISHED' AND n0.published_at <= NOW()
+          AND NOT (n0.id = ANY($3::bigint[]))
         ORDER BY n0.published_at DESC, n0.id DESC
         LIMIT $2
       ) picked ON TRUE
@@ -1120,7 +1124,7 @@ export async function findDistrictSections(
     WHERE r.rank <= $2
     ORDER BY r.section_key, r.rank
   `;
-  const newsResult = await pool.query(sql, [ids, newsLimit + 1]);
+  const newsResult = await pool.query(sql, [ids, newsLimit + 1, excludeIds]);
   const rows = newsResult.rows;
   const sections = selected.map((section) => {
     const sectionRows = rows.filter((row) =>
@@ -1151,7 +1155,8 @@ export async function findDistrictSections(
 export async function findDistrictSectionNews(
   key: string,
   offset = 0,
-  limit = 5
+  limit = 5,
+  excludeIds: number[] = []
 ) {
   const districtSql = `
     SELECT d.id FROM districts d JOIN states s ON s.id = d.state_id
@@ -1168,10 +1173,11 @@ export async function findDistrictSectionNews(
     ${NEWS_SELECT}
     WHERE n.district_id = ANY($1::int[]) AND n.news_scope = 'DISTRICT'
       AND n.status = 'PUBLISHED' AND n.published_at <= NOW()
+    AND NOT (n.id = ANY($4::bigint[]))
     ORDER BY d.display_order, n.published_at DESC, n.id DESC
     LIMIT $2 OFFSET $3
   `;
-  const result = await pool.query(sql, [ids, limit + 1, offset]);
+  const result = await pool.query(sql, [ids, limit + 1, offset, excludeIds]);
   const hasMoreNews = result.rows.length > limit;
   return {
     news: result.rows.slice(0, limit).map(mapNews),
@@ -1184,7 +1190,8 @@ export async function findDistrictSectionNews(
 export async function findDistrictSectionNewsByCursor(
   key: string,
   cursor: string,
-  limit = 5
+  limit = 5,
+  excludeIds: number[] = []
 ) {
   const position = decodeDistrictNewsCursor(cursor);
   const districtResult = await pool.query(
@@ -1210,12 +1217,20 @@ export async function findDistrictSectionNewsByCursor(
     ${NEWS_SELECT}
     WHERE n.district_id = ANY($1::int[]) AND n.news_scope = 'DISTRICT'
       AND n.status = 'PUBLISHED' AND n.published_at <= NOW()
+      AND NOT (n.id = ANY($6::bigint[]))
       AND (d.display_order > $2 OR
         (d.display_order = $2 AND (n.published_at, n.id) < ($3::timestamptz, $4::int)))
     ORDER BY d.display_order ASC, n.published_at DESC, n.id DESC
     LIMIT $5
   `,
-    [ids, position.order, position.publishedAt, position.id, limit + 1]
+    [
+      ids,
+      position.order,
+      position.publishedAt,
+      position.id,
+      limit + 1,
+      excludeIds
+    ]
   );
   const hasMoreNews = result.rows.length > limit;
   const pageRows = result.rows.slice(0, limit);
@@ -1245,6 +1260,7 @@ export interface PublicStreamFilter {
   afterId?: number;
   limit: number;
   excludeHomepageHero?: boolean;
+  excludeIds?: number[];
 }
 
 export const findPublicStream = async (filter: PublicStreamFilter) => {
@@ -1274,6 +1290,10 @@ export const findPublicStream = async (filter: PublicStreamFilter) => {
     where.push(
       `(n.published_at, n.id) < ($${values.length - 1}::timestamptz, $${values.length}::integer)`
     );
+  }
+  if (filter.excludeIds?.length) {
+    values.push(filter.excludeIds);
+    where.push(`NOT (n.id = ANY($${values.length}::bigint[]))`);
   }
   if (filter.excludeHomepageHero) {
     where.push(`n.id NOT IN (
