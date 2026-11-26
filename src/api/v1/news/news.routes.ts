@@ -45,6 +45,8 @@ router.get(
   newsController.getDistrictSectionNews
 );
 
+router.get("/public/home", newsController.getPublicHome);
+
 router.get("/public/stream", newsController.getPublishedNewsStream);
 
 router.get(

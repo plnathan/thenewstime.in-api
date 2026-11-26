@@ -1304,8 +1304,12 @@ export const findPublicStream = async (filter: PublicStreamFilter) => {
     )`);
   }
   values.push(filter.limit + 1);
-  const sql = `${NEWS_SELECT} WHERE ${where.join(" AND ")}
-    ORDER BY n.published_at DESC, n.id DESC LIMIT $${values.length}`;
+  const sql = `WITH selected AS MATERIALIZED (
+    SELECT n.id FROM news n JOIN categories c ON c.id = n.category_id
+    WHERE ${where.join(" AND ")}
+    ORDER BY n.published_at DESC, n.id DESC LIMIT $${values.length}
+  ) ${NEWS_SELECT} WHERE n.id IN (SELECT id FROM selected)
+    ORDER BY n.published_at DESC, n.id DESC`;
   const result = await pool.query(sql, values);
   const hasMore = result.rows.length > filter.limit;
   const items = result.rows.slice(0, filter.limit).map(mapNews);
@@ -1320,3 +1324,63 @@ export const findPublicHomepageHero = async () => {
   const result = await pool.query(sql);
   return result.rows.map(mapNews);
 };
+
+/** Select all homepage sections in one database round trip. */
+export async function findPublicHome() {
+  const result = await pool.query(`
+    WITH eligible AS NOT MATERIALIZED (
+      SELECT n.id, n.published_at, n.show_on_homepage, n.news_scope, n.state_id
+      FROM news n JOIN categories c ON c.id = n.category_id
+      WHERE n.status = 'PUBLISHED' AND n.published_at <= NOW()
+    ), hot AS (
+      SELECT id FROM eligible WHERE show_on_homepage IS TRUE
+      ORDER BY published_at DESC, id DESC LIMIT 10
+    ), other AS (
+      SELECT id FROM eligible WHERE show_on_homepage IS FALSE
+      ORDER BY published_at DESC, id DESC LIMIT 5
+    ), popular_candidates AS (
+      SELECT e.id, e.published_at,
+        (SELECT COUNT(*) FROM news_reads nr WHERE nr.news_id = e.id) AS reads
+      FROM eligible e WHERE e.id NOT IN (SELECT id FROM hot UNION ALL SELECT id FROM other)
+      ORDER BY CASE WHEN e.published_at >= NOW() - INTERVAL '30 days' THEN 0 ELSE 1 END,
+        reads DESC, e.published_at DESC, e.id DESC LIMIT 5
+    ), popular_ranked AS (
+      SELECT *, row_number() OVER (ORDER BY CASE WHEN published_at >= NOW() - INTERVAL '30 days' THEN 0 ELSE 1 END,
+        reads DESC, published_at DESC, id DESC) AS rn,
+        count(*) FILTER (WHERE published_at >= NOW() - INTERVAL '30 days') OVER () AS recent_count
+      FROM popular_candidates
+    ), popular AS (
+      SELECT id, rn FROM popular_ranked WHERE
+        (recent_count >= 2 AND published_at >= NOW() - INTERVAL '30 days') OR (recent_count < 2 AND rn <= 2)
+    ), category_ranked AS (
+      SELECT e.id, e.news_scope, row_number() OVER (PARTITION BY e.news_scope ORDER BY
+        CASE WHEN e.show_on_homepage IS TRUE THEN 0 ELSE 1 END, e.published_at DESC, e.id DESC) AS rn
+      FROM eligible e WHERE e.id NOT IN (SELECT id FROM hot UNION ALL SELECT id FROM other UNION ALL SELECT id FROM popular)
+        AND (e.news_scope IN ('INDIA','WORLD','DISTRICT') OR
+          (e.news_scope = 'STATE' AND EXISTS (SELECT 1 FROM states st WHERE st.id = e.state_id AND st.url_name = 'tamil-nadu')))
+    ), selected AS (
+      SELECT id, 'hot' AS section, 0::bigint AS rn FROM hot
+      UNION ALL SELECT id, 'other', 0::bigint FROM other
+      UNION ALL SELECT id, 'popular', rn FROM popular
+      UNION ALL SELECT id, news_scope::text, rn FROM category_ranked WHERE rn <= 5
+    )
+    SELECT details.*, selected.section FROM selected
+    JOIN LATERAL (${NEWS_SELECT} WHERE n.id = selected.id) details ON TRUE
+    ORDER BY selected.section, selected.rn, details.published_at DESC, details.id DESC
+  `);
+  const sections: Record<
+    "hot" | "other" | "popular" | "STATE" | "INDIA" | "WORLD" | "DISTRICT",
+    News[]
+  > = {
+    hot: [],
+    other: [],
+    popular: [],
+    STATE: [],
+    INDIA: [],
+    WORLD: [],
+    DISTRICT: []
+  };
+  for (const row of result.rows)
+    sections[row.section as keyof typeof sections].push(mapNews(row));
+  return sections;
+}

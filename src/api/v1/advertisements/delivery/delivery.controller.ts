@@ -143,16 +143,25 @@ export const getPublicPageDelivery = async (
       Awaited<ReturnType<typeof deliveryService.getEligibleAdvertisements>>
     > = {};
 
-    // Sequential processing avoids a burst of database queries for each page view.
-    for (const placement of placements) {
-      const request: AdvertisementDeliveryRequest = {
-        pageType: query.pageType,
-        placementType: placement.placementType,
-        placementId: placement.id
-      };
-      if (context !== undefined) request.context = context;
-      deliveries[String(placement.id)] =
-        await deliveryService.getEligibleAdvertisements(request);
+    // Bound concurrency to avoid a query burst for pages with many slots.
+    const concurrency = 2;
+    for (let offset = 0; offset < placements.length; offset += concurrency) {
+      const group = placements.slice(offset, offset + concurrency);
+      const results = await Promise.all(
+        group.map(async (placement) => {
+          const request: AdvertisementDeliveryRequest = {
+            pageType: query.pageType,
+            placementType: placement.placementType,
+            placementId: placement.id
+          };
+          if (context !== undefined) request.context = context;
+          return deliveryService.getEligibleAdvertisements(request, placement);
+        })
+      );
+      group.forEach((placement, index) => {
+        const result = results[index];
+        if (result !== undefined) deliveries[String(placement.id)] = result;
+      });
     }
 
     sendSuccess(res, "Public page advertisements retrieved.", {

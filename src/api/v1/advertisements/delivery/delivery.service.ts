@@ -514,7 +514,8 @@ function createEmptyResponse(
 }
 
 export async function getEligibleAdvertisements(
-  request: AdvertisementDeliveryRequest
+  request: AdvertisementDeliveryRequest,
+  preloadedPlacement?: AdvertisementPlacement
 ): Promise<AdvertisementDeliveryResponse> {
   if (!isValidPlacementForPage(request.pageType, request.placementType)) {
     throw new ApiError(
@@ -531,7 +532,10 @@ export async function getEligibleAdvertisements(
   let requestedPlacement: AdvertisementDeliveryPlacement | null = null;
 
   if (requestedPlacementId !== undefined) {
-    const placement = await placementRepository.findById(requestedPlacementId);
+    const placement =
+      preloadedPlacement?.id === requestedPlacementId
+        ? preloadedPlacement
+        : await placementRepository.findById(requestedPlacementId);
 
     if (
       placement === null ||

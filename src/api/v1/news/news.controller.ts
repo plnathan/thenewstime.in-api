@@ -798,3 +798,27 @@ export const getPublishedNewsStream = async (
     next(error);
   }
 };
+
+/** GET /api/v1/news/public/home */
+export const getPublicHome = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { findPublicHome } = await import("./news.repository.js");
+    const sections = await findPublicHome();
+    const data = {
+      hot: toNewsResponseDtoList(sections.hot),
+      other: toNewsResponseDtoList(sections.other),
+      popular: toNewsResponseDtoList(sections.popular),
+      STATE: toNewsResponseDtoList(sections.STATE),
+      INDIA: toNewsResponseDtoList(sections.INDIA),
+      WORLD: toNewsResponseDtoList(sections.WORLD),
+      DISTRICT: toNewsResponseDtoList(sections.DISTRICT)
+    };
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
